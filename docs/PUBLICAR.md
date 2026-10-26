@@ -9,13 +9,16 @@ autorización escrita y la lista de `docs/PLAN.md` (sección 6).
 |---|---|---|
 | Base de datos (comprobantes, XML, constancias) | Supabase | Gratis para empezar |
 | Servidor del facturador (la API) | Render | Gratis (plan *Free*) |
-| Cola cada 5 min y respaldo diario | GitHub Actions | Gratis (con el repositorio público) |
+| Cola cada 5 min (mantiene despierto al servidor) | cron-job.org | Gratis |
+| Respaldo diario y cola de reserva | GitHub Actions | Gratis (con el repositorio público) |
 
 > **Plan gratis de Render:** se "duerme" tras 15 minutos sin visitas y tarda casi un minuto
-> en despertar. La cola de GitHub lo visita cada 5 minutos, así que casi siempre está
-> despierto. Si alguna vez la tienda lo encuentra dormido, la boleta queda pendiente y se
-> emite con **"Emitir de nuevo"** en el panel; no se pierde nada. Cuando el negocio lo
-> justifique, cambia a *Starter* (US$ 7 al mes) en Render y nunca se dormirá.
+> en despertar. cron-job.org lo visita cada 5 minutos (paso 5b), así que casi siempre está
+> despierto. GitHub también tiene la cola cada 5 minutos, pero en la práctica (octubre 2026)
+> la ejecuta cada 2 o 3 horas: sirve de reserva, no para mantenerlo despierto. Si alguna vez
+> la tienda lo encuentra dormido, la boleta queda pendiente y se emite con
+> **"Emitir de nuevo"** en el panel; no se pierde nada. Para producción conviene *Starter*
+> (US$ 7 al mes en octubre 2026; revisa el precio en Render) y nunca se dormirá.
 >
 > **Deja el repositorio público:** GitHub da minutos ilimitados a los repositorios públicos.
 > En uno privado, la cola cada 5 minutos gastaría más que los minutos gratis del mes. El
@@ -87,6 +90,7 @@ npm run empresa:configurar -- --ruc 20616613074 --razon "CORPORACION AGAMENON S.
 npm run certificado:cargar -- --ruc 20616613074 --pfx "C:\ruta\a\tu\certificado.p12"
 npm run llave-api -- crear --ruc 20616613074 --canal "Tienda web" --permisos emitir,consultar,cobrar
 ```
+La contraseña del certificado se escribe cuando la pide; en pantalla salen solo asteriscos.
 ⚠️ Revisa el ubigeo y la dirección: deben ser los de tu **domicilio fiscal** en la Ficha RUC.
 La última orden muestra una llave que empieza con `fk_` **una sola vez**: cópiala para el paso 6.
 
@@ -103,6 +107,20 @@ En GitHub → repositorio **facturador-sunat** → **Settings → Secrets and va
 
 Luego, en la pestaña **Actions**, abre **cola** y **respaldo** y pulsa **Run workflow** una
 vez para comprobar que salen en verde ✅.
+
+## Paso 5b — Mantener despierto el servidor (cron-job.org)
+
+1. Crea una cuenta gratis en https://console.cron-job.org/signup y confirma el correo.
+2. **Cronjobs → Crear cronjob**:
+   - **Título:** `Facturador cola`
+   - **URL:** la dirección de Render + `/v1/cola/procesar`
+   - **Horario de ejecución:** *Cada 5 minutos* (expresión `*/5 * * * *`)
+3. Pestaña **Avanzado**:
+   - **Método:** `POST`
+   - **Encabezado:** clave `Authorization`, valor `Bearer ` + tu CLAVE_CRON (con un espacio
+     después de `Bearer`)
+4. **Crear**. En **Historial** debe salir **200 OK**. La primera puede salir *timeout*
+   (Render estaba dormido); un **401** significa que la clave del encabezado está mal.
 
 ## Paso 6 — Conectar la tienda (Vercel)
 
