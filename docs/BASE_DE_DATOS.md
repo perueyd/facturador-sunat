@@ -194,7 +194,7 @@ Sirve también para el historial de compras.
 | cliente_id + copia de datos del cliente | la copia no cambia si el cliente se edita |
 | marca_id, canal_id | origen |
 | pedido_externo_id | id del pedido en la tienda |
-| idempotencia_clave | único `(empresa_id, canal_id, pedido_externo_id)` |
+| idempotencia_clave | único `(empresa_id, canal_id, pedido_externo_id)` sin contar los RECHAZADOS (migración 013) |
 | forma_pago | `CONTADO` / `CREDITO` |
 | total_gravado, total_exonerado, total_inafecto, total_igv, total_descuentos, importe_total | `NUMERIC(14,2)` |
 | parametros_usados | jsonb: tasa IGV, UIT y límite vigentes al emitir |

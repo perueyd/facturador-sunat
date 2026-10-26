@@ -128,6 +128,19 @@ describe.skipIf(!URL_PRUEBAS)('emisión con base de datos', () => {
     expect(await ultimoNumero('B001')).toBe(1);
   });
 
+  it('pedido cuyo comprobante SUNAT rechazó: emite uno nuevo con el siguiente número; el rechazado se conserva', async () => {
+    const rechazado = emitido(await emitirComprobante(db, pedido({ pedidoExternoId: 'ED-3003' })));
+    await db.query(`UPDATE comprobantes SET estado = 'RECHAZADO' WHERE id = $1`, [rechazado.id]);
+    const nuevo = await emitirComprobante(db, pedido({ pedidoExternoId: 'ED-3003' }));
+    expect(nuevo.resultado).toBe('EMITIDO');
+    expect(emitido(nuevo).comprobante.numero).toBe(2);
+    const otraVez = await emitirComprobante(db, pedido({ pedidoExternoId: 'ED-3003' }));
+    expect(otraVez.resultado).toBe('REPETIDO');
+    expect(emitido(otraVez).id).toBe(emitido(nuevo).id);
+    const n = await db.query(`SELECT count(*)::int AS n FROM comprobantes WHERE pedido_externo_id = 'ED-3003' AND empresa_id = $1`, [f.empresaId]);
+    expect(n.rows[0].n).toBe(2);
+  });
+
   it('pedido repetido llegando 10 veces al mismo tiempo: un solo comprobante', async () => {
     const rs = await Promise.all(Array.from({ length: 10 }, () => emitirComprobante(db, pedido({ pedidoExternoId: 'ED-2002' }))));
     const ids = new Set(rs.map((r) => emitido(r).id));

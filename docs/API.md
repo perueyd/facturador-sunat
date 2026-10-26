@@ -9,6 +9,8 @@ respuestas son JSON en español, salvo las descargas (PDF, XML y CDR).
   se revoca solo esa, sin afectar a las demás.
 - **Pedido = idempotencia.** Cada comprobante lleva el número de pedido de tu tienda. Si el
   mismo pedido llega dos veces, se devuelve el comprobante ya emitido; nunca se emite otro.
+  Única excepción: si SUNAT **rechazó** el comprobante, el pedido puede emitir uno nuevo
+  (con el siguiente número) después de corregir los datos. El rechazado se conserva.
 - **Correlativo único por serie.** No importa desde qué canal se emita: `B001` sigue una
   sola numeración.
 - **Montos como texto.** `"59.90"`, nunca `59.9`. Así no se arrastran errores de decimales
