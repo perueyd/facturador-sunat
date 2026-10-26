@@ -131,6 +131,20 @@ Vercel → proyecto de la tienda → **Settings → Environment Variables**:
 Después: **Deployments → … → Redeploy**. (La tienda ya debe tener unido el cambio
 "Boletas y facturas automáticas".)
 
+## Paso 6b — Tu usuario del panel (en tu PC)
+
+Para emitir boletas a mano (WhatsApp, Instagram, en persona). Ten el celular a mano con
+**Google Authenticator** o **Microsoft Authenticator** instalado.
+```
+npm run usuario -- crear --email tu@correo.com --nombre "Tu nombre" --ruc 20616613074 --rol DUENO
+```
+1. Escribe una contraseña nueva (mínimo 10 caracteres; salen asteriscos) y repítela.
+2. Aparece un QR: en la app del celular pulsa **+** → **Escanear código QR**.
+3. Escribe el código de 6 dígitos que muestra la app.
+4. Entra a la dirección de Render + `/panel` con tu correo, tu contraseña y el código del momento.
+
+Si cambias de celular: `npm run usuario -- restablecer-2fa --email tu@correo.com`.
+
 ## Paso 7 — Prueba completa
 
 1. Haz un pedido en tu tienda con Yape por un monto pequeño.

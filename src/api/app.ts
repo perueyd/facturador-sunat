@@ -24,6 +24,7 @@ import { idComprobanteLegible } from '../tipos.js';
 import { autenticarLlave, type ContextoLlave, type Permiso } from './llaves.js';
 import { leerToken, tokenComprobante } from './enlaces.js';
 import { leerPedido } from './solicitud.js';
+import { registrarPanel } from '../panel/rutas.js';
 
 export interface DependenciasApi {
   db: Db;
@@ -212,32 +213,35 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     };
   }
 
-  app.post('/v1/comprobantes', async (c) => {
-    const sinPermiso = requiere(c, 'emitir');
-    if (sinPermiso) return sinPermiso;
-    const llave = c.get('llave');
-    const cuerpo = await c.req.json().catch(() => undefined);
+  /**
+   * Emite (o devuelve el ya emitido), lo envía a SUNAT al instante y registra el pago si
+   * vino. Lo usan la API (llave de canal) y el panel (usuario): un solo camino para los dos.
+   */
+  async function emitirYResponder(
+    c: Context,
+    quien: { empresaId: string; canalId: string; apiLlaveId?: string; usuarioId?: string },
+    cuerpo: unknown,
+    puedeCobrar: boolean,
+  ) {
     const leido = leerPedido(cuerpo);
     if (!leido.ok) return error(c, 422, 'DATOS_INVALIDOS', 'Revisa los datos del comprobante.', leido.errores);
-    if (leido.valor.pago) {
-      const sinCobrar = requiere(c, 'cobrar');
-      if (sinCobrar) return sinCobrar;
-    }
+    if (leido.valor.pago && !puedeCobrar) return error(c, 403, 'SIN_PERMISO', 'Esta llave no tiene el permiso "cobrar".');
 
     let marcaId: string | undefined;
     if (leido.valor.marca) {
-      const m = await dep.db.query(`SELECT id FROM marcas WHERE empresa_id = $1 AND lower(nombre) = lower($2) AND activa`, [llave.empresaId, leido.valor.marca]);
+      const m = await dep.db.query(`SELECT id FROM marcas WHERE empresa_id = $1 AND lower(nombre) = lower($2) AND activa`, [quien.empresaId, leido.valor.marca]);
       if (!m.rows[0]) return error(c, 422, 'DATOS_INVALIDOS', 'Revisa los datos del comprobante.', [`marca: no existe la marca "${leido.valor.marca}".`]);
       marcaId = m.rows[0].id as string;
     } else {
-      const m = await dep.db.query(`SELECT marca_id_por_defecto FROM canales WHERE id = $1`, [llave.canalId]);
+      const m = await dep.db.query(`SELECT marca_id_por_defecto FROM canales WHERE id = $1`, [quien.canalId]);
       marcaId = (m.rows[0]?.marca_id_por_defecto as string | null) ?? undefined;
     }
 
+    const autor = { ...(quien.apiLlaveId ? { apiLlaveId: quien.apiLlaveId } : {}), ...(quien.usuarioId ? { usuarioId: quien.usuarioId } : {}) };
     const r = await emitirComprobante(dep.db, {
-      empresaId: llave.empresaId,
-      canalId: llave.canalId,
-      apiLlaveId: llave.apiLlaveId,
+      empresaId: quien.empresaId,
+      canalId: quien.canalId,
+      ...autor,
       pedidoExternoId: leido.valor.pedido,
       solicitud: leido.valor.solicitud,
       ...(marcaId ? { marcaId } : {}),
@@ -254,13 +258,21 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     // (la referencia de la operación es única) ni falla si ya estaba pagado.
     let errorPago: string | undefined;
     if (leido.valor.pago && r.guardado.comprobante.tipo !== '07' && !(await estadoCobro(dep.db, r.guardado.id)).saldo.isZero()) {
-      const pago = await registrarPago(dep.db, { empresaId: llave.empresaId, comprobanteId: r.guardado.id, apiLlaveId: llave.apiLlaveId, ...leido.valor.pago });
+      const pago = await registrarPago(dep.db, { empresaId: quien.empresaId, comprobanteId: r.guardado.id, ...autor, ...leido.valor.pago });
       if (pago.resultado === 'ERROR') errorPago = pago.errores.join(' ');
     }
     return c.json(
       { ...(await respuestaComprobante(c, r.guardado.id)), repetido: r.resultado === 'REPETIDO', ...(errorPago ? { errorPago } : {}) },
       r.resultado === 'EMITIDO' ? 201 : 200,
     );
+  }
+
+  app.post('/v1/comprobantes', async (c) => {
+    const sinPermiso = requiere(c, 'emitir');
+    if (sinPermiso) return sinPermiso;
+    const llave = c.get('llave');
+    const cuerpo = await c.req.json().catch(() => undefined);
+    return emitirYResponder(c, { empresaId: llave.empresaId, canalId: llave.canalId, apiLlaveId: llave.apiLlaveId }, cuerpo, llave.permisos.includes('cobrar'));
   });
 
   app.post('/v1/comprobantes/:id/pagos', async (c) => {
@@ -364,6 +376,13 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     const r = await solicitarAnulacion(dep.db, { comprobanteId: id, motivo: typeof cuerpo.motivo === 'string' ? cuerpo.motivo : '' });
     if (r.resultado === 'ERROR') return error(c, 422, 'NO_SE_PUEDE_ANULAR', r.errores[0] ?? 'No se pudo anular.', r.errores);
     return c.json({ estado: 'ANULACION_EN_PROCESO', via: r.via, documento: r.identificador }, 202);
+  });
+
+  // Panel web (/panel): usuarios con contraseña + código de 6 dígitos, no llaves de canal.
+  registrarPanel(app, {
+    db: dep.db, llaveMaestra: dep.servicios.llaveMaestra, almacen: dep.servicios.almacen, error, ipCliente, fallos,
+    emitir: (c, quien, cuerpo) => emitirYResponder(c, quien, cuerpo, true),
+    respuestaComprobante,
   });
 
   return app;

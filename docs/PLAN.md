@@ -567,6 +567,27 @@ afecta cómo se usa), RLS, usuario de base con permisos mínimos y panel con dos
 - Probado: enlace válido, alterado, de otro comprobante, vencido, y la dirección pública https
   detrás de Render.
 
+## 20. Panel web para emitir a mano (resultado, pendiente de tu aprobación)
+
+Para ventas por WhatsApp, Instagram o en persona, sin pasar por la tienda. Vive en el mismo
+servidor: `<dirección del facturador>/panel`. Pensado para el celular.
+
+- **Entrar:** correo + contraseña + código de 6 dígitos de Google/Microsoft Authenticator.
+  Los usuarios se crean desde la laptop: `npm run usuario -- crear …` (muestra el QR).
+- **Emitir:** tipo, canal (WhatsApp, Instagram, Presencial), cliente, productos con precio con
+  IGV y, si ya pagó, medio y nº de operación. Usa el mismo camino que la API: mismas
+  validaciones, mismo correlativo, envío inmediato a SUNAT y cola si no responde. Pulsar
+  dos veces no emite dos (cada formulario lleva su propio número interno).
+- **Después de emitir:** PDF A4, ticket, enviar el enlace al cliente por WhatsApp o copiarlo.
+- **Lista** de los últimos 30 comprobantes de la empresa con su estado en SUNAT.
+- **Varias empresas:** un usuario con acceso a dos RUC cambia entre ellos.
+- **Roles:** DUEÑO, ADMIN y VENDEDOR emiten; CONTADOR y SOLO_LECTURA solo consultan.
+- Seguridad: ver `docs/SEGURIDAD.md`, sección "Panel web".
+- Probado: 13 pruebas de punta a punta (entrar, bloqueo, código reusado, CSRF, roles,
+  aislamiento entre empresas, doble clic) + prueba en navegador real (Chromium, tamaño celular).
+- **Aún no incluye:** notas de crédito, anulaciones ni devoluciones desde el panel (siguen por
+  comando); cambiar la contraseña desde el panel.
+
 ## 19. Decisiones que siguen abiertas
 
 Mientras no respondas, se usan las decisiones provisionales de la sección 7.

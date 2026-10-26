@@ -29,6 +29,20 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 5. **Conexión a la base** cifrada y verificada con el certificado de Supabase (`DATABASE_CA_CERT`).
 6. **Respaldos** cifrados (AES-256) antes de salir hacia GitHub.
 
+## Panel web (`/panel`)
+
+| Tema | Cómo está protegido |
+|---|---|
+| Entrar | Correo + contraseña (scrypt, mínimo 10 caracteres) + código de 6 dígitos (TOTP). Sin el segundo paso activado no se entra. |
+| Fuerza bruta | 5 fallos seguidos bloquean la cuenta 15 minutos; además, el límite de intentos por dirección de la API. Mismo mensaje para cualquier fallo y mismo tiempo de respuesta aunque el correo no exista. |
+| Código reusado | Cada código de 6 dígitos sirve una sola vez (se guarda el último paso aceptado, de forma atómica). |
+| Sesión | Token aleatorio de 256 bits en cookie `__Host-` HttpOnly, Secure, SameSite=Strict; vence a las 12 h. En la base solo su huella SHA-256. Salir, desactivar el usuario o restablecer su 2FA la cortan al instante. |
+| Otro sitio dando órdenes (CSRF) | Toda orden exige la cabecera `X-Panel: 1` y, si llega `Origin`, que sea el mismo sitio. |
+| Código malicioso en la página (XSS) | Política de contenido estricta (solo el JavaScript propio) y todo dato se pinta como texto, nunca como HTML. |
+| Roles y empresas | Cada usuario solo ve las empresas asignadas. DUEÑO, ADMIN y VENDEDOR emiten; CONTADOR y SOLO_LECTURA consultan. Comprobante de otra empresa → 404. |
+| Secreto del 2FA | Cifrado con AES-256-GCM y la `LLAVE_MAESTRA`, ligado al usuario. |
+| Historial | Entradas, fallos, bloqueos y cada emisión quedan en `auditoria` con el usuario. |
+
 ## Pendiente (con motivo)
 
 | Pendiente | Por qué todavía no | Cuándo |
@@ -36,5 +50,4 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 | `node-forge` (aviso GHSA-86w9-cpqp-85rv, sin parche) | El fallo está en *verificar* firmas RSA; aquí solo se usa para *abrir* el `.pfx`. Node no trae lector de PKCS#12. | Reemplazar si aparece una alternativa mantenida o el parche. |
 | *Row Level Security* en PostgreSQL | Hoy el aislamiento lo hace la aplicación (probado). RLS sería una segunda barrera. | Antes de vender el servicio a otros negocios. |
 | Usuario de base con permisos mínimos | Supabase entrega un usuario con todos los permisos; un usuario sin `TRUNCATE` ni permiso para quitar disparadores reduce el daño si se filtra la conexión. | Al pasar a producción. |
-| Panel con verificación en dos pasos y roles | El panel web del facturador aún no existe (hoy: comandos + API). | Fase del panel. |
 | Repositorio público | No contiene secretos y los respaldos van cifrados. Se mantiene público porque así GitHub Actions (cola cada 5 min) es gratis. | Hacerlo privado si se pasa a un servidor que no se duerma y la cola se mueve fuera de GitHub. |
