@@ -234,6 +234,13 @@ describe.skipIf(!URL_PRUEBAS)('API HTTP', () => {
       expect((await pedir('/v1/comprobantes/no-es-un-uuid')).status).toBe(404);
     });
 
+    it('por pedido: si SUNAT rechazó el primero, devuelve el nuevo que lo reemplazó', async () => {
+      await db.query(`UPDATE comprobantes SET estado = 'RECHAZADO' WHERE id = $1`, [id]);
+      const nuevo = ((await (await pedir('/v1/comprobantes', { cuerpo: boleta('ED-9') })).json()) as { id: string }).id;
+      expect(nuevo).not.toBe(id);
+      expect(await (await pedir('/v1/comprobantes?pedido=ED-9')).json()).toMatchObject({ id: nuevo });
+    });
+
     it('PDF: formato del canal por defecto, o el que se pida', async () => {
       const a4 = await pedir(`/v1/comprobantes/${id}/pdf`);
       expect(a4.status).toBe(200);
