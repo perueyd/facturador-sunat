@@ -63,7 +63,8 @@ export async function emitirComprobante(db: Db, p: PedidoEmision): Promise<Resul
 
 async function buscarPorPedido(db: Db, p: PedidoEmision): Promise<ComprobanteGuardado | undefined> {
   const r = await db.query(
-    `SELECT id FROM comprobantes WHERE empresa_id = $1 AND canal_id = $2 AND pedido_externo_id = $3`,
+    // Un comprobante RECHAZADO no cuenta: el pedido puede emitir otro (migración 013).
+    `SELECT id FROM comprobantes WHERE empresa_id = $1 AND canal_id = $2 AND pedido_externo_id = $3 AND estado <> 'RECHAZADO'`,
     [p.empresaId, p.canalId, p.pedidoExternoId],
   );
   const id = r.rows[0]?.id as string | undefined;
