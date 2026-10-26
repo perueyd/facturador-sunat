@@ -301,7 +301,9 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     if (sinPermiso) return sinPermiso;
     const pedido = c.req.query('pedido');
     if (!pedido) return error(c, 400, 'FALTA_PEDIDO', 'Indica ?pedido=<número de pedido>.');
-    const r = await dep.db.query(`SELECT id FROM comprobantes WHERE empresa_id = $1 AND canal_id = $2 AND pedido_externo_id = $3`, [
+    // Un pedido puede tener un comprobante RECHAZADO y el nuevo que lo reemplazó: manda el vigente.
+    const r = await dep.db.query(`SELECT id FROM comprobantes WHERE empresa_id = $1 AND canal_id = $2 AND pedido_externo_id = $3
+      ORDER BY estado = 'RECHAZADO', creado_en DESC LIMIT 1`, [
       c.get('llave').empresaId, c.get('llave').canalId, pedido,
     ]);
     if (!r.rows[0]) return error(c, 404, 'NO_ENCONTRADO', 'No hay comprobante para ese pedido.');
