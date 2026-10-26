@@ -3,6 +3,10 @@
 # por vencer. (Al emitir, el envío a SUNAT ya se intenta al instante; esto es
 # la red de seguridad.)
 #
+# En la práctica GitHub corre estos horarios cada 2 o 3 horas, no cada 5 minutos: quien
+# mantiene despierto al servidor es cron-job.org (docs/PUBLICAR.md, paso 5b). Esto queda
+# como reserva.
+#
 # No hace nada hasta configurar en GitHub → Settings → Secrets and variables → Actions:
 #   - Variable FACTURADOR_URL   (ej. https://facturador-sunat.onrender.com)
 #   - Secreto  CLAVE_CRON       (la misma CLAVE_CRON del servidor)
