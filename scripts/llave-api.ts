@@ -33,8 +33,10 @@ try {
     const permisos = (values.permisos?.split(',').map((p) => p.trim()) ?? ['emitir', 'consultar']) as Permiso[];
     const r = await crearLlaveApi(db, { empresaId, canalId: canal.rows[0].id, permisos });
     console.log(`✔ Llave creada para "${values.canal}" (permisos: ${permisos.join(', ')}).`);
-    console.log('  Cópiala AHORA; no se vuelve a mostrar:\n');
-    console.log(`  ${r.llave}\n`);
+    console.log('  Cópiala AHORA; no se vuelve a mostrar (la línea completa, sin espacios):\n');
+    // Sin sangría: al copiarla de la consola, los espacios de delante se iban con la llave
+    // y la tienda recibía "Llave de API inválida".
+    console.log(`${r.llave}\n`);
   } else if (accion === 'listar') {
     const r = await db.query(
       `SELECT l.prefijo, c.nombre AS canal, l.permisos, l.ultimo_uso_en, l.revocada_en FROM api_llaves l JOIN canales c ON c.id = l.canal_id WHERE l.empresa_id = $1 ORDER BY l.creado_en`,
