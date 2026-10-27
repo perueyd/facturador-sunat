@@ -1,6 +1,6 @@
 {
   "name": "facturador-sunat",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "description": "Facturador electrónico propio para SUNAT (SEE - Del Contribuyente)",
   "type": "module",
@@ -22,6 +22,7 @@
     "servidor": "tsx --env-file-if-exists=.env src/servidor.ts",
     "empresa:configurar": "tsx --env-file-if-exists=.env scripts/empresa.ts",
     "llave-api": "tsx --env-file-if-exists=.env scripts/llave-api.ts",
+    "usuario": "tsx --env-file-if-exists=.env scripts/usuario.ts",
     "sol:configurar": "tsx --env-file-if-exists=.env scripts/credenciales-sol.ts",
     "inventario": "tsx --env-file-if-exists=.env scripts/inventario.ts",
     "reporte": "tsx --env-file-if-exists=.env scripts/reporte.ts",

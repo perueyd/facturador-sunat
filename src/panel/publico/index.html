@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Panel del facturador</title>
+  <link rel="stylesheet" href="/panel/estilo.css">
+  <script src="/panel/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <strong>Facturador</strong>
+    <span id="quien"></span>
+    <button id="salir" class="enlace" hidden>Salir</button>
+  </header>
+
+  <main>
+    <!-- Entrar: correo + contraseña + código de la app autenticadora -->
+    <section id="vista-entrar" hidden>
+      <h1>Entrar</h1>
+      <form id="form-entrar" autocomplete="on">
+        <label>Correo <input name="email" type="email" autocomplete="username" required></label>
+        <label>Contraseña <input name="contrasena" type="password" autocomplete="current-password" required></label>
+        <label>Código de 6 dígitos <small>(de tu app autenticadora)</small>
+          <input name="codigo" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" required></label>
+        <button type="submit">Entrar</button>
+        <p class="error" id="error-entrar" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="vista-panel" hidden>
+      <p id="aviso-beta" class="aviso" hidden>Ambiente de PRUEBA (beta): los comprobantes no tienen valor legal.</p>
+      <label id="caja-empresa">Empresa <select id="empresa"></select></label>
+
+      <h1>Nuevo comprobante</h1>
+      <p id="sin-permiso" class="aviso" hidden>Tu rol solo permite consultar.</p>
+      <form id="form-emitir">
+        <div class="fila">
+          <label>Tipo
+            <select name="tipo"><option value="BOLETA">Boleta</option><option value="FACTURA">Factura</option></select></label>
+          <label>Venta por <select name="canal" id="canal"></select></label>
+        </div>
+
+        <fieldset>
+          <legend>Cliente</legend>
+          <div class="fila">
+            <label>Documento
+              <select name="tipoDocumento">
+                <option value="DNI">DNI</option><option value="RUC">RUC</option><option value="CE">Carnet ext.</option>
+                <option value="NINGUNO">Sin documento</option>
+              </select></label>
+            <label>Número <input name="numero" inputmode="numeric" maxlength="15"></label>
+          </div>
+          <label>Nombre o razón social <input name="nombre" maxlength="200"></label>
+          <small>Factura: RUC y razón social obligatorios. Boleta sin documento: solo hasta el límite vigente.</small>
+        </fieldset>
+
+        <fieldset>
+          <legend>Productos <small>(precio con IGV)</small></legend>
+          <div id="items"></div>
+          <button type="button" id="agregar" class="secundario">+ Agregar producto</button>
+          <p class="total">Total: <strong id="total">S/ 0.00</strong></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Pago</legend>
+          <div class="fila">
+            <label>Medio
+              <select name="medio">
+                <option value="">Aún no pagó</option><option value="EFECTIVO">Efectivo</option><option value="YAPE">Yape</option>
+                <option value="PLIN">Plin</option><option value="TRANSFERENCIA">Transferencia</option><option value="TARJETA">Tarjeta</option>
+              </select></label>
+            <label>Nº de operación <input name="referencia" maxlength="60"></label>
+          </div>
+        </fieldset>
+
+        <button type="submit" id="boton-emitir">Emitir</button>
+        <div class="error" id="error-emitir" role="alert"></div>
+      </form>
+
+      <div id="resultado" class="resultado" hidden></div>
+
+      <h2>Últimos comprobantes</h2>
+      <ul id="lista" class="lista"></ul>
+    </section>
+  </main>
+
+  <template id="plantilla-item">
+    <div class="item">
+      <input name="descripcion" placeholder="Descripción" maxlength="250" required>
+      <input name="cantidad" inputmode="decimal" value="1" aria-label="Cantidad" required>
+      <input name="precio" inputmode="decimal" placeholder="0.00" aria-label="Precio con IGV" required>
+      <button type="button" class="quitar" aria-label="Quitar">✕</button>
+    </div>
+  </template>
+</body>
+</html>
