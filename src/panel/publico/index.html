@@ -37,6 +37,15 @@
       <div id="tablero" class="tablero"></div>
       <p class="nota" id="nota-estimado" hidden>Los impuestos mostrados son <strong>estimados</strong>: confírmalos con tu contador antes de declarar.</p>
 
+      <nav class="pestanas" id="pestanas">
+        <button type="button" data-pestana="vender" class="activa">Vender</button>
+        <button type="button" data-pestana="cobrar" data-modulo="cobros">Cobrar</button>
+        <button type="button" data-pestana="compras" data-modulo="compras">Compras</button>
+        <button type="button" data-pestana="stock" data-modulo="productos">Stock</button>
+        <button type="button" data-pestana="mas">Más</button>
+      </nav>
+
+      <div data-vista="vender">
       <h1>Nuevo comprobante</h1>
       <p id="sin-permiso" class="aviso" hidden>Tu rol solo permite consultar.</p>
       <form id="form-emitir">
@@ -69,6 +78,17 @@
         </fieldset>
 
         <fieldset>
+          <legend>Forma de pago</legend>
+          <label><select name="formaPago" id="forma-pago">
+            <option value="CONTADO">Contado</option><option value="CREDITO" id="opcion-credito" disabled>Crédito en cuotas (solo factura)</option></select></label>
+          <div id="caja-cuotas" hidden>
+            <small>Monto con IGV y fecha de cada cuota. Deben sumar el total de la factura. Si te dan un adelanto, regístralo en "Cobrar" al emitir.</small>
+            <div id="cuotas"></div>
+            <button type="button" id="agregar-cuota" class="secundario">+ Agregar cuota</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
           <legend>Pago</legend>
           <div class="fila">
             <label>Medio
@@ -88,7 +108,92 @@
 
       <h2>Últimos comprobantes</h2>
       <ul id="lista" class="lista"></ul>
+      </div>
 
+      <div data-vista="cobrar" hidden>
+        <h1>Por cobrar</h1>
+        <p class="nota">Toca una venta para registrar lo que te pagaron.</p>
+        <ul id="lista-cobrar" class="lista"></ul>
+        <form id="form-cobro" hidden>
+          <p id="cobro-titulo"></p>
+          <div class="fila">
+            <label>Medio
+              <select name="medio"><option value="YAPE">Yape</option><option value="PLIN">Plin</option><option value="EFECTIVO">Efectivo</option>
+                <option value="TRANSFERENCIA">Transferencia</option><option value="TARJETA">Tarjeta</option></select></label>
+            <label>Monto <input name="monto" inputmode="decimal" placeholder="todo el saldo"></label>
+          </div>
+          <label>Nº de operación <input name="referencia" maxlength="60"></label>
+          <button type="submit">Registrar cobro</button>
+          <p class="error" id="error-cobro" role="alert"></p>
+        </form>
+      </div>
+
+      <div data-vista="compras" hidden>
+        <h1>Registrar una compra</h1>
+        <p class="nota">Factura o boleta de tu proveedor (madera, tela, servicios…). Su IGV se descuenta del IGV a pagar del mes.</p>
+        <form id="form-compra">
+          <div class="fila">
+            <label>RUC del proveedor <input name="ruc" inputmode="numeric" maxlength="11" required></label>
+            <label>Tipo <select name="tipo"><option value="01">Factura</option><option value="03">Boleta</option></select></label>
+          </div>
+          <label>Razón social <input name="razonSocial" maxlength="200" required></label>
+          <div class="fila">
+            <label>Serie <input name="serie" maxlength="4" placeholder="F001" required></label>
+            <label>Número <input name="numero" inputmode="numeric" maxlength="8" required></label>
+            <label>Fecha <input name="fecha" type="date" required></label>
+          </div>
+          <fieldset>
+            <legend>Detalle <small>(costo SIN IGV)</small></legend>
+            <div id="items-compra"></div>
+            <button type="button" id="agregar-compra" class="secundario">+ Agregar línea</button>
+          </fieldset>
+          <div class="fila">
+            <label>IGV <input name="igv" inputmode="decimal" required></label>
+            <label>Total <input name="total" inputmode="decimal" required></label>
+          </div>
+          <small>Copia el IGV y el total tal como dicen en la factura del proveedor.</small>
+          <button type="submit">Registrar compra</button>
+          <p class="error" id="error-compra" role="alert"></p>
+          <p id="ok-compra" role="status"></p>
+        </form>
+        <h2>Últimas compras</h2>
+        <ul id="lista-compras" class="lista"></ul>
+      </div>
+
+      <div data-vista="stock" hidden>
+        <h1>Stock</h1>
+        <ul id="lista-stock" class="lista"></ul>
+        <details class="ajustes" id="caja-producto">
+          <summary>Nuevo producto o cambiar precio</summary>
+          <form id="form-producto">
+            <div class="fila">
+              <label>Código (SKU) <input name="sku" maxlength="40" placeholder="CAB-MILAN" required></label>
+              <label>Precio con IGV <input name="precio" inputmode="decimal" required></label>
+            </div>
+            <label>Nombre <input name="nombre" maxlength="250" required></label>
+            <div class="fila">
+              <label>¿Controla stock? <select name="controlaStock"><option value="si">Sí</option><option value="no">No (servicio)</option></select></label>
+              <label>Stock mínimo <input name="stockMinimo" inputmode="decimal"></label>
+            </div>
+            <button type="submit" class="secundario">Guardar producto</button>
+            <p id="mensaje-producto" role="status"></p>
+          </form>
+        </details>
+        <details class="ajustes" id="caja-ajuste">
+          <summary>Ajustar stock (conteo, merma)</summary>
+          <form id="form-ajuste">
+            <div class="fila">
+              <label>Código (SKU) <input name="sku" maxlength="40" required></label>
+              <label>Cantidad <input name="cantidad" placeholder="+5 o -1" required></label>
+            </div>
+            <label>Motivo <input name="motivo" maxlength="200" placeholder="Conteo físico" required></label>
+            <button type="submit" class="secundario">Ajustar</button>
+            <p id="mensaje-ajuste" role="status"></p>
+          </form>
+        </details>
+      </div>
+
+      <div data-vista="mas" hidden>
       <section id="caja-exportar">
         <h2>Ventas para tu contador</h2>
         <div class="fila">
@@ -108,8 +213,28 @@
           <p id="mensaje-contrasena" role="status"></p>
         </form>
       </details>
+      </div>
     </section>
   </main>
+
+  <template id="plantilla-cuota">
+    <div class="item cuota">
+      <input name="monto" inputmode="decimal" placeholder="Monto" aria-label="Monto de la cuota" required>
+      <input name="vence" type="date" aria-label="Vence" required>
+      <button type="button" class="quitar" aria-label="Quitar">✕</button>
+    </div>
+  </template>
+
+  <template id="plantilla-compra">
+    <div class="item">
+      <input name="descripcion" placeholder="Descripción" maxlength="250" required>
+      <input name="cantidad" inputmode="decimal" value="1" aria-label="Cantidad" required>
+      <input name="costoUnitario" inputmode="decimal" placeholder="Costo" aria-label="Costo sin IGV" required>
+      <button type="button" class="quitar" aria-label="Quitar">✕</button>
+      <input name="sku" class="sku" list="lista-skus" placeholder="Producto de tu stock (opcional)" maxlength="40">
+    </div>
+  </template>
+  <datalist id="lista-skus"></datalist>
 
   <template id="plantilla-item">
     <div class="item">

@@ -7,7 +7,7 @@
  *   npm run empresa:modulos -- --ruc 20XXXXXXXXX --buen-contribuyente si
  *
  * Funciones: panel (todo el panel web), vencimientos, resumen, certificado, cobros,
- * notas (notas de crédito y anulaciones), productos, exportar.
+ * notas (notas de crédito y anulaciones), productos (y stock), exportar, compras.
  * Buen contribuyente: usa la columna "Buenos Contribuyentes y UESP" del cronograma.
  */
 import { parseArgs } from 'node:util';

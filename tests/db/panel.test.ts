@@ -322,4 +322,64 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect((await pedir('/panel/api/yo', { cookie: esta })).status).toBe(200);
     expect((await pedir('/panel/api/yo', { cookie: otra })).status).toBe(401);
   });
+
+  // ---------- Compras, crédito, cobros y stock ----------
+
+  it('compra de proveedor: suma su IGV al mes; contador sí, vendedor no; no se repite', async () => {
+    const contador = await entrar(await usuario('CONTADOR'));
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    const hoy = new Date().toISOString().slice(0, 10);
+    const compra = { proveedor: { ruc: '20600000013', razonSocial: 'MADERAS DEL SUR S.A.C.' }, tipo: '01', serie: 'F001', numero: '77', fecha: hoy,
+      igv: '18.00', total: '118.00', items: [{ descripcion: 'Planchas de melamina', cantidad: '2', costoUnitario: '50.00' }] };
+    expect((await pedir('/panel/api/compras', { cookie: vendedor, cuerpo: compra })).status).toBe(403);
+    expect((await pedir('/panel/api/compras', { cookie: contador, cuerpo: { ...compra, total: '119.00' } })).status).toBe(422);
+    expect((await pedir('/panel/api/compras', { cookie: contador, cuerpo: compra })).status).toBe(201);
+    expect((await pedir('/panel/api/compras', { cookie: contador, cuerpo: compra })).status).toBe(422);
+    expect((await (await pedir('/panel/api/compras', { cookie: contador })).json()).compras[0]).toMatchObject({ numero: 'F001-77', igv: '18.00' });
+    expect(await (await pedir('/panel/api/proveedores?ruc=20600000013', { cookie: contador })).json()).toEqual({ razonSocial: 'MADERAS DEL SUR S.A.C.' });
+    expect((await (await pedir('/panel/api/yo', { cookie: contador })).json()).igvTasa).toMatch(/^0\.18/);
+  });
+
+  it('venta al crédito con cuotas y cobro del saldo después', async () => {
+    const cookie = await entrar(await usuario('DUENO'));
+    const vence = new Date(Date.now() + 15 * 86_400_000).toISOString().slice(0, 10);
+    const r = await pedir('/panel/api/comprobantes', { cookie, cuerpo: boleta({
+      tipo: 'FACTURA', cliente: { tipoDocumento: 'RUC', numero: '20600000013', nombre: 'CLIENTE EMPRESA S.A.C.' },
+      formaPago: { cuotas: [{ monto: '220.00', vence }] },
+    }) });
+    expect(r.status).toBe(201);
+    const f1 = await r.json();
+    expect(f1).toMatchObject({ numero: 'F001-00000001', saldo: '220.00' });
+    const lista = (await (await pedir('/panel/api/por-cobrar', { cookie })).json()).porCobrar;
+    expect(lista[0]).toMatchObject({ numero: 'F001-00000001', saldo: '220.00', proximaCuota: vence });
+
+    expect((await pedir(`/panel/api/comprobantes/${f1.id}/pagos`, { cookie, cuerpo: { medio: 'BITCOIN' } })).status).toBe(422);
+    const p1 = await (await pedir(`/panel/api/comprobantes/${f1.id}/pagos`, { cookie, cuerpo: { medio: 'YAPE', monto: '100.00', referencia: 'OP-1' } })).json();
+    expect(p1.saldo).toBe('120.00');
+    // El mismo nº de operación no se registra dos veces.
+    expect((await (await pedir(`/panel/api/comprobantes/${f1.id}/pagos`, { cookie, cuerpo: { medio: 'YAPE', monto: '100.00', referencia: 'OP-1' } })).json()).saldo).toBe('120.00');
+    const p2 = await (await pedir(`/panel/api/comprobantes/${f1.id}/pagos`, { cookie, cuerpo: { medio: 'EFECTIVO' } })).json();
+    expect(p2).toMatchObject({ saldo: '0.00', estadoPago: 'PAGADO' });
+    expect((await (await pedir('/panel/api/por-cobrar', { cookie })).json()).porCobrar).toEqual([]);
+  });
+
+  it('stock: crear producto, ajustar con motivo y verlo; solo dueño/administrador cambia', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    const producto = { sku: 'cab-milan', nombre: 'Cabecera Milán', precio: '220.00', controlaStock: true, stockMinimo: '2' };
+    expect((await pedir('/panel/api/productos', { cookie: vendedor, cuerpo: producto })).status).toBe(403);
+    expect((await pedir('/panel/api/productos', { cookie: dueno, cuerpo: producto })).status).toBe(201);
+    expect((await pedir('/panel/api/stock/ajuste', { cookie: dueno, cuerpo: { sku: 'CAB-MILAN', cantidad: '5', motivo: '' } })).status).toBe(422);
+    expect(await (await pedir('/panel/api/stock/ajuste', { cookie: dueno, cuerpo: { sku: 'CAB-MILAN', cantidad: '5', motivo: 'Conteo físico' } })).json()).toMatchObject({ stock: '5' });
+    await pedir('/panel/api/comprobantes', { cookie: vendedor, cuerpo: boleta({ items: [{ codigo: 'CAB-MILAN', descripcion: 'Cabecera Milán', cantidad: 4, precio: '220.00' }] }) });
+    const stock = (await (await pedir('/panel/api/stock', { cookie: vendedor })).json()).stock;
+    expect(stock).toEqual([expect.objectContaining({ sku: 'CAB-MILAN', stock: '1', bajoMinimo: true })]);
+  });
+
+  it('función "compras" apagada: 403 aunque se llame directo', async () => {
+    const cookie = await entrar(await usuario('DUENO'));
+    await db.query(`UPDATE empresas SET modulos_desactivados = '{compras}' WHERE id = $1`, [f.empresaId]);
+    expect((await pedir('/panel/api/compras', { cookie })).status).toBe(403);
+    expect((await (await pedir('/panel/api/yo', { cookie })).json()).puedeComprar).toBe(false);
+  });
 });
