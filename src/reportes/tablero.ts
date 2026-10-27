@@ -13,7 +13,7 @@ import type { Db } from '../db/conexion.js';
 import { dec } from '../dinero.js';
 import { ahoraLima } from '../fechas.js';
 
-export const MODULOS = ['panel', 'vencimientos', 'resumen', 'certificado', 'cobros', 'notas', 'productos', 'exportar', 'compras'] as const;
+export const MODULOS = ['panel', 'vencimientos', 'resumen', 'certificado', 'cobros', 'notas', 'productos', 'exportar', 'compras', 'avisos'] as const;
 export type Modulo = (typeof MODULOS)[number];
 
 /** Columna del cronograma según el último dígito del RUC (o la de Buenos Contribuyentes). */

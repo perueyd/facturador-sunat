@@ -1,10 +1,12 @@
 /**
  * Servidor HTTP de la API.   npm run servidor
- * Variables: DATABASE_URL, LLAVE_MAESTRA, FIRMA_ALGORITMO, CLAVE_CRON, PUERTO (o PORT) y, solo
+ * Variables: DATABASE_URL, LLAVE_MAESTRA, FIRMA_ALGORITMO, CLAVE_CRON, PUERTO (o PORT), opcionales
+ * RESEND_API_KEY + AVISOS_DESDE (avisos por correo) y, solo
  * en desarrollo, ALMACEN_DIR. Ver docs/PUBLICAR.md.
  */
 import { serve } from '@hono/node-server';
 import { crearApp } from './api/app.js';
+import { correoResend } from './avisos/avisos.js';
 import { serviciosDesdeEntorno } from './config.js';
 import { crearPool } from './db/conexion.js';
 
@@ -15,6 +17,8 @@ const app = crearApp({
   db,
   servicios: serviciosDesdeEntorno(db, process.env, { tiempoMaximoSunatMs: 8_000 }),
   ...(process.env.CLAVE_CRON ? { claveCron: process.env.CLAVE_CRON } : {}),
+  // Avisos por correo: solo si están las dos variables (ver docs/PUBLICAR.md, paso 8).
+  ...(process.env.RESEND_API_KEY && process.env.AVISOS_DESDE ? { correo: correoResend(process.env.RESEND_API_KEY, process.env.AVISOS_DESDE) } : {}),
 });
 // PORT es el nombre que usan Render y Railway al publicar.
 const puerto = Number(process.env.PUERTO ?? process.env.PORT ?? 3000);

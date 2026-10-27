@@ -607,8 +607,11 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   - **Venta al crédito con cuotas** (solo facturas) y **cobros** de saldos (mismo nº de operación
     no se registra dos veces).
   - **Stock**: ver, crear productos y ajustar con motivo (dueño o administrador).
+- **Avisos por correo** (Resend, gratis; apagado sin `RESEND_API_KEY`): vencimiento de la
+  declaración (7, 3 y 0 días), certificado (60, 30 y 7 días) y alertas rojas. Salen una sola
+  vez cada uno (`avisos_enviados`, migración 017) y se reintentan si el envío falla.
 - **Cada empresa elige qué funciones usa** (`npm run empresa:modulos`): panel, vencimientos,
-  resumen, certificado, cobros, notas, productos, exportar, compras. Sin "panel", la empresa ni aparece
+  resumen, certificado, cobros, notas, productos, exportar, compras, avisos. Sin "panel", la empresa ni aparece
   en el panel y sigue solo por API.
 
 ## 19. Decisiones que siguen abiertas
