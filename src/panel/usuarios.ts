@@ -144,6 +144,8 @@ export interface Sesion {
   usuarioId: string;
   nombre: string;
   email: string;
+  /** Puede dar de alta empresas nuevas (lo activa el dueño de la plataforma por comando). */
+  adminPlataforma: boolean;
   empresas: EmpresaDelUsuario[];
   /** Empresa elegida, siempre una a la que el usuario tiene acceso (o undefined si no tiene ninguna). */
   empresa: EmpresaDelUsuario | undefined;
@@ -153,7 +155,7 @@ export interface Sesion {
 export async function leerSesion(db: Db, token: string | undefined): Promise<Sesion | undefined> {
   if (!token || token.length > 100) return undefined;
   const r = await db.query(
-    `SELECT s.id, s.empresa_id, u.id AS usuario_id, u.nombre, u.email
+    `SELECT s.id, s.empresa_id, u.id AS usuario_id, u.nombre, u.email, u.admin_plataforma
        FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id
       WHERE s.token_hash = $1 AND s.revocada_en IS NULL AND s.expira_en > now()
         AND u.activo AND (u.bloqueado_hasta IS NULL OR u.bloqueado_hasta < now())`,
@@ -173,7 +175,7 @@ export async function leerSesion(db: Db, token: string | undefined): Promise<Ses
     modulos: MODULOS.filter((m) => !(x.modulos_desactivados as string[]).includes(m)),
   }));
   return {
-    sesionId: s.id, usuarioId: s.usuario_id, nombre: s.nombre, email: s.email, empresas,
+    sesionId: s.id, usuarioId: s.usuario_id, nombre: s.nombre, email: s.email, adminPlataforma: s.admin_plataforma, empresas,
     // Si le quitaron el acceso a la empresa elegida, no se usa aunque siga en la sesión.
     empresa: empresas.find((x) => x.id === s.empresa_id) ?? empresas[0],
   };

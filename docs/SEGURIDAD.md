@@ -45,6 +45,11 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 | Notas de crédito y anulaciones | Solo DUEÑO o ADMIN, y solo si la empresa tiene activa la función "notas". |
 | Exportar a Excel | Las celdas que empiezan con `=`, `+`, `-` o `@` se neutralizan (un nombre de cliente no puede convertirse en fórmula). |
 | Funciones por empresa | Una función desactivada responde 403 aunque se llame directo a la API del panel. |
+| Usuarios desde el panel | Solo el DUEÑO da acceso (nunca rol DUEÑO); el usuario nuevo no entra hasta activar su segundo paso con un código de SU app. |
+| Certificado por el panel | Solo el DUEÑO; viaja por HTTPS y se guarda cifrado como siempre; cada contraseña equivocada cuenta como intento fallido. |
+| Logo | Se valida por contenido (firma PNG/JPEG), no por el nombre; máximo 70 KB; los anteriores se conservan. |
+| Alta de empresas | Solo usuarios marcados como administrador de la plataforma (por comando, en la PC); un RUC existente responde 409. |
+| Avisos por correo | Solo a DUEÑO y ADMIN activos; cada aviso una sola vez; la clave del proveedor solo en variables de entorno. |
 
 ## Pendiente (con motivo)
 

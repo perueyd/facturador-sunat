@@ -98,6 +98,11 @@ npm run usuario -- crear --email tu@correo.com --nombre "Tu nombre" --ruc 20XXXX
 Pide una contraseña y muestra un QR para Google Authenticator. Luego entra a
 `<dirección del facturador>/panel` con correo + contraseña + el código de 6 dígitos.
 
+Quien vende el facturador puede dar de alta empresas desde el panel:
+```bash
+npm run usuario -- plataforma --email tu@correo.com
+```
+
 Cada empresa elige qué funciones del panel usa:
 ```bash
 npm run empresa:modulos -- --ruc 20XXXXXXXXX                      # ver

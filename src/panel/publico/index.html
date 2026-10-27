@@ -202,6 +202,81 @@
         </div>
       </section>
 
+      <details class="ajustes" id="caja-usuarios">
+        <summary>Usuarios de esta empresa</summary>
+        <ul id="lista-usuarios" class="lista"></ul>
+        <form id="form-usuario">
+          <p class="nota">Da acceso a un vendedor, administrador o a tu contador. Si es nuevo, escanea el QR con SU celular.</p>
+          <div class="fila">
+            <label>Correo <input name="email" type="email" required></label>
+            <label>Rol
+              <select name="rol"><option value="VENDEDOR">Vendedor (emite)</option><option value="ADMIN">Administrador</option>
+                <option value="CONTADOR">Contador (consulta y compras)</option><option value="SOLO_LECTURA">Solo lectura</option></select></label>
+          </div>
+          <div class="fila">
+            <label>Nombre <input name="nombre" maxlength="120"></label>
+            <label>Contraseña inicial <input name="contrasena" type="password" autocomplete="new-password" minlength="10"></label>
+          </div>
+          <button type="submit" class="secundario">Dar acceso</button>
+          <p id="mensaje-usuario" role="status"></p>
+        </form>
+        <form id="form-activar" hidden>
+          <p>Que la persona escanee este QR con Google Authenticator y te dicte el código:</p>
+          <img id="qr-usuario" alt="Código QR para la app autenticadora" width="220" height="220">
+          <p class="nota">Sin cámara: en la app elige "Ingresar clave" y escribe <strong id="clave-usuario"></strong></p>
+          <label>Código de 6 dígitos <input name="codigo" inputmode="numeric" maxlength="6" required></label>
+          <button type="submit" class="secundario">Activar</button>
+          <p id="mensaje-activar" role="status"></p>
+        </form>
+      </details>
+
+      <details class="ajustes" id="caja-certificado">
+        <summary>Certificado digital (.pfx / .p12)</summary>
+        <form id="form-certificado">
+          <p class="nota">Para cargarlo o renovarlo. Se guarda cifrado; la contraseña no queda guardada en ningún lado visible.</p>
+          <label>Archivo <input type="file" name="archivo" accept=".pfx,.p12,application/x-pkcs12" required></label>
+          <label>Contraseña del certificado <input name="clave" type="password" autocomplete="off" required></label>
+          <button type="submit" class="secundario">Cargar certificado</button>
+          <p id="mensaje-certificado" role="status"></p>
+        </form>
+      </details>
+
+      <details class="ajustes" id="caja-empresa-nueva">
+        <summary>Dar de alta una empresa nueva</summary>
+        <form id="form-empresa">
+          <p class="nota">Copia los datos EXACTOS de la Ficha RUC (domicilio fiscal).</p>
+          <div class="fila">
+            <label>RUC <input name="ruc" inputmode="numeric" maxlength="11" required></label>
+            <label>Régimen
+              <select name="regimen"><option value="MYPE_TRIBUTARIO">MYPE Tributario</option><option value="GENERAL">General</option>
+                <option value="RER">Especial (RER)</option><option value="NUEVO_RUS">Nuevo RUS</option></select></label>
+          </div>
+          <label>Razón social <input name="razonSocial" maxlength="200" required></label>
+          <label>Dirección fiscal <input name="direccion" maxlength="250" required></label>
+          <div class="fila">
+            <label>Distrito <input name="distrito" maxlength="60" required></label>
+            <label>Provincia <input name="provincia" maxlength="60" required></label>
+          </div>
+          <div class="fila">
+            <label>Departamento <input name="departamento" maxlength="60" required></label>
+            <label>Ubigeo <input name="ubigeo" inputmode="numeric" maxlength="6" required></label>
+          </div>
+          <div class="fila">
+            <label>En el régimen desde <input name="regimenDesde" type="date" required></label>
+            <label>Marca (opcional) <input name="marca" maxlength="100"></label>
+          </div>
+          <button type="submit" class="secundario">Crear empresa</button>
+          <p id="mensaje-empresa" role="status"></p>
+        </form>
+      </details>
+
+      <details class="ajustes" id="caja-logo">
+        <summary>Logo de la empresa (sale en el PDF)</summary>
+        <p class="nota">PNG o JPG. Se achica solo antes de subirlo.</p>
+        <input type="file" id="archivo-logo" accept="image/png,image/jpeg">
+        <p id="mensaje-logo" role="status"></p>
+      </details>
+
       <details class="ajustes">
         <summary>Cambiar mi contraseña</summary>
         <form id="form-contrasena">

@@ -21,12 +21,21 @@ import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.
 import type { Db } from '../db/conexion.js';
 import { MEDIOS_PAGO, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
 import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
+import { ErrorEmpresa, configurarEmpresa } from '../empresas/configurar.js';
+import { ErrorLogo, guardarLogo } from '../empresas/logo.js';
+import { ErrorCertificado } from '../firma/certificado.js';
+import { guardarCertificado } from '../firma/repositorio-certificados.js';
+import { base32, urlOtpauth } from '../seguridad/totp.js';
 import { registrarCompra } from '../inventario/compras.js';
 import { ErrorInventario, ajustarStock, guardarProducto, listarStock } from '../inventario/productos.js';
 import { ErrorPdf } from '../pdf/representacion.js';
 import { tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
-import { ROLES_EMISORES, cambiarContrasena, elegirEmpresa, entrar, leerSesion, salir, type Rol, type Sesion } from './usuarios.js';
+import QRCode from 'qrcode';
+import type { Regimen } from '../tipos.js';
+import {
+  ROLES, ROLES_EMISORES, activarTotp, asignarEmpresa, cambiarContrasena, crearUsuario, elegirEmpresa, entrar, leerSesion, salir, type Rol, type Sesion,
+} from './usuarios.js';
 
 /** Notas de crédito, anulaciones, productos y stock: solo quienes responden por la empresa. */
 const ROLES_CORRIGEN: readonly Rol[] = ['DUENO', 'ADMIN'];
@@ -147,6 +156,8 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       puedeEmitir: Boolean(s.empresa && ROLES_EMISORES.includes(s.empresa.rol)),
       puedeCorregir: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol) && s.empresa.modulos.includes('notas')),
       puedeAdministrar: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol)),
+      esDueno: s.empresa?.rol === 'DUENO',
+      adminPlataforma: s.adminPlataforma,
       puedeComprar: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('compras')),
     });
   });
@@ -482,5 +493,127 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       [s.empresa.id],
     );
     return c.json({ porCobrar: r.rows.map((x) => ({ id: x.id, numero: idComprobanteLegible(x.serie, Number(x.numero)), cliente: x.cliente_nombre, fecha: x.fecha, saldo: x.saldo, proximaCuota: x.proxima_cuota })) });
+  });
+
+  // Logo para el PDF (el navegador lo achica antes de enviarlo).
+  app.post('/panel/api/logo', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador cambia el logo.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const base64 = typeof b.imagen === 'string' ? b.imagen.replace(/^data:image\/(png|jpeg);base64,/, '') : '';
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Imagen inválida.');
+    try {
+      await guardarLogo(d.db, d.almacen, { empresaId: s.empresa.id, imagen: Buffer.from(base64, 'base64'), usuarioId: s.usuarioId });
+    } catch (e) {
+      if (e instanceof ErrorLogo) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+    return c.json({ ok: true });
+  });
+
+  // ---------- Empresas, certificado y usuarios ----------
+
+  // Alta de una empresa NUEVA (solo administrador de la plataforma). Quien la crea queda como DUEÑO.
+  app.post('/panel/api/empresas', async (c) => {
+    const s = await conSesion(c);
+    if (s instanceof Response) return s;
+    if (!s.adminPlataforma) return d.error(c, 403, 'SIN_PERMISO', 'Solo el administrador de la plataforma da de alta empresas.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const ruc = texto(b.ruc, 11);
+    if ((await d.db.query(`SELECT 1 FROM empresas WHERE ruc = $1`, [ruc])).rowCount) {
+      return d.error(c, 409, 'YA_EXISTE', 'Esa empresa ya existe: pide al dueño que te dé acceso.');
+    }
+    const regimen = texto(b.regimen, 20) as Regimen;
+    if (!['NUEVO_RUS', 'RER', 'MYPE_TRIBUTARIO', 'GENERAL'].includes(regimen)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Elige el régimen tributario.');
+    try {
+      const { empresaId } = await configurarEmpresa(d.db, {
+        ruc, razonSocial: texto(b.razonSocial, 200), ubigeo: texto(b.ubigeo, 6), departamento: texto(b.departamento, 60),
+        provincia: texto(b.provincia, 60), distrito: texto(b.distrito, 60), direccion: texto(b.direccion, 250), regimen,
+        regimenDesde: texto(b.regimenDesde, 10), ...(texto(b.marca, 100) ? { marca: texto(b.marca, 100) } : {}),
+      });
+      await asignarEmpresa(d.db, s.usuarioId, empresaId, 'DUENO');
+      // Queda elegida en esta sesión para seguir configurándola (certificado, usuarios).
+      await d.db.query(`UPDATE sesiones SET empresa_id = $2 WHERE id = $1`, [s.sesionId, empresaId]);
+      return c.json({ ok: true, empresaId }, 201);
+    } catch (e) {
+      if (e instanceof ErrorEmpresa) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+
+  // Certificado digital (.pfx/.p12) de la empresa elegida: solo el DUEÑO. Se guarda cifrado.
+  app.post('/panel/api/certificado', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño de la empresa carga el certificado digital.');
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const base64 = typeof b.pfx === 'string' ? b.pfx.replace(/^data:[^;]*;base64,/, '') : '';
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64) || base64.length > 60_000) return d.error(c, 422, 'DATOS_INVALIDOS', 'Elige el archivo .pfx o .p12 del certificado.');
+    try {
+      const r = await guardarCertificado(d.db, {
+        empresaId: s.empresa.id, pfx: Buffer.from(base64, 'base64'), clave: typeof b.clave === 'string' ? b.clave.slice(0, 200) : '', llaveMaestra: d.llaveMaestra,
+      });
+      await d.db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id) VALUES ($1, $2, 'CARGAR_CERTIFICADO', 'empresas', $1)`, [s.empresa.id, s.usuarioId]);
+      return c.json({ ok: true, titular: r.certificado.sujeto, vence: r.certificado.validoHasta.toISOString().slice(0, 10) });
+    } catch (e) {
+      // Una contraseña equivocada cuenta como intento fallido (no se puede adivinar sin fin).
+      if (e instanceof ErrorCertificado) return d.fallos.contar(ip) ? d.error(c, 422, 'CERTIFICADO_INVALIDO', e.message) : frenado(c);
+      throw e;
+    }
+  });
+
+  app.get('/panel/api/usuarios', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño administra los usuarios.');
+    const r = await d.db.query(
+      `SELECT u.id, u.email, u.nombre, ue.rol::text AS rol, u.activo, u.totp_activo FROM usuario_empresa ue JOIN usuarios u ON u.id = ue.usuario_id
+        WHERE ue.empresa_id = $1 ORDER BY u.nombre`,
+      [s.empresa.id],
+    );
+    return c.json({ usuarios: r.rows.map((x) => ({ id: x.id, email: x.email, nombre: x.nombre, rol: x.rol, activo: x.activo, dosPasos: x.totp_activo })) });
+  });
+
+  // Dar acceso a otra persona (vendedor, contador…). Si el correo es nuevo, se crea el usuario
+  // y se devuelve el QR para que lo escanee en SU celular; queda activo al confirmar el código.
+  app.post('/panel/api/usuarios', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño da acceso a otras personas.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const rol = texto(b.rol, 20).toUpperCase() as Rol;
+    if (!ROLES.includes(rol) || rol === 'DUENO') return d.error(c, 422, 'DATOS_INVALIDOS', 'Rol: ADMIN, VENDEDOR, CONTADOR o SOLO_LECTURA.');
+    const email = texto(b.email, 200).toLowerCase();
+    const existente = (await d.db.query(`SELECT id FROM usuarios WHERE lower(email) = $1`, [email])).rows[0];
+    if (existente) {
+      await asignarEmpresa(d.db, existente.id as string, s.empresa.id, rol);
+      return c.json({ ok: true, existente: true });
+    }
+    try {
+      const { usuarioId, secreto } = await crearUsuario(d.db, {
+        email, nombre: texto(b.nombre, 120), contrasena: typeof b.contrasena === 'string' ? b.contrasena.slice(0, 200) : '', llaveMaestra: d.llaveMaestra,
+      });
+      await asignarEmpresa(d.db, usuarioId, s.empresa.id, rol);
+      const url = urlOtpauth(email, secreto);
+      return c.json({ ok: true, usuarioId, qr: await QRCode.toDataURL(url, { margin: 1, width: 220 }), clave: base32(secreto) }, 201);
+    } catch (e) {
+      return d.error(c, 422, 'DATOS_INVALIDOS', e instanceof Error ? e.message : 'Datos inválidos.');
+    }
+  });
+
+  app.post('/panel/api/usuarios/:id/activar', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño activa usuarios.');
+    const id = c.req.param('id');
+    const deEsta = UUID.test(id) && (await d.db.query(`SELECT 1 FROM usuario_empresa WHERE usuario_id = $1 AND empresa_id = $2`, [id, s.empresa.id])).rowCount;
+    if (!deEsta) return d.error(c, 404, 'NO_ENCONTRADO', 'Usuario no encontrado.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    return (await activarTotp(d.db, id, texto(b.codigo, 6), d.llaveMaestra))
+      ? c.json({ ok: true })
+      : d.error(c, 422, 'CODIGO_INCORRECTO', 'Ese código no coincide. Revisa que la hora del celular esté en automático.');
   });
 }
