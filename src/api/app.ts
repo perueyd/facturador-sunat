@@ -10,6 +10,7 @@ import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import type { Almacen } from '../almacen/almacen.js';
+import { enviarAvisos, type EnviarCorreo } from '../avisos/avisos.js';
 import { procesarAhora, procesarCola, type ServiciosEnvio } from '../cola/procesar.js';
 import { MEDIOS_PAGO, estadoCobro, pagosDe, registrarPago, revisarVencimientos, type MedioPago } from '../cobros/pagos.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
@@ -37,6 +38,8 @@ export interface DependenciasApi {
   limitePorMinuto?: number;
   /** Intentos con llave o clave equivocada permitidos por minuto y por dirección (20). */
   fallosPorMinuto?: number;
+  /** Envío de avisos por correo (vencimientos, certificado, rechazos). Sin esto, no se envían. */
+  correo?: EnviarCorreo;
 }
 
 type Variables = { llave: ContextoLlave };
@@ -125,7 +128,11 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     }
     const cola = await procesarCola(dep.db, dep.servicios);
     const cuotasRevisadas = await revisarVencimientos(dep.db);
-    return c.json({ ...cola, cuotasRevisadas });
+    // Un correo que falla no debe frenar la cola: se registra y se reintenta en la próxima pasada.
+    const avisosEnviados = dep.correo
+      ? await enviarAvisos(dep.db, dep.correo).catch((e: unknown) => (console.error('[avisos]', e instanceof Error ? e.message : e), 0))
+      : 0;
+    return c.json({ ...cola, cuotasRevisadas, avisosEnviados });
   });
 
   // Enlace del cliente: ver el PDF sin llave de API, solo con un enlace firmado (ver enlaces.ts).

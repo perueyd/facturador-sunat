@@ -145,6 +145,23 @@ npm run usuario -- crear --email tu@correo.com --nombre "Tu nombre" --ruc 206166
 
 Si cambias de celular: `npm run usuario -- restablecer-2fa --email tu@correo.com`.
 
+## Paso 6c — Avisos por correo (opcional, gratis)
+
+El facturador te escribe 7 días, 3 días y el mismo día del vencimiento de tu declaración, cuando
+el certificado está por vencer (60, 30 y 7 días) y cuando SUNAT rechaza un comprobante. Llega a
+los usuarios con rol DUEÑO o ADMIN de cada empresa.
+
+1. Crea una cuenta gratis en https://resend.com con **el mismo correo** de tu usuario del panel.
+2. **API Keys → Create API Key** → cópiala.
+3. Render → facturador → **Environment** → agrega:
+   - `RESEND_API_KEY` → la clave del punto 2
+   - `AVISOS_DESDE` → `Facturador <onboarding@resend.dev>`
+4. **Save changes** (Render se reinicia solo).
+
+Sin dominio propio, Resend solo deja enviar a tu propio correo; para escribir a otros usuarios
+hay que verificar un dominio en Resend y cambiar `AVISOS_DESDE`. Para no recibir avisos de una
+empresa: `npm run empresa:modulos -- --ruc … --desactivar avisos`.
+
 ## Paso 7 — Prueba completa
 
 1. Haz un pedido en tu tienda con Yape por un monto pequeño.

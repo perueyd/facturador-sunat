@@ -114,6 +114,10 @@ async function cargarPanel() {
     b.hidden = (modulo && !tiene(modulo)) || (b.dataset.pestana === 'compras' && !yo.puedeComprar);
   }
   $('#caja-producto').hidden = !yo.puedeAdministrar;
+  $('#caja-logo').hidden = !yo.puedeAdministrar;
+  $('#caja-usuarios').hidden = !yo.esDueno;
+  $('#caja-certificado').hidden = !yo.esDueno;
+  $('#caja-empresa-nueva').hidden = !yo.adminPlataforma;
   $('#caja-ajuste').hidden = !yo.puedeAdministrar;
   if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
   productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
@@ -359,6 +363,7 @@ async function abrirPestana(nombre) {
     if (nombre === 'cobrar') await cargarPorCobrar();
     if (nombre === 'compras') await cargarCompras();
     if (nombre === 'stock') await cargarStock();
+    if (nombre === 'mas') await cargarUsuarios();
   } catch (err) { alert(err.message); }
 }
 
@@ -536,6 +541,114 @@ function agregarCuota() {
   $('#cuotas').appendChild(nodo);
 }
 
+// Logo: se achica en el navegador (máx. 600×300) para que pese poco y cargue rápido en el PDF.
+async function subirLogo(e) {
+  const archivo = e.target.files?.[0];
+  const msg = $('#mensaje-logo');
+  if (!archivo) return;
+  try {
+    const img = await createImageBitmap(archivo);
+    const escala = Math.min(1, 600 / img.width, 300 / img.height);
+    const lienzo = document.createElement('canvas');
+    lienzo.width = Math.round(img.width * escala);
+    lienzo.height = Math.round(img.height * escala);
+    lienzo.getContext('2d').drawImage(img, 0, 0, lienzo.width, lienzo.height);
+    let datos = lienzo.toDataURL('image/png');
+    if (datos.length > 90_000) datos = lienzo.toDataURL('image/jpeg', 0.85);
+    await api('/logo', { cuerpo: { imagen: datos } });
+    msg.className = '';
+    msg.textContent = '✔ Logo actualizado. Abre el PDF de un comprobante para verlo.';
+  } catch (err) {
+    msg.className = 'error';
+    msg.textContent = err.message || 'No se pudo leer la imagen.';
+  } finally {
+    e.target.value = '';
+  }
+}
+
+function mensaje(selector, texto, error = false) {
+  const p = $(selector);
+  p.className = error ? 'error' : '';
+  p.textContent = texto;
+}
+
+const leerBase64 = (archivo) => new Promise((ok, falla) => {
+  const r = new FileReader();
+  r.onload = () => ok(String(r.result));
+  r.onerror = () => falla(new Error('No se pudo leer el archivo.'));
+  r.readAsDataURL(archivo);
+});
+
+// ---------- Usuarios, certificado y empresas ----------
+let usuarioPorActivar = null;
+async function cargarUsuarios() {
+  if (!yo?.esDueno) return;
+  const { usuarios } = await api('/usuarios');
+  $('#lista-usuarios').replaceChildren(...usuarios.map((u) =>
+    linea(`${u.nombre} · ${u.email}`, `${u.rol}${u.activo ? '' : ' · desactivado'}${u.dosPasos ? '' : ' · falta activar'}`)));
+}
+
+async function alDarAcceso(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    const r = await api('/usuarios', { cuerpo: { email: f.get('email'), rol: f.get('rol'), nombre: f.get('nombre'), contrasena: f.get('contrasena') } });
+    e.target.reset();
+    if (r.existente) {
+      mensaje('#mensaje-usuario', '✔ Ya tenía cuenta: ahora también tiene acceso a esta empresa.');
+    } else {
+      usuarioPorActivar = r.usuarioId;
+      $('#qr-usuario').src = r.qr;
+      $('#clave-usuario').textContent = r.clave;
+      $('#form-activar').hidden = false;
+      mensaje('#mensaje-usuario', '');
+    }
+    await cargarUsuarios();
+  } catch (err) {
+    mensaje('#mensaje-usuario', err.message, true);
+  }
+}
+
+async function alActivar(e) {
+  e.preventDefault();
+  try {
+    await api(`/usuarios/${usuarioPorActivar}/activar`, { cuerpo: { codigo: new FormData(e.target).get('codigo') } });
+    e.target.reset();
+    $('#form-activar').hidden = true;
+    $('#qr-usuario').removeAttribute('src');
+    mensaje('#mensaje-usuario', '✔ Usuario activado: ya puede entrar al panel.');
+    await cargarUsuarios();
+  } catch (err) {
+    mensaje('#mensaje-activar', err.message, true);
+  }
+}
+
+async function alCargarCertificado(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    const r = await api('/certificado', { cuerpo: { pfx: await leerBase64(f.get('archivo')), clave: f.get('clave') } });
+    e.target.reset();
+    mensaje('#mensaje-certificado', `✔ Certificado cargado. Vence el ${r.vence}.`);
+    await cargarTablero();
+  } catch (err) {
+    mensaje('#mensaje-certificado', err.message, true);
+  }
+}
+
+async function alCrearEmpresa(e) {
+  e.preventDefault();
+  const datos = Object.fromEntries(new FormData(e.target));
+  try {
+    await api('/empresas', { cuerpo: datos });
+    e.target.reset();
+    mensaje('#mensaje-empresa', '✔ Empresa creada. Ahora carga su certificado digital aquí arriba.');
+    await cargarPanel();
+  } catch (err) {
+    mensaje('#mensaje-empresa', err.message, true);
+  }
+}
+
 async function exportar() {
   const mes = $('#mes-exportar').value;
   const res = await api(`/exportar?mes=${encodeURIComponent(mes)}`, { crudo: true });
@@ -571,6 +684,11 @@ async function buscarCliente(e) {
 
 document.addEventListener('DOMContentLoaded', () => {
   $('#exportar').addEventListener('click', exportar);
+  $('#archivo-logo').addEventListener('change', subirLogo);
+  $('#form-usuario').addEventListener('submit', alDarAcceso);
+  $('#form-activar').addEventListener('submit', alActivar);
+  $('#form-certificado').addEventListener('submit', alCargarCertificado);
+  $('#form-empresa').addEventListener('submit', alCrearEmpresa);
   for (const b of document.querySelectorAll('#pestanas button')) b.addEventListener('click', () => abrirPestana(b.dataset.pestana));
   $('#forma-pago').addEventListener('change', (e) => {
     $('#caja-cuotas').hidden = e.target.value !== 'CREDITO';

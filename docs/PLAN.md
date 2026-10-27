@@ -607,8 +607,18 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   - **Venta al crédito con cuotas** (solo facturas) y **cobros** de saldos (mismo nº de operación
     no se registra dos veces).
   - **Stock**: ver, crear productos y ajustar con motivo (dueño o administrador).
+- **Avisos por correo** (Resend, gratis; apagado sin `RESEND_API_KEY`): vencimiento de la
+  declaración (7, 3 y 0 días), certificado (60, 30 y 7 días) y alertas rojas. Salen una sola
+  vez cada uno (`avisos_enviados`, migración 017) y se reintentan si el envío falla.
+- **Para venderlo como producto** (pestaña "Más"):
+  - **Usuarios**: el DUEÑO da acceso a vendedores, administradores o su contador; si el correo
+    es nuevo, el panel muestra el QR para el celular de esa persona y se activa con su código.
+  - **Certificado digital** (.pfx/.p12): lo carga o renueva el DUEÑO; se guarda cifrado.
+  - **Logo** de la empresa en el PDF (se achica en el navegador; solo PNG/JPG reales, 70 KB).
+  - **Alta de empresas nuevas**: solo el administrador de la plataforma
+    (`npm run usuario -- plataforma --email …`); nunca pisa una empresa que ya existe.
 - **Cada empresa elige qué funciones usa** (`npm run empresa:modulos`): panel, vencimientos,
-  resumen, certificado, cobros, notas, productos, exportar, compras. Sin "panel", la empresa ni aparece
+  resumen, certificado, cobros, notas, productos, exportar, compras, avisos. Sin "panel", la empresa ni aparece
   en el panel y sigue solo por API.
 
 ## 19. Decisiones que siguen abiertas

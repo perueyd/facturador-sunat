@@ -6,6 +6,7 @@
  *   npm run usuario -- restablecer-2fa --email tu@correo.com
  *   npm run usuario -- desactivar  --email tu@correo.com
  *   npm run usuario -- listar      --ruc 20XXXXXXXXX
+ *   npm run usuario -- plataforma  --email tu@correo.com   (puede dar de alta empresas desde el panel)
  *
  * Roles: DUENO, ADMIN y VENDEDOR emiten; CONTADOR y SOLO_LECTURA solo consultan.
  * La contraseña se pide por teclado (salen asteriscos). Después aparece un código QR:
@@ -82,6 +83,11 @@ try {
     await db.query(`UPDATE usuarios SET activo = false WHERE id = $1`, [usuarioId]);
     await cerrarSesionesDe(db, usuarioId);
     console.log(`✔ ${v.email} desactivado; sus sesiones se cerraron.`);
+  } else if (accion === 'plataforma') {
+    const usuarioId = await usuarioPorEmail(db, v.email);
+    await db.query(`UPDATE usuarios SET admin_plataforma = true WHERE id = $1`, [usuarioId]);
+    await db.query(`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id) VALUES ($1, 'ADMIN_PLATAFORMA', 'usuarios', $1)`, [usuarioId]);
+    console.log(`✔ ${v.email} ahora puede dar de alta empresas desde el panel.`);
   } else if (accion === 'listar') {
     const empresa = await empresaPorRuc(db, v.ruc);
     const r = await db.query(
@@ -91,7 +97,7 @@ try {
     );
     console.table(r.rows.map((x) => ({ correo: x.email, nombre: x.nombre, rol: x.rol, estado: x.activo ? 'ACTIVO' : 'DESACTIVADO', dosPasos: x.totp_activo ? 'sí' : 'NO' })));
   } else {
-    throw new Error('Acción: crear | asignar | restablecer-2fa | desactivar | listar (ver el encabezado de scripts/usuario.ts).');
+    throw new Error('Acción: crear | asignar | restablecer-2fa | desactivar | listar | plataforma (ver el encabezado de scripts/usuario.ts).');
   }
 } catch (e) {
   console.error('✘', e instanceof Error ? e.message : e);

@@ -382,4 +382,80 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect((await pedir('/panel/api/compras', { cookie })).status).toBe(403);
     expect((await (await pedir('/panel/api/yo', { cookie })).json()).puedeComprar).toBe(false);
   });
+
+  it('logo: solo PNG/JPG reales, solo dueño/administrador; sale en el PDF', async () => {
+    const { PNG } = await import('pngjs');
+    const png = new PNG({ width: 40, height: 20 });
+    png.data.fill(120);
+    const imagen = PNG.sync.write(png).toString('base64');
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    const dueno = await entrar(await usuario('DUENO'));
+    expect((await pedir('/panel/api/logo', { cookie: vendedor, cuerpo: { imagen } })).status).toBe(403);
+    expect((await pedir('/panel/api/logo', { cookie: dueno, cuerpo: { imagen: Buffer.from('<svg onload=x>').toString('base64') } })).status).toBe(422);
+    const b = await emitida(dueno);
+    // Cuántas imágenes trae el PDF (el QR ya es una): con logo debe haber más.
+    const imagenes = async () => (Buffer.from(await (await pedir(`/panel/api/comprobantes/${b.id}/pdf`, { cookie: dueno })).arrayBuffer())
+      .toString('latin1').match(/\/Subtype \/Image/g) ?? []).length;
+    const antes = await imagenes();
+    expect((await pedir('/panel/api/logo', { cookie: dueno, cuerpo: { imagen: `data:image/png;base64,${imagen}` } })).status).toBe(200);
+    expect(await imagenes()).toBeGreaterThan(antes);
+  });
+
+  // ---------- Empresas, certificado y usuarios desde el panel ----------
+
+  const desdeBase32 = (texto: string) => {
+    let bits = '';
+    for (const ch of texto) bits += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(ch).toString(2).padStart(5, '0');
+    return Buffer.from((bits.match(/.{8}/g) ?? []).map((b) => Number.parseInt(b, 2)));
+  };
+
+  it('dueño da acceso a un vendedor: QR, activación con su código y el vendedor entra', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const admin = await entrar(await usuario('ADMIN'));
+    const nuevo = { email: `vendedor${++n}@prueba.pe`, nombre: 'Vendedora', contrasena: CONTRASENA, rol: 'VENDEDOR' };
+    expect((await pedir('/panel/api/usuarios', { cookie: admin, cuerpo: nuevo })).status).toBe(403);
+    expect((await pedir('/panel/api/usuarios', { cookie: dueno, cuerpo: { ...nuevo, rol: 'DUENO' } })).status).toBe(422);
+    const r = await pedir('/panel/api/usuarios', { cookie: dueno, cuerpo: nuevo });
+    expect(r.status).toBe(201);
+    const d = await r.json();
+    expect(d.qr).toMatch(/^data:image\/png;base64,/);
+    const secreto = desdeBase32(d.clave);
+    // Sin activar todavía no entra.
+    expect((await pedir('/panel/api/entrar', { cuerpo: { email: nuevo.email, contrasena: CONTRASENA, codigo: codigoTotp(secreto, pasoActual()) } })).status).toBe(401);
+    expect((await pedir(`/panel/api/usuarios/${d.usuarioId}/activar`, { cookie: dueno, cuerpo: { codigo: '000000' } })).status).toBe(422);
+    expect((await pedir(`/panel/api/usuarios/${d.usuarioId}/activar`, { cookie: dueno, cuerpo: { codigo: codigoTotp(secreto, pasoActual() - 1) } })).status).toBe(200);
+    const cookie = await entrar({ email: nuevo.email, secreto });
+    expect(await (await pedir('/panel/api/yo', { cookie })).json()).toMatchObject({ puedeEmitir: true, esDueno: false });
+    const lista = (await (await pedir('/panel/api/usuarios', { cookie: dueno })).json()).usuarios;
+    expect(lista.some((u: { email: string; rol: string }) => u.email === nuevo.email && u.rol === 'VENDEDOR')).toBe(true);
+  });
+
+  it('certificado desde el panel: solo el dueño; contraseña equivocada se explica', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const admin = await entrar(await usuario('ADMIN'));
+    const pfx = crearPfxPrueba().toString('base64');
+    expect((await pedir('/panel/api/certificado', { cookie: admin, cuerpo: { pfx, clave: 'clave-de-prueba' } })).status).toBe(403);
+    const mal = await pedir('/panel/api/certificado', { cookie: dueno, cuerpo: { pfx, clave: 'otra' } });
+    expect(mal.status).toBe(422);
+    expect((await mal.json()).error.mensaje).toMatch(/contraseña/);
+    const ok = await pedir('/panel/api/certificado', { cookie: dueno, cuerpo: { pfx: `data:application/x-pkcs12;base64,${pfx}`, clave: 'clave-de-prueba' } });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).vence).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('alta de empresa: solo administrador de la plataforma; no pisa una existente', async () => {
+    const u = await usuario('DUENO');
+    const cookie = await entrar(u);
+    const base = `20${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
+    const nueva = { ruc: base + digitoVerificadorRuc(base), razonSocial: 'NUEVO NEGOCIO S.A.C.', direccion: 'AV. NUEVA 1', distrito: 'LIMA', provincia: 'LIMA',
+      departamento: 'LIMA', ubigeo: '150101', regimen: 'MYPE_TRIBUTARIO', regimenDesde: '2026-01-01' };
+    expect((await pedir('/panel/api/empresas', { cookie, cuerpo: nueva })).status).toBe(403);
+    await db.query(`UPDATE usuarios SET admin_plataforma = true WHERE id = $1`, [u.usuarioId]);
+    expect((await pedir('/panel/api/empresas', { cookie, cuerpo: { ...nueva, ruc: '20123456789' } })).status).toBe(422);
+    expect((await pedir('/panel/api/empresas', { cookie, cuerpo: nueva })).status).toBe(201);
+    const yo = await (await pedir('/panel/api/yo', { cookie })).json();
+    expect(yo.empresa).toMatchObject({ razonSocial: 'NUEVO NEGOCIO S.A.C.', rol: 'DUENO' });
+    expect(yo.empresas).toHaveLength(2);
+    expect((await pedir('/panel/api/empresas', { cookie, cuerpo: { ...nueva, razonSocial: 'OTRA COSA' } })).status).toBe(409);
+  });
 });
