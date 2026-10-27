@@ -601,8 +601,14 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   DNI/RUC.
 - **Exportar** las ventas del mes a Excel (CSV), para el contador.
 - **Cambiar la contraseña** (exige la actual y un código nuevo; cierra las otras sesiones).
+- **Pestañas** Vender · Cobrar · Compras · Stock · Más:
+  - **Compras** de proveedores (dueño, administrador o contador): su IGV se descuenta del IGV
+    estimado del mes; con producto, suma al stock. El IGV se sugiere con la tasa vigente de la base.
+  - **Venta al crédito con cuotas** (solo facturas) y **cobros** de saldos (mismo nº de operación
+    no se registra dos veces).
+  - **Stock**: ver, crear productos y ajustar con motivo (dueño o administrador).
 - **Cada empresa elige qué funciones usa** (`npm run empresa:modulos`): panel, vencimientos,
-  resumen, certificado, cobros, notas, productos, exportar. Sin "panel", la empresa ni aparece
+  resumen, certificado, cobros, notas, productos, exportar, compras. Sin "panel", la empresa ni aparece
   en el panel y sigue solo por API.
 
 ## 19. Decisiones que siguen abiertas

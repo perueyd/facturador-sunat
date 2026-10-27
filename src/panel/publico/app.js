@@ -109,6 +109,12 @@ async function cargarPanel() {
   $('#form-emitir').hidden = !yo.puedeEmitir;
   $('#sin-permiso').hidden = yo.puedeEmitir;
   $('#caja-exportar').hidden = !tiene('exportar');
+  for (const b of document.querySelectorAll('#pestanas button')) {
+    const modulo = b.dataset.modulo;
+    b.hidden = (modulo && !tiene(modulo)) || (b.dataset.pestana === 'compras' && !yo.puedeComprar);
+  }
+  $('#caja-producto').hidden = !yo.puedeAdministrar;
+  $('#caja-ajuste').hidden = !yo.puedeAdministrar;
   if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
   productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
   $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
@@ -252,6 +258,9 @@ function mostrarResultado(c) {
     }));
     botones.append(boton('Copiar enlace', () => navigator.clipboard?.writeText(c.enlaces.cliente)));
   }
+  if (tiene('cobros') && c.tipo !== '07' && c.saldo && c.saldo !== '0.00' && c.estado !== 'RECHAZADO') {
+    botones.append(boton(`Registrar cobro (saldo S/ ${c.saldo})`, () => abrirCobro({ id: c.id, numero: c.numero, saldo: c.saldo })));
+  }
   // Corregir: devolución total (nota de crédito) o anulación. Solo dueño/administrador.
   if (yo?.puedeCorregir && c.tipo !== '07' && (c.estado === 'ACEPTADO' || c.estado === 'ACEPTADO_OBS')) {
     const corregir = boton('Devolución total (nota de crédito)', async () => {
@@ -311,6 +320,11 @@ async function alEmitir(e) {
       ? { cliente: { tipoDocumento, numero: String(f.get('numero')).trim(), nombre: String(f.get('nombre')).trim() } }
       : {}),
     ...(f.get('medio') ? { pago: { medio: f.get('medio'), ...(f.get('referencia') ? { referencia: f.get('referencia') } : {}) } } : {}),
+    ...(f.get('formaPago') === 'CREDITO'
+      ? { formaPago: { cuotas: [...document.querySelectorAll('#cuotas .cuota')].map((q) => ({
+          monto: q.querySelector('[name=monto]').value.trim().replace(',', '.'), vence: q.querySelector('[name=vence]').value,
+        })) } }
+      : {}),
   };
   const b = $('#boton-emitir');
   b.disabled = true;
@@ -323,15 +337,203 @@ async function alEmitir(e) {
     pedidoActual = nuevoPedido();
     e.target.reset();
     $('#items').replaceChildren();
+    $('#cuotas').replaceChildren();
+    $('#caja-cuotas').hidden = true;
+    $('#opcion-credito').disabled = true;
     agregarItem();
     recalcularTotal();
-    await cargarLista();
+    await Promise.all([cargarLista(), cargarTablero()]);
   } catch (err) {
     $('#error-emitir').textContent = [err.message, ...(err.detalles || [])].join('\n');
   } finally {
     b.disabled = false;
     b.textContent = 'Emitir';
   }
+}
+
+// ---------- Pestañas ----------
+async function abrirPestana(nombre) {
+  for (const b of document.querySelectorAll('#pestanas button')) b.classList.toggle('activa', b.dataset.pestana === nombre);
+  for (const v of document.querySelectorAll('[data-vista]')) v.hidden = v.dataset.vista !== nombre;
+  try {
+    if (nombre === 'cobrar') await cargarPorCobrar();
+    if (nombre === 'compras') await cargarCompras();
+    if (nombre === 'stock') await cargarStock();
+  } catch (err) { alert(err.message); }
+}
+
+function linea(texto, derecha, clase = '') {
+  const li = document.createElement('li');
+  if (clase) li.className = clase;
+  const a = document.createElement('span');
+  a.textContent = texto;
+  const b = document.createElement('span');
+  b.textContent = derecha;
+  li.append(a, b);
+  return li;
+}
+
+// ---------- Cobrar ----------
+let cobroActual = null;
+async function cargarPorCobrar() {
+  const { porCobrar } = await api('/por-cobrar');
+  $('#lista-cobrar').replaceChildren(...(porCobrar.length ? porCobrar.map((x) => {
+    const li = linea(`${x.numero} · ${x.cliente}`, `S/ ${x.saldo}${x.proximaCuota ? ` · cuota ${x.proximaCuota}` : ''}`);
+    li.addEventListener('click', () => abrirCobro(x));
+    return li;
+  }) : [linea('Nadie te debe. 🎉', '')]));
+  $('#form-cobro').hidden = true;
+}
+
+async function abrirCobro(x) {
+  cobroActual = x;
+  if ($('[data-vista=cobrar]').hidden) await abrirPestana('cobrar');
+  $('#cobro-titulo').textContent = `${x.numero} — saldo S/ ${x.saldo}`;
+  $('#form-cobro').hidden = false;
+  $('#form-cobro').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function alCobrar(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  $('#error-cobro').textContent = '';
+  try {
+    const c = await api(`/comprobantes/${cobroActual.id}/pagos`, { cuerpo: {
+      medio: f.get('medio'), ...(f.get('monto') ? { monto: String(f.get('monto')).trim().replace(',', '.') } : {}),
+      ...(f.get('referencia') ? { referencia: f.get('referencia') } : {}),
+    } });
+    e.target.reset();
+    alert(`Cobro registrado. Saldo de ${c.numero}: S/ ${c.saldo}`);
+    await Promise.all([cargarPorCobrar(), cargarTablero()]);
+  } catch (err) {
+    $('#error-cobro').textContent = err.message;
+  }
+}
+
+// ---------- Compras ----------
+function agregarLineaCompra() {
+  const nodo = $('#plantilla-compra').content.cloneNode(true);
+  nodo.querySelector('.quitar').addEventListener('click', (e) => {
+    if (document.querySelectorAll('#items-compra .item').length > 1) e.target.closest('.item').remove();
+    sugerirMontosCompra();
+  });
+  for (const i of nodo.querySelectorAll('input')) i.addEventListener('input', sugerirMontosCompra);
+  $('#items-compra').appendChild(nodo);
+}
+
+// Sugiere IGV y total a partir del detalle, con la tasa vigente que manda el facturador;
+// el usuario los corrige si la factura dice otra cosa.
+function sugerirMontosCompra() {
+  const tasa = /^0\.\d{1,6}$/.test(yo?.igvTasa ?? '') ? BigInt((yo.igvTasa.slice(2) + '0000').slice(0, 4)) : null; // en diezmilésimos
+  if (tasa === null) return;
+  let base = 0n;
+  for (const fila of document.querySelectorAll('#items-compra .item')) {
+    const costo = aCentimos(fila.querySelector('[name=costoUnitario]').value || '0');
+    const cantidad = fila.querySelector('[name=cantidad]').value.trim();
+    if (costo === null || !/^\d+$/.test(cantidad)) return;
+    base += costo * BigInt(cantidad);
+  }
+  const igv = (base * tasa + 5000n) / 10000n;
+  const f = $('#form-compra');
+  f.igv.value = textoSoles(igv).slice(3);
+  f.total.value = textoSoles(base + igv).slice(3);
+}
+
+async function cargarCompras() {
+  const { compras } = await api('/compras');
+  $('#lista-compras').replaceChildren(...compras.map((x) => linea(`${x.fecha} · ${x.numero} · ${x.proveedor}`, `S/ ${x.total} (IGV ${x.igv})`)));
+  if (!$('#items-compra').children.length) agregarLineaCompra();
+  if (!$('#form-compra').fecha.value) $('#form-compra').fecha.value = new Date().toISOString().slice(0, 10);
+  if (tiene('productos')) {
+    const { stock } = await api('/stock');
+    $('#lista-skus').replaceChildren(...stock.map((p) => new Option(p.nombre, p.sku)));
+  }
+}
+
+async function alComprar(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  $('#error-compra').textContent = '';
+  $('#ok-compra').textContent = '';
+  const items = [...document.querySelectorAll('#items-compra .item')].map((fila) => ({
+    descripcion: fila.querySelector('[name=descripcion]').value.trim(),
+    cantidad: fila.querySelector('[name=cantidad]').value.trim().replace(',', '.'),
+    costoUnitario: fila.querySelector('[name=costoUnitario]').value.trim().replace(',', '.'),
+    sku: fila.querySelector('[name=sku]').value.trim(),
+  }));
+  try {
+    await api('/compras', { cuerpo: {
+      proveedor: { ruc: String(f.get('ruc')).trim(), razonSocial: String(f.get('razonSocial')).trim() },
+      tipo: f.get('tipo'), serie: String(f.get('serie')).trim(), numero: String(f.get('numero')).trim(), fecha: f.get('fecha'),
+      igv: String(f.get('igv')).trim().replace(',', '.'), total: String(f.get('total')).trim().replace(',', '.'), items,
+    } });
+    e.target.reset();
+    $('#items-compra').replaceChildren();
+    $('#ok-compra').textContent = '✔ Compra registrada. Su IGV ya se descuenta en el tablero.';
+    await Promise.all([cargarCompras(), cargarTablero()]);
+  } catch (err) {
+    $('#error-compra').textContent = err.message;
+  }
+}
+
+async function buscarProveedor(e) {
+  const ruc = e.target.value.trim();
+  const campo = $('#form-compra').razonSocial;
+  if (!/^\d{11}$/.test(ruc) || campo.value.trim()) return;
+  try { campo.value = (await api(`/proveedores?ruc=${ruc}`)).razonSocial; } catch { /* proveedor nuevo */ }
+}
+
+// ---------- Stock ----------
+async function cargarStock() {
+  const { stock } = await api('/stock');
+  $('#lista-stock').replaceChildren(...(stock.length ? stock.map((p) =>
+    linea(`${p.sku} · ${p.nombre}`, `${p.stock} und.${p.minimo ? ` (mín. ${p.minimo})` : ''}`, p.bajoMinimo ? 'bajo' : ''))
+    : [linea('Aún no tienes productos con stock.', '')]));
+}
+
+async function alGuardarProducto(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const msg = $('#mensaje-producto');
+  try {
+    await api('/productos', { cuerpo: {
+      sku: f.get('sku'), nombre: f.get('nombre'), precio: String(f.get('precio')).trim().replace(',', '.'),
+      controlaStock: f.get('controlaStock') === 'si', ...(f.get('stockMinimo') ? { stockMinimo: f.get('stockMinimo') } : {}),
+    } });
+    msg.className = '';
+    msg.textContent = '✔ Producto guardado.';
+    e.target.reset();
+    await cargarStock();
+    productos = (await api('/productos')).productos;
+    $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
+  } catch (err) {
+    msg.className = 'error';
+    msg.textContent = err.message;
+  }
+}
+
+async function alAjustar(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const msg = $('#mensaje-ajuste');
+  try {
+    const r = await api('/stock/ajuste', { cuerpo: { sku: f.get('sku'), cantidad: String(f.get('cantidad')).replace('+', '').trim(), motivo: f.get('motivo') } });
+    msg.className = '';
+    msg.textContent = `✔ Stock actual: ${r.stock}`;
+    e.target.reset();
+    await cargarStock();
+  } catch (err) {
+    msg.className = 'error';
+    msg.textContent = err.message;
+  }
+}
+
+function agregarCuota() {
+  const nodo = $('#plantilla-cuota').content.cloneNode(true);
+  nodo.querySelector('.quitar').addEventListener('click', (e) => {
+    if (document.querySelectorAll('#cuotas .cuota').length > 1) e.target.closest('.cuota').remove();
+  });
+  $('#cuotas').appendChild(nodo);
 }
 
 async function exportar() {
@@ -369,6 +571,27 @@ async function buscarCliente(e) {
 
 document.addEventListener('DOMContentLoaded', () => {
   $('#exportar').addEventListener('click', exportar);
+  for (const b of document.querySelectorAll('#pestanas button')) b.addEventListener('click', () => abrirPestana(b.dataset.pestana));
+  $('#forma-pago').addEventListener('change', (e) => {
+    $('#caja-cuotas').hidden = e.target.value !== 'CREDITO';
+    if (e.target.value === 'CREDITO' && !$('#cuotas').children.length) agregarCuota();
+  });
+  $('#agregar-cuota').addEventListener('click', agregarCuota);
+  // El crédito en cuotas solo existe para facturas (lo valida también el facturador).
+  $('#form-emitir').tipo.addEventListener('change', (e) => {
+    const factura = e.target.value === 'FACTURA';
+    $('#opcion-credito').disabled = !factura;
+    if (!factura && $('#forma-pago').value === 'CREDITO') {
+      $('#forma-pago').value = 'CONTADO';
+      $('#caja-cuotas').hidden = true;
+    }
+  });
+  $('#form-cobro').addEventListener('submit', alCobrar);
+  $('#form-compra').addEventListener('submit', alComprar);
+  $('#form-compra').ruc.addEventListener('change', buscarProveedor);
+  $('#agregar-compra').addEventListener('click', agregarLineaCompra);
+  $('#form-producto').addEventListener('submit', alGuardarProducto);
+  $('#form-ajuste').addEventListener('submit', alAjustar);
   $('#form-contrasena').addEventListener('submit', alCambiarContrasena);
   $('[name=numero]').addEventListener('change', buscarCliente);
   $('#form-entrar').addEventListener('submit', alEntrar);

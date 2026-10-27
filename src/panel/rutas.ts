@@ -19,14 +19,19 @@ import type { Almacen } from '../almacen/almacen.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
 import type { Db } from '../db/conexion.js';
+import { MEDIOS_PAGO, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
 import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
+import { registrarCompra } from '../inventario/compras.js';
+import { ErrorInventario, ajustarStock, guardarProducto, listarStock } from '../inventario/productos.js';
 import { ErrorPdf } from '../pdf/representacion.js';
 import { tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
 import { ROLES_EMISORES, cambiarContrasena, elegirEmpresa, entrar, leerSesion, salir, type Rol, type Sesion } from './usuarios.js';
 
-/** Notas de crédito y anulaciones: solo quienes responden por la empresa. */
+/** Notas de crédito, anulaciones, productos y stock: solo quienes responden por la empresa. */
 const ROLES_CORRIGEN: readonly Rol[] = ['DUENO', 'ADMIN'];
+/** Compras de proveedores: también el contador. */
+const ROLES_COMPRAS: readonly Rol[] = ['DUENO', 'ADMIN', 'CONTADOR'];
 
 const COOKIE = '__Host-panel';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -132,10 +137,17 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const canales = s.empresa
       ? (await d.db.query(`SELECT nombre FROM canales WHERE empresa_id = $1 AND tipo = 'MANUAL' AND activo ORDER BY nombre`, [s.empresa.id])).rows.map((x) => x.nombre as string)
       : [];
+    // Tasa vigente del IGV (parámetro con fecha de vigencia): solo para SUGERIR montos en el formulario.
+    const igv = (await d.db.query(
+      `SELECT valor::text FROM parametros_tributarios WHERE codigo = 'IGV_TASA' AND regimen IS NULL
+         AND vigente_desde <= current_date AND (vigente_hasta IS NULL OR vigente_hasta >= current_date) ORDER BY vigente_desde DESC LIMIT 1`,
+    )).rows[0]?.valor as string | undefined;
     return c.json({
-      nombre: s.nombre, email: s.email, empresas: s.empresas, empresa: s.empresa ?? null, canales,
+      nombre: s.nombre, email: s.email, empresas: s.empresas, empresa: s.empresa ?? null, canales, igvTasa: igv ?? null,
       puedeEmitir: Boolean(s.empresa && ROLES_EMISORES.includes(s.empresa.rol)),
       puedeCorregir: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol) && s.empresa.modulos.includes('notas')),
+      puedeAdministrar: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol)),
+      puedeComprar: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('compras')),
     });
   });
 
@@ -333,5 +345,142 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     });
     if (!r.ok) return d.fallos.contar(ip) ? d.error(c, 422, 'NO_SE_PUDO', r.mensaje) : frenado(c);
     return c.json({ ok: true });
+  });
+
+  // ---------- Compras, stock y cobros ----------
+
+  /** Errores de negocio (datos que no cuadran) se explican; lo demás es error interno. */
+  const negocio = (c: Context, e: unknown) => {
+    if (e instanceof ErrorInventario) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+    throw e;
+  };
+
+  app.get('/panel/api/stock', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
+    return c.json({ stock: await listarStock(d.db, s.empresa.id) });
+  });
+
+  app.post('/panel/api/productos', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador crea productos.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      await guardarProducto(d.db, s.empresa.id, {
+        sku: texto(b.sku, 40), nombre: texto(b.nombre, 250), precio: texto(b.precio, 20) || '0',
+        controlaStock: b.controlaStock !== false, ...(texto(b.stockMinimo, 20) ? { stockMinimo: texto(b.stockMinimo, 20) } : {}),
+      });
+    } catch (e) {
+      return negocio(c, e);
+    }
+    return c.json({ ok: true }, 201);
+  });
+
+  // Ajuste de stock (conteo físico, merma): motivo obligatorio; queda en el historial.
+  app.post('/panel/api/stock/ajuste', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador ajusta el stock.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const cantidad = texto(b.cantidad, 20);
+    if (!/^-?\d+(\.\d+)?$/.test(cantidad)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Cantidad inválida: usa + para entrada y - para salida, por ejemplo -1.');
+    try {
+      const stock = await ajustarStock(d.db, s.empresa.id, texto(b.sku, 40), cantidad, texto(b.motivo, 200), s.usuarioId);
+      return c.json({ ok: true, stock });
+    } catch (e) {
+      return negocio(c, e);
+    }
+  });
+
+  // Proveedor ya conocido: con su RUC se completa la razón social.
+  app.get('/panel/api/proveedores', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    const ruc = c.req.query('ruc') ?? '';
+    if (!/^\d{11}$/.test(ruc)) return d.error(c, 400, 'DOCUMENTO_INVALIDO', 'RUC inválido.');
+    const r = await d.db.query(`SELECT razon_social FROM proveedores WHERE empresa_id = $1 AND ruc = $2`, [s.empresa.id, ruc]);
+    return r.rows[0] ? c.json({ razonSocial: r.rows[0].razon_social }) : d.error(c, 404, 'NO_ENCONTRADO', 'Proveedor nuevo.');
+  });
+
+  // Factura o boleta de un proveedor: suma al IGV de compras del mes (y al stock si es un producto).
+  app.post('/panel/api/compras', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('compras')) return sinModulo(c, 'compras');
+    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no registra compras.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const prov = (typeof b.proveedor === 'object' && b.proveedor ? b.proveedor : {}) as Record<string, unknown>;
+    const items = (Array.isArray(b.items) ? b.items : []).slice(0, 100).map((x: Record<string, unknown>) => ({
+      ...(texto(x?.sku, 40) ? { sku: texto(x.sku, 40) } : {}),
+      descripcion: texto(x?.descripcion, 250), cantidad: texto(x?.cantidad, 20) || '1', costoUnitario: texto(x?.costoUnitario, 20),
+    }));
+    const numero = Number(texto(b.numero, 10));
+    const montos = [texto(b.igv, 20), texto(b.total, 20), ...items.flatMap((i) => [i.cantidad, i.costoUnitario])];
+    if (montos.some((m) => !/^\d+(\.\d+)?$/.test(m))) return d.error(c, 422, 'DATOS_INVALIDOS', 'Revisa los montos: usa números con punto decimal, por ejemplo 118.00.');
+    try {
+      const r = await registrarCompra(d.db, s.empresa.id, {
+        proveedor: { ruc: texto(prov.ruc, 11), razonSocial: texto(prov.razonSocial, 200) },
+        tipoComprobante: b.tipo === '03' ? '03' : '01',
+        serie: texto(b.serie, 4), numero, fecha: texto(b.fecha, 10),
+        igv: texto(b.igv, 20), total: texto(b.total, 20), items,
+      }, s.usuarioId);
+      return c.json({ ok: true, ...r }, 201);
+    } catch (e) {
+      return negocio(c, e);
+    }
+  });
+
+  app.get('/panel/api/compras', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('compras')) return sinModulo(c, 'compras');
+    const r = await d.db.query(
+      `SELECT c.fecha_emision::text AS fecha, c.serie, c.numero, p.razon_social AS proveedor, c.igv::text AS igv, c.total::text AS total
+         FROM compras c JOIN proveedores p ON p.id = c.proveedor_id
+        WHERE c.empresa_id = $1 AND c.anulada_en IS NULL ORDER BY c.creado_en DESC LIMIT 20`,
+      [s.empresa.id],
+    );
+    return c.json({ compras: r.rows.map((x) => ({ ...x, numero: `${x.serie}-${x.numero}` })) });
+  });
+
+  // Cobro de una venta al crédito o de un saldo (ej. el 50% al entregar).
+  app.post('/panel/api/comprobantes/:id/pagos', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no registra cobros.');
+    const id = await deLaEmpresa(s.empresa.id, c.req.param('id'));
+    if (!id) return d.error(c, 404, 'NO_ENCONTRADO', 'Comprobante no encontrado.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const medio = texto(b.medio, 20).toUpperCase() as MedioPago;
+    if (!MEDIOS_PAGO.includes(medio)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Elige el medio de pago.');
+    const monto = texto(b.monto, 20);
+    if (monto && !/^\d+(\.\d{1,2})?$/.test(monto)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Monto inválido, por ejemplo 150.00.');
+    const referencia = texto(b.referencia, 60);
+    const r = await registrarPago(d.db, {
+      empresaId: s.empresa.id, comprobanteId: id, medio, usuarioId: s.usuarioId,
+      ...(monto ? { monto } : {}), ...(referencia ? { referencia } : {}),
+    });
+    if (r.resultado === 'ERROR') return d.error(c, 422, 'PAGO_INVALIDO', r.errores.join(' '));
+    return c.json(await d.respuestaComprobante(c, id), r.resultado === 'REGISTRADO' ? 201 : 200);
+  });
+
+  app.get('/panel/api/por-cobrar', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    const r = await d.db.query(
+      `SELECT c.id, c.serie, c.numero, c.cliente_nombre, c.fecha_emision::text AS fecha, ${sqlSaldo('c')}::numeric(14,2)::text AS saldo,
+              (SELECT min(q.fecha_vencimiento)::text FROM comprobante_cuotas q WHERE q.comprobante_id = c.id AND NOT q.pagada) AS proxima_cuota
+         FROM comprobantes c
+        WHERE c.empresa_id = $1 AND c.tipo_comprobante <> '07' AND c.estado_pago <> 'PAGADO' AND c.estado NOT IN ('RECHAZADO', 'ANULADO')
+        ORDER BY proxima_cuota NULLS LAST, c.fecha_emision LIMIT 50`,
+      [s.empresa.id],
+    );
+    return c.json({ porCobrar: r.rows.map((x) => ({ id: x.id, numero: idComprobanteLegible(x.serie, Number(x.numero)), cliente: x.cliente_nombre, fecha: x.fecha, saldo: x.saldo, proximaCuota: x.proxima_cuota })) });
   });
 }
