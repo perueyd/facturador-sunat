@@ -21,6 +21,7 @@
     "cola:procesar": "tsx --env-file-if-exists=.env scripts/procesar-cola.ts",
     "servidor": "tsx --env-file-if-exists=.env src/servidor.ts",
     "empresa:configurar": "tsx --env-file-if-exists=.env scripts/empresa.ts",
+    "empresa:modulos": "tsx --env-file-if-exists=.env scripts/modulos.ts",
     "llave-api": "tsx --env-file-if-exists=.env scripts/llave-api.ts",
     "usuario": "tsx --env-file-if-exists=.env scripts/usuario.ts",
     "sol:configurar": "tsx --env-file-if-exists=.env scripts/credenciales-sol.ts",

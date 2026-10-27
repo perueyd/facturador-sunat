@@ -33,6 +33,10 @@
       <p id="aviso-beta" class="aviso" hidden>Ambiente de PRUEBA (beta): los comprobantes no tienen valor legal.</p>
       <label id="caja-empresa">Empresa <select id="empresa"></select></label>
 
+      <!-- Tablero: cada tarjeta aparece solo si la función está activa para la empresa -->
+      <div id="tablero" class="tablero"></div>
+      <p class="nota" id="nota-estimado" hidden>Los impuestos mostrados son <strong>estimados</strong>: confírmalos con tu contador antes de declarar.</p>
+
       <h1>Nuevo comprobante</h1>
       <p id="sin-permiso" class="aviso" hidden>Tu rol solo permite consultar.</p>
       <form id="form-emitir">
@@ -59,6 +63,7 @@
         <fieldset>
           <legend>Productos <small>(precio con IGV)</small></legend>
           <div id="items"></div>
+          <datalist id="lista-productos"></datalist>
           <button type="button" id="agregar" class="secundario">+ Agregar producto</button>
           <p class="total">Total: <strong id="total">S/ 0.00</strong></p>
         </fieldset>
@@ -83,12 +88,32 @@
 
       <h2>Últimos comprobantes</h2>
       <ul id="lista" class="lista"></ul>
+
+      <section id="caja-exportar">
+        <h2>Ventas para tu contador</h2>
+        <div class="fila">
+          <label>Mes <input type="month" id="mes-exportar"></label>
+          <button type="button" id="exportar" class="secundario">Descargar (Excel)</button>
+        </div>
+      </section>
+
+      <details class="ajustes">
+        <summary>Cambiar mi contraseña</summary>
+        <form id="form-contrasena">
+          <label>Contraseña actual <input name="actual" type="password" autocomplete="current-password" required></label>
+          <label>Contraseña nueva <small>(mínimo 10 caracteres)</small>
+            <input name="nueva" type="password" autocomplete="new-password" minlength="10" required></label>
+          <label>Código de 6 dígitos <input name="codigo" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" required></label>
+          <button type="submit" class="secundario">Cambiar contraseña</button>
+          <p id="mensaje-contrasena" role="status"></p>
+        </form>
+      </details>
     </section>
   </main>
 
   <template id="plantilla-item">
     <div class="item">
-      <input name="descripcion" placeholder="Descripción" maxlength="250" required>
+      <input name="descripcion" placeholder="Descripción" maxlength="250" list="lista-productos" required>
       <input name="cantidad" inputmode="decimal" value="1" aria-label="Cantidad" required>
       <input name="precio" inputmode="decimal" placeholder="0.00" aria-label="Precio con IGV" required>
       <button type="button" class="quitar" aria-label="Quitar">✕</button>

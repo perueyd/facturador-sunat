@@ -16,11 +16,17 @@ import type { Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Almacen } from '../almacen/almacen.js';
+import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
 import type { Db } from '../db/conexion.js';
+import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
 import { ErrorPdf } from '../pdf/representacion.js';
+import { tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
-import { ROLES_EMISORES, elegirEmpresa, entrar, leerSesion, salir, type Sesion } from './usuarios.js';
+import { ROLES_EMISORES, cambiarContrasena, elegirEmpresa, entrar, leerSesion, salir, type Rol, type Sesion } from './usuarios.js';
+
+/** Notas de crédito y anulaciones: solo quienes responden por la empresa. */
+const ROLES_CORRIGEN: readonly Rol[] = ['DUENO', 'ADMIN'];
 
 const COOKIE = '__Host-panel';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -129,6 +135,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     return c.json({
       nombre: s.nombre, email: s.email, empresas: s.empresas, empresa: s.empresa ?? null, canales,
       puedeEmitir: Boolean(s.empresa && ROLES_EMISORES.includes(s.empresa.rol)),
+      puedeCorregir: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol) && s.empresa.modulos.includes('notas')),
     });
   });
 
@@ -203,5 +210,128 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       if (e instanceof ErrorPdf) return d.error(c, 409, 'PDF_NO_DISPONIBLE', e.message);
       throw e;
     }
+  });
+
+  const sinModulo = (c: Context, m: Modulo) => d.error(c, 403, 'MODULO_DESACTIVADO', `La función "${m}" está desactivada para esta empresa.`);
+  const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+
+  app.get('/panel/api/tablero', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    return c.json(await tablero(d.db, s.empresa.id, { modulos: s.empresa.modulos }));
+  });
+
+  // Productos guardados, para elegirlos al emitir en vez de escribirlos.
+  app.get('/panel/api/productos', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
+    const r = await d.db.query(
+      `SELECT sku, nombre, precio_con_igv::numeric(14,2)::text AS precio FROM productos WHERE empresa_id = $1 AND activo ORDER BY nombre LIMIT 500`,
+      [s.empresa.id],
+    );
+    return c.json({ productos: r.rows });
+  });
+
+  // Cliente ya conocido: con el DNI o RUC se completa el nombre.
+  app.get('/panel/api/clientes', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    const doc = c.req.query('doc') ?? '';
+    if (!/^[0-9A-Za-z]{4,15}$/.test(doc)) return d.error(c, 400, 'DOCUMENTO_INVALIDO', 'Documento inválido.');
+    const r = await d.db.query(`SELECT nombre_razon_social AS nombre FROM clientes WHERE empresa_id = $1 AND numero_doc = $2 LIMIT 1`, [s.empresa.id, doc]);
+    return r.rows[0] ? c.json({ nombre: r.rows[0].nombre }) : d.error(c, 404, 'NO_ENCONTRADO', 'Cliente nuevo.');
+  });
+
+  // Ventas de un mes en CSV (Excel lo abre directo), para el contador.
+  app.get('/panel/api/exportar', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('exportar')) return sinModulo(c, 'exportar');
+    const mes = c.req.query('mes') ?? '';
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return d.error(c, 400, 'MES_INVALIDO', 'Indica el mes como AAAA-MM.');
+    const r = await d.db.query(
+      `SELECT co.fecha_emision::text AS fecha, co.tipo_comprobante, co.serie, co.numero, co.cliente_numero_doc, co.cliente_nombre,
+              (co.total_gravado + co.total_exonerado + co.total_inafecto)::text AS base, co.total_igv::text AS igv, co.importe_total::text AS total,
+              co.estado::text AS estado, co.estado_pago::text AS pago, ca.nombre AS canal
+         FROM comprobantes co JOIN canales ca ON ca.id = co.canal_id
+        WHERE co.empresa_id = $1 AND to_char(co.fecha_emision, 'YYYY-MM') = $2 ORDER BY co.fecha_emision, co.serie, co.numero`,
+      [s.empresa.id, mes],
+    );
+    const TIPOS: Record<string, string> = { '01': 'Factura', '03': 'Boleta', '07': 'Nota de crédito' };
+    // Una celda que empieza con = + - @ sería una fórmula en Excel: se neutraliza.
+    const celda = (v: unknown) => {
+      const t = String(v ?? '');
+      const seguro = /^[=+\-@\t\r]/.test(t) ? `'${t}` : t;
+      return /[;"\n]/.test(seguro) ? `"${seguro.replaceAll('"', '""')}"` : seguro;
+    };
+    const lineas = [
+      ['Fecha', 'Tipo', 'Número', 'Doc. cliente', 'Cliente', 'Base imponible', 'IGV', 'Total', 'Estado SUNAT', 'Pago', 'Canal'],
+      ...r.rows.map((x) => [
+        x.fecha, TIPOS[x.tipo_comprobante] ?? x.tipo_comprobante, idComprobanteLegible(x.serie, Number(x.numero)), x.cliente_numero_doc,
+        x.cliente_nombre, x.base, x.igv, x.total, x.estado, x.pago, x.canal,
+      ]),
+    ];
+    // BOM + punto y coma: así lo abre bien Excel en español.
+    const csv = '\uFEFF' + lineas.map((l) => l.map(celda).join(';')).join('\r\n') + '\r\n';
+    return c.body(csv, 200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="ventas-${s.empresa.ruc}-${mes}.csv"`,
+    });
+  });
+
+  // Devolución total: nota de crédito por todo lo que quede por devolver; el stock vuelve.
+  app.post('/panel/api/comprobantes/:id/devolucion', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('notas')) return sinModulo(c, 'notas');
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador emite notas de crédito.');
+    const id = await deLaEmpresa(s.empresa.id, c.req.param('id'));
+    if (!id) return d.error(c, 404, 'NO_ENCONTRADO', 'Comprobante no encontrado.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const lineas = await d.db.query(
+      `SELECT i.orden, (i.cantidad - coalesce((SELECT sum(di.cantidad) FROM devolucion_items di JOIN devoluciones dv ON dv.id = di.devolucion_id
+                JOIN comprobantes nc ON nc.id = dv.nota_credito_id WHERE dv.comprobante_origen_id = i.comprobante_id AND di.item_orden = i.orden
+                AND nc.estado NOT IN ('RECHAZADO', 'ANULADO')), 0))::text AS queda
+         FROM comprobante_items i WHERE i.comprobante_id = $1 ORDER BY i.orden`,
+      [id],
+    );
+    const items = lineas.rows.filter((x) => Number.parseFloat(x.queda) > 0).map((x) => ({ orden: Number(x.orden), cantidad: x.queda as string }));
+    if (!items.length) return d.error(c, 409, 'YA_DEVUELTO', 'Este comprobante ya fue devuelto por completo.');
+    try {
+      const r = await registrarDevolucion(d.db, { empresaId: s.empresa.id, comprobanteId: id, motivo: texto(b.motivo, 200), items, usuarioId: s.usuarioId });
+      return c.json(await d.respuestaComprobante(c, r.notaCreditoId), 201);
+    } catch (e) {
+      if (e instanceof ErrorDevolucion) return d.error(c, 422, 'NO_SE_PUEDE_DEVOLVER', e.message);
+      throw e;
+    }
+  });
+
+  // Anular (error al emitir): comunicación de baja o resumen diario, dentro del plazo.
+  app.post('/panel/api/comprobantes/:id/anular', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('notas')) return sinModulo(c, 'notas');
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador anula comprobantes.');
+    const id = await deLaEmpresa(s.empresa.id, c.req.param('id'));
+    if (!id) return d.error(c, 404, 'NO_ENCONTRADO', 'Comprobante no encontrado.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const r = await solicitarAnulacion(d.db, { comprobanteId: id, motivo: texto(b.motivo, 200), usuarioId: s.usuarioId });
+    if (r.resultado === 'ERROR') return d.error(c, 422, 'NO_SE_PUEDE_ANULAR', r.errores.join(' '));
+    return c.json({ ok: true, via: r.via, documento: r.identificador });
+  });
+
+  app.post('/panel/api/contrasena', async (c) => {
+    const s = await conSesion(c);
+    if (s instanceof Response) return s;
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const r = await cambiarContrasena(d.db, {
+      usuarioId: s.usuarioId, sesionId: s.sesionId, actual: texto(b.actual, 200), nueva: typeof b.nueva === 'string' ? b.nueva.slice(0, 200) : '',
+      codigo: texto(b.codigo, 6), llaveMaestra: d.llaveMaestra,
+    });
+    if (!r.ok) return d.fallos.contar(ip) ? d.error(c, 422, 'NO_SE_PUDO', r.mensaje) : frenado(c);
+    return c.json({ ok: true });
   });
 }
