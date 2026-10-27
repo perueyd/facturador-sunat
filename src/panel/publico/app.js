@@ -63,6 +63,14 @@ function agregarItem() {
     recalcularTotal();
   });
   for (const input of nodo.querySelectorAll('input')) input.addEventListener('input', recalcularTotal);
+  // Producto guardado: al elegirlo de la lista se pone su precio.
+  nodo.querySelector('[name=descripcion]').addEventListener('change', (e) => {
+    const p = productos.find((x) => x.nombre === e.target.value);
+    if (p) {
+      e.target.closest('.item').querySelector('[name=precio]').value = p.precio;
+      recalcularTotal();
+    }
+  });
   $('#items').appendChild(nodo);
 }
 
@@ -81,8 +89,12 @@ function nuevoPedido() {
   return `PANEL-${crypto.randomUUID()}`;
 }
 
+let yo = null;
+let productos = [];
+const tiene = (modulo) => Boolean(yo?.empresa?.modulos?.includes(modulo));
+
 async function cargarPanel() {
-  const yo = await api('/yo');
+  yo = await api('/yo');
   $('#vista-entrar').hidden = true;
   $('#vista-panel').hidden = false;
   $('#salir').hidden = false;
@@ -96,7 +108,71 @@ async function cargarPanel() {
   $('#canal').replaceChildren(...yo.canales.map((c) => new Option(c, c)));
   $('#form-emitir').hidden = !yo.puedeEmitir;
   $('#sin-permiso').hidden = yo.puedeEmitir;
-  await cargarLista();
+  $('#caja-exportar').hidden = !tiene('exportar');
+  if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
+  productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
+  $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
+  await Promise.all([cargarTablero(), cargarLista()]);
+}
+
+// ---------- Tablero ----------
+function tarjeta(titulo, valor, detalle, clase = '') {
+  const t = document.createElement('div');
+  t.className = `tarjeta ${clase}`;
+  const v = document.createElement('strong');
+  v.textContent = valor;
+  t.append(titulo, v);
+  if (detalle) t.append(detalle);
+  return t;
+}
+
+const FECHA = new Intl.DateTimeFormat('es-PE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+const fechaLarga = (iso) => FECHA.format(new Date(`${iso}T00:00:00Z`));
+
+async function cargarTablero() {
+  const t = await api('/tablero');
+  const tarjetas = [];
+  const v = t.vencimiento;
+  if (v?.faltaCronograma) {
+    tarjetas.push(tarjeta('Declaración mensual', 'Falta el cronograma', 'Carga el cronograma de SUNAT de este año.', 'ancha urgente'));
+  } else if (v) {
+    const dias = v.dias === 0 ? '¡vence HOY!' : v.dias === 1 ? 'vence MAÑANA' : `quedan ${v.dias} días`;
+    tarjetas.push(tarjeta(`Declarar y pagar ${v.nombre} (IGV y Renta)`, `${fechaLarga(v.vence)} · ${dias}`,
+      `Según el último dígito de tu RUC (${v.grupo}). Fuente: cronograma oficial SUNAT.`, `ancha ${v.dias <= 3 ? 'urgente' : ''}`));
+  }
+  const r = t.resumen;
+  if (r) {
+    const tabla = document.createElement('table');
+    const filas = [
+      ['Ventas del mes (con IGV)', r.ventas],
+      ['IGV cobrado en ventas', r.igvVentas],
+      ['IGV de tus compras', r.igvCompras],
+      ...(r.saldoAFavor !== '0.00' ? [['Saldo a favor (estimado)', r.saldoAFavor]] : []),
+      ...(r.rentaPagoCuenta ? [[`Renta, pago a cuenta ${r.rentaPagoCuenta.tasa}% (estimado)`, r.rentaPagoCuenta.monto]] : []),
+    ];
+    for (const [a, b] of filas) {
+      const tr = tabla.insertRow();
+      tr.insertCell().textContent = a;
+      tr.insertCell().textContent = `S/ ${b}`;
+    }
+    tarjetas.push(tarjeta(`${r.nombre}: IGV estimado a pagar`, `S/ ${r.igvPorPagar}`, tabla, 'ancha'));
+  }
+  if (t.certificado?.falta) {
+    tarjetas.push(tarjeta('Certificado digital', 'No cargado', 'Sin él no se puede emitir.', 'urgente'));
+  } else if (t.certificado) {
+    const c = t.certificado;
+    tarjetas.push(tarjeta('Certificado digital', c.dias < 0 ? 'VENCIDO' : `vence en ${c.dias} días`, c.vence, c.dias <= 30 ? 'urgente' : 'ok'));
+  }
+  if (t.sunat) {
+    const problemas = t.sunat.rechazados > 0;
+    tarjetas.push(tarjeta('SUNAT', problemas ? `${t.sunat.rechazados} rechazado(s)` : t.sunat.pendientes ? `${t.sunat.pendientes} en cola` : 'Todo enviado',
+      problemas ? 'Revísalos en la lista de abajo.' : t.sunat.pendientes ? 'Se envían solos.' : '', problemas ? 'urgente' : 'ok'));
+  }
+  if (t.cobros) {
+    tarjetas.push(tarjeta('Por cobrar', `S/ ${t.cobros.saldo}`, `${t.cobros.comprobantes} comprobante(s)`));
+  }
+  $('#tablero').replaceChildren(...tarjetas);
+  $('#nota-estimado').hidden = !r;
 }
 
 async function cargarLista() {
@@ -176,6 +252,27 @@ function mostrarResultado(c) {
     }));
     botones.append(boton('Copiar enlace', () => navigator.clipboard?.writeText(c.enlaces.cliente)));
   }
+  // Corregir: devolución total (nota de crédito) o anulación. Solo dueño/administrador.
+  if (yo?.puedeCorregir && c.tipo !== '07' && (c.estado === 'ACEPTADO' || c.estado === 'ACEPTADO_OBS')) {
+    const corregir = boton('Devolución total (nota de crédito)', async () => {
+      const motivo = prompt('Motivo de la devolución (lo verá SUNAT):', 'Devolución del cliente');
+      if (!motivo) return;
+      try { mostrarResultado(await api(`/comprobantes/${c.id}/devolucion`, { cuerpo: { motivo } })); await cargarPanel(); }
+      catch (err) { alert(err.message); }
+    });
+    corregir.classList.add('peligro');
+    const anular = boton('Anular (error al emitir)', async () => {
+      const motivo = prompt('¿Por qué se anula? (máx. 100 caracteres)', 'Error en la emisión');
+      if (!motivo) return;
+      try {
+        const r = await api(`/comprobantes/${c.id}/anular`, { cuerpo: { motivo } });
+        alert(`Anulación enviada a SUNAT (${r.documento}). En unos minutos se confirma.`);
+        await cargarPanel();
+      } catch (err) { alert(err.message); }
+    });
+    anular.classList.add('peligro');
+    botones.append(corregir, anular);
+  }
   partes.push(botones);
   caja.replaceChildren(...partes);
   caja.hidden = false;
@@ -237,7 +334,43 @@ async function alEmitir(e) {
   }
 }
 
+async function exportar() {
+  const mes = $('#mes-exportar').value;
+  const res = await api(`/exportar?mes=${encodeURIComponent(mes)}`, { crudo: true });
+  if (!res.ok) { alert((await res.json().catch(() => ({}))).error?.mensaje || 'No se pudo exportar.'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await res.blob());
+  a.download = `ventas-${mes}.csv`;
+  a.click();
+}
+
+async function alCambiarContrasena(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const msg = $('#mensaje-contrasena');
+  try {
+    await api('/contrasena', { cuerpo: { actual: f.get('actual'), nueva: f.get('nueva'), codigo: f.get('codigo') } });
+    msg.className = '';
+    msg.textContent = '✔ Contraseña cambiada. Se cerraron tus otras sesiones.';
+    e.target.reset();
+  } catch (err) {
+    msg.className = 'error';
+    msg.textContent = err.message;
+  }
+}
+
+// Cliente ya conocido: al escribir su DNI o RUC se completa el nombre.
+async function buscarCliente(e) {
+  const doc = e.target.value.trim();
+  const nombre = $('[name=nombre]');
+  if (!/^\d{8}$|^\d{11}$/.test(doc) || nombre.value.trim()) return;
+  try { nombre.value = (await api(`/clientes?doc=${doc}`)).nombre; } catch { /* cliente nuevo */ }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  $('#exportar').addEventListener('click', exportar);
+  $('#form-contrasena').addEventListener('submit', alCambiarContrasena);
+  $('[name=numero]').addEventListener('change', buscarCliente);
   $('#form-entrar').addEventListener('submit', alEntrar);
   $('#form-emitir').addEventListener('submit', alEmitir);
   $('#agregar').addEventListener('click', () => { agregarItem(); recalcularTotal(); });

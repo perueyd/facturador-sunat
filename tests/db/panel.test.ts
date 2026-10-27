@@ -10,6 +10,7 @@ import { AlmacenLocal } from '../../src/almacen/almacen.js';
 import { crearApp } from '../../src/api/app.js';
 import type { Db } from '../../src/db/conexion.js';
 import { guardarCertificado } from '../../src/firma/repositorio-certificados.js';
+import { guardarProducto } from '../../src/inventario/productos.js';
 import { activarTotp, asignarEmpresa, crearUsuario, type Rol } from '../../src/panel/usuarios.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
 import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
@@ -221,5 +222,104 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     const token = cookie.split('=')[1]!;
     const r = await db.query(`SELECT count(*)::int AS n FROM sesiones WHERE encode(token_hash, 'escape') LIKE '%' || $1 || '%'`, [token]);
     expect(r.rows[0].n).toBe(0);
+  });
+
+  // ---------- Funciones agregadas al panel ----------
+
+  /** Boleta emitida desde el panel y ya aceptada por SUNAT (simulado). */
+  async function emitida(cookie: string, extra: Record<string, unknown> = {}) {
+    const r = await pedir('/panel/api/comprobantes', { cookie, cuerpo: boleta(extra) });
+    expect(r.status).toBe(201);
+    return (await r.json()) as { id: string; numero: string; estado: string };
+  }
+
+  it('tablero: vencimiento, resumen y certificado según las funciones activas de la empresa', async () => {
+    const cookie = await entrar(await usuario('DUENO'));
+    await emitida(cookie);
+    const t = await (await pedir('/panel/api/tablero', { cookie })).json();
+    expect(t.vencimiento.vence ?? t.vencimiento.faltaCronograma).toBeTruthy();
+    expect(t.resumen.estimado).toBe(true);
+    expect(t.certificado.dias).toBeGreaterThan(0);
+
+    await db.query(`UPDATE empresas SET modulos_desactivados = '{resumen,vencimientos}' WHERE id = $1`, [f.empresaId]);
+    const t2 = await (await pedir('/panel/api/tablero', { cookie })).json();
+    expect(t2.resumen).toBeUndefined();
+    expect(t2.vencimiento).toBeUndefined();
+    expect(t2.sunat).toBeDefined();
+  });
+
+  it('panel desactivado para una empresa: ni aparece (sigue por API)', async () => {
+    const cookie = await entrar(await usuario('DUENO'));
+    await db.query(`UPDATE empresas SET modulos_desactivados = '{panel}' WHERE id = $1`, [f.empresaId]);
+    const yo = await (await pedir('/panel/api/yo', { cookie })).json();
+    expect(yo.empresas).toEqual([]);
+    expect((await pedir('/panel/api/comprobantes', { cookie, cuerpo: boleta() })).status).toBe(403);
+  });
+
+  it('exportar: CSV para Excel, sin fórmulas peligrosas; se puede desactivar', async () => {
+    const cookie = await entrar(await usuario('CONTADOR'));
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    await emitida(vendedor, { cliente: { tipoDocumento: 'DNI', numero: '12345678', nombre: '=HYPERLINK("x")' } });
+    const mes = new Date().toISOString().slice(0, 7);
+    const r = await pedir(`/panel/api/exportar?mes=${mes}`, { cookie });
+    expect(r.headers.get('content-type')).toMatch(/text\/csv/);
+    const bytes = Buffer.from(await r.arrayBuffer());
+    expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]); // BOM: Excel reconoce las tildes
+    const csv = bytes.subarray(3).toString('utf8');
+    expect(csv.startsWith('Fecha;Tipo;Número')).toBe(true);
+    expect(csv).toContain('B001-00000001');
+    expect(csv).toContain(`'=HYPERLINK`);
+    expect((await pedir('/panel/api/exportar?mes=2026-13', { cookie })).status).toBe(400);
+    await db.query(`UPDATE empresas SET modulos_desactivados = '{exportar}' WHERE id = $1`, [f.empresaId]);
+    expect((await pedir(`/panel/api/exportar?mes=${mes}`, { cookie })).status).toBe(403);
+  });
+
+  it('productos guardados y cliente conocido por su documento', async () => {
+    await guardarProducto(db, f.empresaId, { sku: 'CAB-001', nombre: 'Cabecera Milán', precio: '220.00' });
+    const cookie = await entrar(await usuario());
+    expect((await (await pedir('/panel/api/productos', { cookie })).json()).productos).toEqual([{ sku: 'CAB-001', nombre: 'Cabecera Milán', precio: '220.00' }]);
+    expect((await pedir('/panel/api/clientes?doc=12345678', { cookie })).status).toBe(404);
+    await emitida(cookie);
+    expect(await (await pedir('/panel/api/clientes?doc=12345678', { cookie })).json()).toEqual({ nombre: 'JUAN PÉREZ' });
+    expect((await pedir('/panel/api/clientes?doc=x%27', { cookie })).status).toBe(400);
+  });
+
+  it('devolución total: nota de crédito BC01 solo para dueño/administrador; no se repite', async () => {
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    const b = await emitida(vendedor);
+    expect(b.estado).toBe('ACEPTADO');
+    expect((await pedir(`/panel/api/comprobantes/${b.id}/devolucion`, { cookie: vendedor, cuerpo: { motivo: 'x' } })).status).toBe(403);
+    expect((await (await pedir('/panel/api/yo', { cookie: vendedor })).json()).puedeCorregir).toBe(false);
+
+    const dueno = await entrar(await usuario('DUENO'));
+    const nc = await pedir(`/panel/api/comprobantes/${b.id}/devolucion`, { cookie: dueno, cuerpo: { motivo: 'Cliente devolvió la cabecera' } });
+    expect(nc.status).toBe(201);
+    expect(await nc.json()).toMatchObject({ numero: 'BC01-00000001', total: '220.00', tipo: '07' });
+    expect((await pedir(`/panel/api/comprobantes/${b.id}/devolucion`, { cookie: dueno, cuerpo: { motivo: 'otra vez' } })).status).toBe(409);
+  });
+
+  it('anular desde el panel: pasa por resumen diario; sin motivo no', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const b = await emitida(dueno);
+    expect((await pedir(`/panel/api/comprobantes/${b.id}/anular`, { cookie: dueno, cuerpo: { motivo: '' } })).status).toBe(422);
+    const r = await pedir(`/panel/api/comprobantes/${b.id}/anular`, { cookie: dueno, cuerpo: { motivo: 'Error en el nombre' } });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: true, via: 'RESUMEN_DIARIO' });
+  });
+
+  it('cambiar contraseña: exige la actual y un código nuevo; cierra las otras sesiones', async () => {
+    const u = await usuario();
+    const otra = await entrar(u, pasoActual());
+    const esta = await entrar(u, pasoActual() + 1);
+    const cambiar = (cuerpo: Record<string, string>) => pedir('/panel/api/contrasena', { cookie: esta, cuerpo });
+    expect((await cambiar({ actual: 'equivocada!!', nueva: 'otra clave segura', codigo: codigoTotp(u.secreto, pasoActual() - 1) })).status).toBe(422);
+    // El último código usado (paso + 1) ya no vale.
+    expect((await cambiar({ actual: CONTRASENA, nueva: 'otra clave segura', codigo: codigoTotp(u.secreto, pasoActual() + 1) })).status).toBe(422);
+    // Con un código de un paso anterior al último usado tampoco: se exige uno nuevo. Se simula el siguiente minuto.
+    await db.query(`UPDATE usuarios SET totp_ultimo_paso = totp_ultimo_paso - 2 WHERE id = $1`, [u.usuarioId]);
+    expect((await cambiar({ actual: CONTRASENA, nueva: 'corta', codigo: codigoTotp(u.secreto, pasoActual()) })).status).toBe(422);
+    expect((await cambiar({ actual: CONTRASENA, nueva: 'otra clave segura', codigo: codigoTotp(u.secreto, pasoActual()) })).status).toBe(200);
+    expect((await pedir('/panel/api/yo', { cookie: esta })).status).toBe(200);
+    expect((await pedir('/panel/api/yo', { cookie: otra })).status).toBe(401);
   });
 });

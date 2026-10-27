@@ -585,8 +585,25 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
 - Seguridad: ver `docs/SEGURIDAD.md`, sección "Panel web".
 - Probado: 13 pruebas de punta a punta (entrar, bloqueo, código reusado, CSRF, roles,
   aislamiento entre empresas, doble clic) + prueba en navegador real (Chromium, tamaño celular).
-- **Aún no incluye:** notas de crédito, anulaciones ni devoluciones desde el panel (siguen por
-  comando); cambiar la contraseña desde el panel.
+
+**Agregado después (27/10/2026):**
+- **Tablero** al entrar:
+  - próximo **vencimiento de la declaración y pago mensual** (IGV y Renta) con los días que
+    quedan, según el último dígito del RUC y el **cronograma oficial 2026** (Anexo I de la
+    R.S. 281-2022/SUNAT, transcrito de sunat.gob.pe el 27/10/2026, migración 015; cada año se
+    agrega el nuevo). Buen contribuyente usa su columna;
+  - **resumen del mes** que se va a declarar: ventas, IGV cobrado, IGV de compras, IGV estimado
+    a pagar o saldo a favor, y pago a cuenta de Renta MYPE estimado (su tasa sigue "POR VERIFICAR");
+  - certificado por vencer, comprobantes en cola o rechazados y saldo por cobrar.
+- **Devolución total** (nota de crédito, el stock vuelve) y **anulación** desde el panel, solo
+  para dueño o administrador.
+- **Productos guardados** al emitir (el precio se completa solo) y **cliente conocido** por su
+  DNI/RUC.
+- **Exportar** las ventas del mes a Excel (CSV), para el contador.
+- **Cambiar la contraseña** (exige la actual y un código nuevo; cierra las otras sesiones).
+- **Cada empresa elige qué funciones usa** (`npm run empresa:modulos`): panel, vencimientos,
+  resumen, certificado, cobros, notas, productos, exportar. Sin "panel", la empresa ni aparece
+  en el panel y sigue solo por API.
 
 ## 19. Decisiones que siguen abiertas
 

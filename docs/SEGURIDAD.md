@@ -41,7 +41,10 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 | Código malicioso en la página (XSS) | Política de contenido estricta (solo el JavaScript propio) y todo dato se pinta como texto, nunca como HTML. |
 | Roles y empresas | Cada usuario solo ve las empresas asignadas. DUEÑO, ADMIN y VENDEDOR emiten; CONTADOR y SOLO_LECTURA consultan. Comprobante de otra empresa → 404. |
 | Secreto del 2FA | Cifrado con AES-256-GCM y la `LLAVE_MAESTRA`, ligado al usuario. |
-| Historial | Entradas, fallos, bloqueos y cada emisión quedan en `auditoria` con el usuario. |
+| Historial | Entradas, fallos, bloqueos, cambios de contraseña y cada emisión quedan en `auditoria` con el usuario. |
+| Notas de crédito y anulaciones | Solo DUEÑO o ADMIN, y solo si la empresa tiene activa la función "notas". |
+| Exportar a Excel | Las celdas que empiezan con `=`, `+`, `-` o `@` se neutralizan (un nombre de cliente no puede convertirse en fórmula). |
+| Funciones por empresa | Una función desactivada responde 403 aunque se llame directo a la API del panel. |
 
 ## Pendiente (con motivo)
 

@@ -11,6 +11,7 @@ import type { Db } from '../db/conexion.js';
 import { cifrar, descifrar } from '../seguridad/cifrado.js';
 import { hashContrasena, verificarContrasena } from '../seguridad/contrasenas.js';
 import { generarSecretoTotp, verificarTotp } from '../seguridad/totp.js';
+import { MODULOS, type Modulo } from '../reportes/tablero.js';
 
 export const ROLES = ['DUENO', 'ADMIN', 'VENDEDOR', 'CONTADOR', 'SOLO_LECTURA'] as const;
 export type Rol = (typeof ROLES)[number];
@@ -134,6 +135,8 @@ export interface EmpresaDelUsuario {
   razonSocial: string;
   rol: Rol;
   ambiente: 'BETA' | 'PRODUCCION';
+  /** Funciones del panel que esta empresa tiene activas. */
+  modulos: Modulo[];
 }
 
 export interface Sesion {
@@ -159,12 +162,16 @@ export async function leerSesion(db: Db, token: string | undefined): Promise<Ses
   const s = r.rows[0];
   if (!s) return undefined;
   const e = await db.query(
-    `SELECT e.id, e.ruc, e.razon_social, ue.rol::text AS rol, e.ambiente_sunat::text AS ambiente
+    `SELECT e.id, e.ruc, e.razon_social, ue.rol::text AS rol, e.ambiente_sunat::text AS ambiente, e.modulos_desactivados
        FROM usuario_empresa ue JOIN empresas e ON e.id = ue.empresa_id
-      WHERE ue.usuario_id = $1 ORDER BY e.razon_social`,
+      WHERE ue.usuario_id = $1 AND NOT ('panel' = ANY(e.modulos_desactivados)) ORDER BY e.razon_social`,
     [s.usuario_id],
   );
-  const empresas: EmpresaDelUsuario[] = e.rows.map((x) => ({ id: x.id, ruc: x.ruc, razonSocial: x.razon_social, rol: x.rol, ambiente: x.ambiente }));
+  // Una empresa con el panel desactivado ni aparece: se maneja solo por API.
+  const empresas: EmpresaDelUsuario[] = e.rows.map((x) => ({
+    id: x.id, ruc: x.ruc, razonSocial: x.razon_social, rol: x.rol, ambiente: x.ambiente,
+    modulos: MODULOS.filter((m) => !(x.modulos_desactivados as string[]).includes(m)),
+  }));
   return {
     sesionId: s.id, usuarioId: s.usuario_id, nombre: s.nombre, email: s.email, empresas,
     // Si le quitaron el acceso a la empresa elegida, no se usa aunque siga en la sesión.
@@ -185,4 +192,32 @@ export async function salir(db: Db, token: string): Promise<void> {
 /** Cierra todas las sesiones de un usuario (al desactivarlo o restablecer su 2FA). */
 export async function cerrarSesionesDe(db: Db, usuarioId: string): Promise<void> {
   await db.query(`UPDATE sesiones SET revocada_en = now() WHERE usuario_id = $1 AND revocada_en IS NULL`, [usuarioId]);
+}
+
+/** Cambiar la contraseña desde el panel: exige la actual y un código de 6 dígitos nuevo. */
+export async function cambiarContrasena(
+  db: Db,
+  d: { usuarioId: string; sesionId: string; actual: string; nueva: string; codigo: string; llaveMaestra: Buffer },
+): Promise<{ ok: true } | { ok: false; mensaje: string }> {
+  const r = await db.query(`SELECT password_hash, totp_secreto_cifrado, totp_ultimo_paso FROM usuarios WHERE id = $1`, [d.usuarioId]);
+  const u = r.rows[0];
+  if (!u || !(await verificarContrasena(d.actual, u.password_hash))) return { ok: false, mensaje: 'La contraseña actual no es correcta.' };
+  const secreto = descifrar(u.totp_secreto_cifrado as Buffer, d.llaveMaestra, contextoTotp(d.usuarioId));
+  const paso = verificarTotp(secreto, d.codigo, { ultimoPaso: u.totp_ultimo_paso === null ? null : Number(u.totp_ultimo_paso) });
+  if (paso === undefined) return { ok: false, mensaje: 'El código de 6 dígitos no es correcto o ya se usó. Espera el siguiente.' };
+  let hash: string;
+  try {
+    hash = await hashContrasena(d.nueva);
+  } catch (e) {
+    return { ok: false, mensaje: e instanceof Error ? e.message : 'Contraseña inválida.' };
+  }
+  const cambio = await db.query(
+    `UPDATE usuarios SET password_hash = $2, totp_ultimo_paso = $3 WHERE id = $1 AND (totp_ultimo_paso IS NULL OR totp_ultimo_paso < $3)`,
+    [d.usuarioId, hash, paso],
+  );
+  if (!cambio.rowCount) return { ok: false, mensaje: 'El código ya se usó. Espera el siguiente.' };
+  // Las demás sesiones (otro celular, otra computadora) se cierran; esta sigue.
+  await db.query(`UPDATE sesiones SET revocada_en = now() WHERE usuario_id = $1 AND id <> $2 AND revocada_en IS NULL`, [d.usuarioId, d.sesionId]);
+  await db.query(`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id) VALUES ($1, 'PANEL_CAMBIO_CONTRASENA', 'usuarios', $1)`, [d.usuarioId]);
+  return { ok: true };
 }

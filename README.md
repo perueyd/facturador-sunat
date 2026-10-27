@@ -18,7 +18,7 @@ de baja directamente a SUNAT (SEE - Del Contribuyente), sin proveedores externos
 | 9. Listo para publicar (Supabase + Render) | ✅ Lista: falta que la publiques (`docs/PUBLICAR.md`) |
 | 10. Devoluciones | ✅ Aprobada |
 | 9b. Publicado (Render + Supabase + cron-job.org) | ✅ En línea, en beta |
-| 11. Panel web para emitir a mano (`/panel`) | 🔎 Lista para tu revisión |
+| 11. Panel web para emitir a mano (`/panel`) | ✅ Aprobada; tablero con vencimientos y funciones por empresa en revisión |
 | Revisión de seguridad completa | ✅ Hecha (`docs/SEGURIDAD.md`) |
 
 Hoy el sistema valida, calcula el IGV, numera sin saltos, guarda en PostgreSQL, genera
@@ -97,6 +97,12 @@ npm run usuario -- crear --email tu@correo.com --nombre "Tu nombre" --ruc 20XXXX
 ```
 Pide una contraseña y muestra un QR para Google Authenticator. Luego entra a
 `<dirección del facturador>/panel` con correo + contraseña + el código de 6 dígitos.
+
+Cada empresa elige qué funciones del panel usa:
+```bash
+npm run empresa:modulos -- --ruc 20XXXXXXXXX                      # ver
+npm run empresa:modulos -- --ruc 20XXXXXXXXX --desactivar cobros  # o --activar …
+```
 
 ### Inventario y reportes
 

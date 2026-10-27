@@ -33,3 +33,18 @@ button.enlace { color: var(--tinta); background: none; padding: 4px; font-weight
 .lista .estado { color: var(--gris); font-size: 12px; }
 .lista .RECHAZADO { color: var(--rojo); }
 .lista .ACEPTADO, .lista .ACEPTADO_OBS { color: var(--verde); }
+
+.tablero { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 4px; }
+.tarjeta { background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--gris); }
+.tarjeta strong { display: block; font-size: 17px; color: var(--tinta); margin: 2px 0; }
+.tarjeta.ancha { grid-column: 1 / -1; }
+.tarjeta.urgente { border-color: #fda29b; background: #fef3f2; }
+.tarjeta.urgente strong { color: var(--rojo); }
+.tarjeta.ok strong { color: var(--verde); }
+.tarjeta table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.tarjeta td { padding: 2px 0; }
+.tarjeta td:last-child { text-align: right; color: var(--tinta); font-variant-numeric: tabular-nums; }
+.nota { font-size: 12px; color: var(--gris); margin: 4px 0 0; }
+.ajustes { margin: 24px 0; }
+.ajustes summary { cursor: pointer; color: var(--gris); }
+button.peligro { color: var(--rojo); border-color: #fda29b; }
