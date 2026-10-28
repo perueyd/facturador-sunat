@@ -187,8 +187,10 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
 
   it('un código ya usado no sirve para entrar otra vez', async () => {
     const u = await usuario();
-    await entrar(u);
-    const r = await pedir('/panel/api/entrar', { cuerpo: { email: u.email, contrasena: CONTRASENA, codigo: codigoTotp(u.secreto, pasoActual()) } });
+    // Paso fijo: si el reloj cambia de bloque de 30 s entre las dos entradas, no sería el mismo código.
+    const p = pasoActual();
+    await entrar(u, p);
+    const r = await pedir('/panel/api/entrar', { cuerpo: { email: u.email, contrasena: CONTRASENA, codigo: codigoTotp(u.secreto, p) } });
     expect(r.status).toBe(401);
   });
 
@@ -208,11 +210,12 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
 
   it('salir revoca la sesión; usuario desactivado pierde el acceso al instante', async () => {
     const u = await usuario();
-    const cookie = await entrar(u);
+    const p = pasoActual();
+    const cookie = await entrar(u, p);
     expect((await pedir('/panel/api/salir', { cookie, cuerpo: {} })).status).toBe(200);
     expect((await pedir('/panel/api/yo', { cookie })).status).toBe(401);
 
-    const cookie2 = await entrar(u, pasoActual() + 1);
+    const cookie2 = await entrar(u, p + 1);
     await db.query(`UPDATE usuarios SET activo = false WHERE id = $1`, [u.usuarioId]);
     expect((await pedir('/panel/api/yo', { cookie: cookie2 })).status).toBe(401);
   });
@@ -486,8 +489,9 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
       const expira = Date.parse(/Expires=([^;]+)/i.exec(galleta)![1]!);
       return { cookie: galleta.split(';')[0]!, horas: Math.round((expira - Date.now()) / 3_600_000) };
     };
-    const corta = await dias(false, pasoActual());
-    const larga = await dias(true, pasoActual() + 1);
+    const p = pasoActual();
+    const corta = await dias(false, p);
+    const larga = await dias(true, p + 1);
     expect(corta.horas).toBe(12);
     expect(larga.horas).toBe(30 * 24);
     const r = await (await pedir('/panel/api/sesiones/cerrar-otras', { cookie: larga.cookie, cuerpo: {} })).json();
