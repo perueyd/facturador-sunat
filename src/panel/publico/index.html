@@ -24,6 +24,8 @@
         <label>Contraseña <input name="contrasena" type="password" autocomplete="current-password" required></label>
         <label>Código de 6 dígitos <small>(de tu app autenticadora)</small>
           <input name="codigo" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" required></label>
+        <label class="casilla"><input type="checkbox" name="recordar"> Mantener mi sesión iniciada en este dispositivo (30 días)</label>
+        <small>No la marques en un celular o computadora prestada.</small>
         <button type="submit">Entrar</button>
         <p class="error" id="error-entrar" role="alert"></p>
         <p id="enlace-instalar" hidden><button type="button" class="enlace" id="ir-instalar">¿Primera vez? Crea tu usuario de dueño</button></p>
@@ -330,6 +332,14 @@
         <p class="nota">PNG o JPG. Se achica solo antes de subirlo.</p>
         <input type="file" id="archivo-logo" accept="image/png,image/jpeg">
         <p id="mensaje-logo" role="status"></p>
+      </details>
+
+      <details class="ajustes">
+        <summary>Mis sesiones</summary>
+        <p class="nota">¿Perdiste el celular o entraste en una computadora prestada? Cierra la sesión en todos los demás
+          dispositivos (este sigue abierto).</p>
+        <button type="button" id="cerrar-otras" class="secundario">Cerrar sesión en los demás dispositivos</button>
+        <p id="mensaje-sesiones" role="status"></p>
       </details>
 
       <details class="ajustes">

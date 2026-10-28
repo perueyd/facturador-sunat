@@ -21,6 +21,8 @@ export const ROLES_EMISORES: readonly Rol[] = ['DUENO', 'ADMIN', 'VENDEDOR'];
 const INTENTOS_MAXIMOS = 5;
 const BLOQUEO_MINUTOS = 15;
 const SESION_HORAS = 12;
+/** "Mantener mi sesión iniciada": en un dispositivo propio no se vuelve a pedir entrar por 30 días. */
+const SESION_RECORDADA_DIAS = 30;
 const contextoTotp = (usuarioId: string) => `totp:${usuarioId}`;
 const huella = (token: string) => createHash('sha256').update(token).digest();
 
@@ -71,7 +73,7 @@ export type ResultadoEntrar = { ok: true; token: string; expira: Date } | { ok: 
 
 export async function entrar(
   db: Db,
-  d: { email: string; contrasena: string; codigo: string; llaveMaestra: Buffer; ip?: string; ahora?: number },
+  d: { email: string; contrasena: string; codigo: string; llaveMaestra: Buffer; ip?: string; ahora?: number; recordar?: boolean },
 ): Promise<ResultadoEntrar> {
   const ahora = d.ahora ?? Date.now();
   const r = await db.query(
@@ -117,7 +119,7 @@ export async function entrar(
   }
 
   const token = randomBytes(32).toString('base64url');
-  const expira = new Date(ahora + SESION_HORAS * 3_600_000);
+  const expira = new Date(ahora + (d.recordar ? SESION_RECORDADA_DIAS * 24 : SESION_HORAS) * 3_600_000);
   const empresa = await db.query(`SELECT empresa_id FROM usuario_empresa WHERE usuario_id = $1 ORDER BY creado_en LIMIT 1`, [u.id]);
   await db.query(`UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = $1`, [u.id]);
   await db.query(`INSERT INTO sesiones (usuario_id, token_hash, empresa_id, ip, expira_en) VALUES ($1, $2, $3, $4, $5)`, [
@@ -242,4 +244,12 @@ export async function restablecerAcceso(
     ]);
     return secreto;
   });
+}
+
+/** Cierra las demás sesiones del usuario (otro celular, una computadora prestada); esta sigue. */
+export async function cerrarOtrasSesiones(db: Db, sesion: { usuarioId: string; sesionId: string }): Promise<number> {
+  const r = await db.query(`UPDATE sesiones SET revocada_en = now() WHERE usuario_id = $1 AND id <> $2 AND revocada_en IS NULL AND expira_en > now()`, [
+    sesion.usuarioId, sesion.sesionId,
+  ]);
+  return r.rowCount ?? 0;
 }

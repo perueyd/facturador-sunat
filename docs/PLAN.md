@@ -618,6 +618,8 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   - **Primera configuración sin la PC**: con `CLAVE_INSTALACION` en Render se crea el primer
     usuario (dueño y administrador de la plataforma) desde el celular; se cierra para siempre en
     cuanto existe un usuario.
+  - **Mantener la sesión iniciada** 30 días en un dispositivo propio (casilla al entrar) y
+    **cerrar sesión en los demás dispositivos** (pestaña Más).
   - **Recuperar el acceso** (contraseña olvidada o celular perdido): con `CLAVE_RECUPERACION` en
     Render desde `/panel`, o `npm run usuario -- recuperar` en la PC.
   - **Alta de empresas nuevas**: solo el administrador de la plataforma
