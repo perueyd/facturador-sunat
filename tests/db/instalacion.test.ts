@@ -18,6 +18,7 @@ import { URL_PRUEBAS, crearEmpresa, prepararBase } from './base-prueba.js';
 
 const CLAVE = 'clave-de-instalacion-larga-2026';
 const CONTRASENA = 'clave del dueño 2026';
+const RECUPERACION = 'clave-de-recuperacion-larga-2026';
 
 const desdeBase32 = (texto: string) => {
   let bits = '';
@@ -39,7 +40,7 @@ describe.skipIf(!URL_PRUEBAS)('primera configuración del panel', () => {
       almacen: new AlmacenLocal(await mkdtemp(join(tmpdir(), 'almacen-instalacion-'))), llaveMaestra, algoritmo: 'SHA256' as const, entorno: {},
       crearCliente: (url: string, credenciales: { usuario: string; clave: string }) => new ClienteSunatSoap({ url, credenciales }),
     };
-    app = crearApp({ db, claveInstalacion: CLAVE, fallosPorMinuto: 5, servicios });
+    app = crearApp({ db, claveInstalacion: CLAVE, claveRecuperacion: RECUPERACION, fallosPorMinuto: 5, servicios });
     sinClave = crearApp({ db, servicios });
   });
   afterAll(async () => {
@@ -85,5 +86,31 @@ describe.skipIf(!URL_PRUEBAS)('primera configuración del panel', () => {
     const cookie = (entrar.headers.get('set-cookie') ?? '').split(';')[0]!;
     const yo = await (await app.request('http://localhost/panel/api/yo', { headers: { Cookie: cookie } })).json();
     expect(yo).toMatchObject({ adminPlataforma: true, esDueno: true, empresa: { ruc: RUC_EMPRESA } });
+  });
+
+  it('recuperar el acceso: con la clave de Render, contraseña y segundo paso nuevos; las sesiones viejas caen', async () => {
+    // Usa al dueño creado en la prueba anterior.
+    const sesionVieja = await (async () => {
+      const u = await db.query(`SELECT id FROM usuarios WHERE email = 'dueno@prueba.pe'`);
+      expect(u.rows).toHaveLength(1);
+      return u.rows[0].id as string;
+    })();
+    expect((await pedir(sinClave, '/panel/api/recuperar', { clave: RECUPERACION, email: 'dueno@prueba.pe', contrasena: 'otra clave nueva 2026' })).status).toBe(401);
+    expect((await pedir(app, '/panel/api/recuperar', { clave: 'no', email: 'dueno@prueba.pe', contrasena: 'otra clave nueva 2026' }, '2.2.2.2')).status).toBe(401);
+    expect((await pedir(app, '/panel/api/recuperar', { clave: RECUPERACION, email: 'nadie@prueba.pe', contrasena: 'otra clave nueva 2026' })).status).toBe(404);
+    expect((await pedir(app, '/panel/api/recuperar', { clave: RECUPERACION, email: 'dueno@prueba.pe', contrasena: 'corta' })).status).toBe(422);
+    // Un segundo paso vigente no se puede "activar" encima.
+    expect((await pedir(app, '/panel/api/recuperar/activar', { clave: RECUPERACION, email: 'dueno@prueba.pe', codigo: '000000' })).status).toBe(409);
+
+    const r = await pedir(app, '/panel/api/recuperar', { clave: RECUPERACION, email: 'DUENO@prueba.pe', contrasena: 'otra clave nueva 2026' });
+    expect(r.status).toBe(200);
+    const secreto = desdeBase32((await r.json()).clave);
+    const sesiones = await db.query(`SELECT count(*)::int AS n FROM sesiones WHERE usuario_id = $1 AND revocada_en IS NULL`, [sesionVieja]);
+    expect(sesiones.rows[0].n).toBe(0);
+    // Sin activar el nuevo segundo paso, no entra ni con la contraseña nueva.
+    expect((await pedir(app, '/panel/api/entrar', { email: 'dueno@prueba.pe', contrasena: 'otra clave nueva 2026', codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(401);
+    expect((await pedir(app, '/panel/api/recuperar/activar', { clave: RECUPERACION, email: 'dueno@prueba.pe', codigo: codigoTotp(secreto, pasoActual() - 1) })).status).toBe(200);
+    expect((await pedir(app, '/panel/api/entrar', { email: 'dueno@prueba.pe', contrasena: CONTRASENA, codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(401);
+    expect((await pedir(app, '/panel/api/entrar', { email: 'dueno@prueba.pe', contrasena: 'otra clave nueva 2026', codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(200);
   });
 });

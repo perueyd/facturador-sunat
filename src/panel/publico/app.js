@@ -25,7 +25,7 @@ async function api(ruta, opciones = {}) {
   });
   if (opciones.crudo) return res;
   const datos = await res.json().catch(() => ({}));
-  if (res.status === 401 && ruta !== '/entrar' && !ruta.startsWith('/instalacion')) mostrarEntrar();
+  if (res.status === 401 && ruta !== '/entrar' && !ruta.startsWith('/instalacion') && !ruta.startsWith('/recuperar')) mostrarEntrar();
   if (!res.ok) {
     const e = new Error(datos.error?.mensaje || 'No se pudo completar. Intenta de nuevo.');
     e.detalles = datos.error?.detalles || [];
@@ -77,6 +77,7 @@ function agregarItem() {
 // ---------- Vistas ----------
 function mostrarEntrar() {
   $('#vista-instalar').hidden = true;
+  $('#vista-recuperar').hidden = true;
   $('#vista-entrar').hidden = false;
   // Facturador recién publicado, sin usuarios: se ofrece la primera configuración.
   api('/instalacion').then((r) => { $('#enlace-instalar').hidden = !r.disponible; }).catch(() => {});
@@ -326,6 +327,43 @@ async function alActivarInstalacion(e) {
     $('#form-entrar').email.value = correo;
   } catch (err) {
     $('#error-instalar-codigo').textContent = err.message;
+  }
+}
+
+// ---------- Recuperar el acceso ----------
+let recuperacion = null;
+async function alRecuperar(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  $('#error-recuperar').textContent = '';
+  try {
+    const r = await api('/recuperar', { cuerpo: Object.fromEntries(f) });
+    recuperacion = { clave: f.get('clave'), email: f.get('email') };
+    $('#qr-recuperar').src = r.qr;
+    $('#clave-recuperar').textContent = r.clave;
+    $('#abrir-app-recuperar').href = r.url;
+    e.target.hidden = true;
+    $('#form-recuperar-codigo').hidden = false;
+  } catch (err) {
+    $('#error-recuperar').textContent = err.message;
+  }
+}
+
+async function alActivarRecuperacion(e) {
+  e.preventDefault();
+  $('#error-recuperar-codigo').textContent = '';
+  try {
+    await api('/recuperar/activar', { cuerpo: { ...recuperacion, codigo: new FormData(e.target).get('codigo') } });
+    alert('✔ Acceso recuperado. Entra con tu contraseña nueva y el código del momento. Luego borra CLAVE_RECUPERACION de Render.');
+    const correo = recuperacion.email;
+    recuperacion = null;
+    $('#form-recuperar').hidden = false;
+    $('#form-recuperar').reset();
+    $('#form-recuperar-codigo').hidden = true;
+    mostrarEntrar();
+    $('#form-entrar').email.value = correo;
+  } catch (err) {
+    $('#error-recuperar-codigo').textContent = err.message;
   }
 }
 
@@ -752,6 +790,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-entrar').addEventListener('submit', alEntrar);
   $('#ir-instalar').addEventListener('click', () => { $('#vista-entrar').hidden = true; $('#vista-instalar').hidden = false; });
   $('#form-instalar').addEventListener('submit', alInstalar);
+  $('#ir-recuperar').addEventListener('click', () => { $('#vista-entrar').hidden = true; $('#vista-recuperar').hidden = false; });
+  $('#volver-entrar').addEventListener('click', mostrarEntrar);
+  $('#form-recuperar').addEventListener('submit', alRecuperar);
+  $('#form-recuperar-codigo').addEventListener('submit', alActivarRecuperacion);
   $('#form-instalar-codigo').addEventListener('submit', alActivarInstalacion);
   $('#form-emitir').addEventListener('submit', alEmitir);
   $('#agregar').addEventListener('click', () => { agregarItem(); recalcularTotal(); });

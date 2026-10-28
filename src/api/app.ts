@@ -34,6 +34,8 @@ export interface DependenciasApi {
   claveCron?: string;
   /** Clave de la primera configuración del panel (crear el primer usuario sin la PC). Mínimo 16 caracteres. */
   claveInstalacion?: string;
+  /** Clave para recuperar el acceso (contraseña olvidada o celular perdido). Mínimo 16 caracteres. */
+  claveRecuperacion?: string;
   /** Enviar a SUNAT apenas se emite (por defecto sí). */
   enviarAlEmitir?: boolean;
   /** Pedidos por minuto por llave. */
@@ -396,6 +398,8 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     claveInstalacionValida: (clave) =>
       Boolean(dep.claveInstalacion && dep.claveInstalacion.length >= 16 && igualesEnTiempoConstante(clave, dep.claveInstalacion)),
     instalacionConfigurada: Boolean(dep.claveInstalacion && dep.claveInstalacion.length >= 16),
+    claveRecuperacionValida: (clave) =>
+      Boolean(dep.claveRecuperacion && dep.claveRecuperacion.length >= 16 && igualesEnTiempoConstante(clave, dep.claveRecuperacion)),
   });
 
   return app;

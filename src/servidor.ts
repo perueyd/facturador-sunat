@@ -19,6 +19,8 @@ const app = crearApp({
   ...(process.env.CLAVE_CRON ? { claveCron: process.env.CLAVE_CRON } : {}),
   // Primera configuración del panel desde el celular (solo sirve mientras no exista ningún usuario).
   ...(process.env.CLAVE_INSTALACION ? { claveInstalacion: process.env.CLAVE_INSTALACION } : {}),
+  // Recuperar el acceso desde el celular (contraseña olvidada o celular perdido). Ver docs/PUBLICAR.md.
+  ...(process.env.CLAVE_RECUPERACION ? { claveRecuperacion: process.env.CLAVE_RECUPERACION } : {}),
   // Avisos por correo: solo si están las dos variables (ver docs/PUBLICAR.md, paso 8).
   ...(process.env.RESEND_API_KEY && process.env.AVISOS_DESDE ? { correo: correoResend(process.env.RESEND_API_KEY, process.env.AVISOS_DESDE) } : {}),
 });
