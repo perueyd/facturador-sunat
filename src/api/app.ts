@@ -398,6 +398,9 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     claveInstalacionValida: (clave) =>
       Boolean(dep.claveInstalacion && dep.claveInstalacion.length >= 16 && igualesEnTiempoConstante(clave, dep.claveInstalacion)),
     instalacionConfigurada: Boolean(dep.claveInstalacion && dep.claveInstalacion.length >= 16),
+    // Clave puesta en Render pero con menos de 16 caracteres: se ignora, y el panel lo explica.
+    recuperacionMuyCorta: Boolean(dep.claveRecuperacion && dep.claveRecuperacion.length < 16),
+    instalacionMuyCorta: Boolean(dep.claveInstalacion && dep.claveInstalacion.length < 16),
     claveRecuperacionValida: (clave) =>
       Boolean(dep.claveRecuperacion && dep.claveRecuperacion.length >= 16 && igualesEnTiempoConstante(clave, dep.claveRecuperacion)),
   });
