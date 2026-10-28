@@ -625,8 +625,12 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
     En la PC: `npm run usuario -- recuperar`.
   - **Alta de empresas nuevas**: solo el administrador de la plataforma
     (`npm run usuario -- plataforma --email …`); nunca pisa una empresa que ya existe.
+- **Estadísticas de ventas** (función "estadisticas", solo dueño, administrador y contador): ventas de
+  hoy y del mes (contra los mismos días del mes anterior), ticket promedio, clientes y nuevos,
+  gráficos de 6 meses (con compras) y 30 días, ventas por canal y lo más vendido. Todo calculado en
+  el servidor con decimales exactos; el navegador solo dibuja.
 - **Cada empresa elige qué funciones usa** (`npm run empresa:modulos`): panel, vencimientos,
-  resumen, certificado, cobros, notas, productos, exportar, compras, avisos. Sin "panel", la empresa ni aparece
+  resumen, certificado, cobros, notas, productos, exportar, compras, avisos, estadisticas. Sin "panel", la empresa ni aparece
   en el panel y sigue solo por API.
 
 ## 19. Decisiones que siguen abiertas

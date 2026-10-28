@@ -378,6 +378,22 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect(stock).toEqual([expect.objectContaining({ sku: 'CAB-MILAN', stock: '1', bajoMinimo: true })]);
   });
 
+  it('estadísticas: dueño y contador sí, vendedor no; se pueden apagar', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const contador = await entrar(await usuario('CONTADOR'));
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    await emitida(dueno);
+    const e = await (await pedir('/panel/api/estadisticas', { cookie: dueno })).json();
+    expect(e.hoy.comprobantes).toBeGreaterThan(0);
+    expect(e.meses).toHaveLength(6);
+    expect((await pedir('/panel/api/estadisticas', { cookie: contador })).status).toBe(200);
+    expect((await pedir('/panel/api/estadisticas', { cookie: vendedor })).status).toBe(403);
+    expect((await (await pedir('/panel/api/yo', { cookie: vendedor })).json()).verEstadisticas).toBe(false);
+    await db.query(`UPDATE empresas SET modulos_desactivados = '{estadisticas}' WHERE id = $1`, [f.empresaId]);
+    expect((await pedir('/panel/api/estadisticas', { cookie: dueno })).status).toBe(403);
+    expect((await (await pedir('/panel/api/yo', { cookie: dueno })).json()).verEstadisticas).toBe(false);
+  });
+
   it('función "compras" apagada: 403 aunque se llame directo', async () => {
     const cookie = await entrar(await usuario('DUENO'));
     await db.query(`UPDATE empresas SET modulos_desactivados = '{compras}' WHERE id = $1`, [f.empresaId]);

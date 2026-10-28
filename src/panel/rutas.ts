@@ -31,6 +31,7 @@ import { base32, urlOtpauth } from '../seguridad/totp.js';
 import { registrarCompra } from '../inventario/compras.js';
 import { ErrorInventario, ajustarStock, guardarProducto, listarStock } from '../inventario/productos.js';
 import { ErrorPdf } from '../pdf/representacion.js';
+import { estadisticas } from '../reportes/estadisticas.js';
 import { tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
@@ -367,6 +368,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       esDueno: s.empresa?.rol === 'DUENO',
       adminPlataforma: s.adminPlataforma,
       puedeComprar: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('compras')),
+      verEstadisticas: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('estadisticas')),
     });
   });
 
@@ -450,6 +452,17 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const s = await conEmpresa(c);
     if (s instanceof Response) return s;
     return c.json(await tablero(d.db, s.empresa.id, { modulos: s.empresa.modulos }));
+  });
+
+  // Cuánto se vende y de dónde: solo quienes responden por la empresa y el contador.
+  app.get('/panel/api/estadisticas', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('estadisticas')) return sinModulo(c, 'estadisticas');
+    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no puede ver las estadísticas de ventas.');
+    return c.json(await estadisticas(d.db, s.empresa.id, {
+      compras: s.empresa.modulos.includes('compras'), productos: s.empresa.modulos.includes('productos'),
+    }));
   });
 
   // Productos guardados, para elegirlos al emitir en vez de escribirlos.
