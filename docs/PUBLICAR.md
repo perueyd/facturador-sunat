@@ -145,14 +145,14 @@ npm run usuario -- crear --email tu@correo.com --nombre "Tu nombre" --ruc 206166
 
 Si cambias de celular: `npm run usuario -- restablecer-2fa --email tu@correo.com`.
 
-**Sin la PC (solo para el primer usuario):**
-1. Render → facturador → **Environment** → agrega `CLAVE_INSTALACION` con una clave que inventes
-   (mínimo 16 caracteres, anótala) → **Save changes**.
+**Sin la PC (solo para el primer usuario), desde la misma página del facturador:**
+1. Copia la llave de la tienda: Vercel → proyecto de la tienda → **Settings → Environment
+   Variables** → `FACTURADOR_LLAVE` (empieza con `fk_`). Es la prueba de que eres el dueño.
 2. Abre la dirección de Render + `/panel` → **"¿Primera vez? Crea tu usuario de dueño"**.
-3. Escribe esa clave, el RUC, tus datos y una contraseña → **"Agregar a mi app autenticadora"** →
+3. Pega esa llave, el RUC, tus datos y una contraseña → **"Agregar a mi app autenticadora"** →
    escribe el código que muestra la app → **Activar**.
-4. Ya dentro, **borra `CLAVE_INSTALACION` de Render**. De todos modos deja de servir apenas
-   existe un usuario.
+4. Esta puerta se cierra para siempre apenas existe un usuario. (También sirve una
+   `CLAVE_INSTALACION` de 16+ caracteres puesta en Render, si no tienes la llave a mano.)
 
 **Olvidaste tu contraseña o cambiaste de celular:**
 - Desde el celular: en Render agrega `CLAVE_RECUPERACION` (una clave que inventes, 16+ caracteres)

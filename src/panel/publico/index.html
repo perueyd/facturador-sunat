@@ -61,10 +61,11 @@
     <!-- Primera configuración: solo aparece mientras el facturador no tiene ningún usuario -->
     <section id="vista-instalar" hidden>
       <h1>Primera configuración</h1>
-      <p class="nota">Crea tu usuario de dueño. Necesitas la <strong>clave de instalación</strong> que pusiste en Render
+      <p class="nota">Crea tu usuario de dueño. Para probar que eres tú, necesitas la <strong>llave de tu tienda</strong>
+        (en Vercel → Settings → Environment Variables → <code>FACTURADOR_LLAVE</code>, empieza con <code>fk_</code>)
         y la app <strong>Google Authenticator</strong> en tu celular.</p>
       <form id="form-instalar">
-        <label>Clave de instalación <input name="clave" type="password" autocomplete="off" required></label>
+        <label>Llave de la tienda <small>(fk_…)</small> <input name="clave" type="password" autocomplete="off" required></label>
         <label>RUC de tu empresa <input name="ruc" inputmode="numeric" maxlength="11" required></label>
         <label>Tu nombre <input name="nombre" maxlength="120" required></label>
         <label>Tu correo <input name="email" type="email" autocomplete="username" required></label>

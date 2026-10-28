@@ -16,6 +16,7 @@ import type { Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Almacen } from '../almacen/almacen.js';
+import { autenticarLlave } from '../api/llaves.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
 import { enTransaccion, type Db } from '../db/conexion.js';
@@ -71,7 +72,6 @@ export interface DependenciasPanel {
   claveRecuperacionValida: (clave: string) => boolean;
   recuperacionMuyCorta: boolean;
   instalacionMuyCorta: boolean;
-  instalacionConfigurada: boolean;
 }
 
 /** Origen público de esta petición (detrás de Render llega por https aunque el servidor vea http). */
@@ -110,24 +110,34 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
 
   // ---------- Primera configuración (sin la PC) ----------
   // Crea el PRIMER usuario (dueño y administrador de la plataforma) desde el navegador.
-  // Solo existe si en Render está CLAVE_INSTALACION y mientras la base no tenga NINGÚN
-  // usuario: en cuanto hay uno, estas rutas dejan de servir para siempre.
+  // Solo existe mientras la base no tenga NINGÚN usuario: en cuanto hay uno, estas rutas
+  // dejan de servir para siempre.
   const hayUsuarios = async () => Boolean((await d.db.query(`SELECT 1 FROM usuarios LIMIT 1`)).rowCount);
 
-  app.get('/panel/api/instalacion', async (c) => c.json({ disponible: d.instalacionConfigurada && !(await hayUsuarios()) }));
+  // La página es pública: hay que probar que eres el dueño. Sirve la CLAVE_INSTALACION de
+  // Render o una llave de API vigente (fk_…) de ESA empresa, como la que la tienda tiene en
+  // Vercel: solo quien controla la empresa la tiene, y así no hace falta entrar a Render.
+  const pruebaDeDueno = async (clave: unknown, empresaId: string | undefined) => {
+    const t = typeof clave === 'string' ? clave : '';
+    if (d.claveInstalacionValida(t)) return true;
+    return Boolean(empresaId) && (await autenticarLlave(d.db, t.trim()))?.empresaId === empresaId;
+  };
+  const claveIncorrecta = (c: Context, ip: string) => {
+    if (!d.fallos.contar(ip)) return frenado(c);
+    return d.instalacionMuyCorta
+      ? d.error(c, 401, 'CLAVE_MUY_CORTA', 'La CLAVE_INSTALACION de Render es muy corta: debe tener 16 caracteres o más. O usa la llave de la tienda (fk_…).')
+      : d.error(c, 401, 'CLAVE_INCORRECTA', 'Esa llave no es correcta para ese RUC. Copia la llave de la tienda (FACTURADOR_LLAVE en Vercel, empieza con fk_) completa.');
+  };
+
+  app.get('/panel/api/instalacion', async (c) => c.json({ disponible: !(await hayUsuarios()) }));
 
   app.post('/panel/api/instalacion', async (c) => {
     const ip = d.ipCliente(c);
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    if (d.instalacionMuyCorta) {
-      return d.error(c, 401, 'CLAVE_MUY_CORTA', 'La CLAVE_INSTALACION de Render es muy corta: debe tener 16 caracteres o más.');
-    }
-    if (!d.claveInstalacionValida(typeof b.clave === 'string' ? b.clave : '')) {
-      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de instalación no es correcta.') : frenado(c);
-    }
     const ruc = typeof b.ruc === 'string' ? b.ruc.trim() : '';
     const empresa = (await d.db.query(`SELECT id FROM empresas WHERE ruc = $1`, [ruc])).rows[0];
+    if (!(await pruebaDeDueno(b.clave, empresa?.id))) return claveIncorrecta(c, ip);
     if (!empresa) return d.error(c, 422, 'DATOS_INVALIDOS', `No existe la empresa con RUC ${ruc}.`);
     // Bloqueo: dos pestañas a la vez no pueden crear dos "primeros" usuarios.
     const email = (typeof b.email === 'string' ? b.email : '').trim().toLowerCase().slice(0, 200);
@@ -160,12 +170,11 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const ip = d.ipCliente(c);
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!d.claveInstalacionValida(typeof b.clave === 'string' ? b.clave : '')) {
-      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de instalación no es correcta.') : frenado(c);
-    }
     const id = typeof b.usuarioId === 'string' ? b.usuarioId : '';
-    const unico = await d.db.query(`SELECT id, totp_activo FROM usuarios`);
-    if (unico.rows.length !== 1 || unico.rows[0].id !== id || unico.rows[0].totp_activo) {
+    const unico = await d.db.query(`SELECT u.id, u.totp_activo, ue.empresa_id FROM usuarios u LEFT JOIN usuario_empresa ue ON ue.usuario_id = u.id`);
+    const fila = unico.rows.length === 1 && unico.rows[0].id === id ? unico.rows[0] : undefined;
+    if (!(await pruebaDeDueno(b.clave, fila?.empresa_id))) return claveIncorrecta(c, ip);
+    if (!fila || fila.totp_activo) {
       return d.error(c, 409, 'YA_CONFIGURADO', 'El panel ya está configurado: entra con tu usuario.');
     }
     return (await activarTotp(d.db, id, typeof b.codigo === 'string' ? b.codigo.trim() : '', d.llaveMaestra))
