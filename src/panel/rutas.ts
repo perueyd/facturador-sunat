@@ -34,7 +34,7 @@ import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
 import type { Regimen } from '../tipos.js';
 import {
-  ROLES, ROLES_EMISORES, activarTotp, asignarEmpresa, cambiarContrasena, crearUsuario, elegirEmpresa, entrar, leerSesion, restablecerAcceso, salir,
+  ROLES, ROLES_EMISORES, activarTotp, asignarEmpresa, cambiarContrasena, cerrarOtrasSesiones, crearUsuario, elegirEmpresa, entrar, leerSesion, restablecerAcceso, salir,
   type Rol, type Sesion,
 } from './usuarios.js';
 
@@ -219,7 +219,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
     const r = await entrar(d.db, {
       email: texto(b.email, 200), contrasena: texto(b.contrasena, 200), codigo: texto(b.codigo, 6).trim(),
-      llaveMaestra: d.llaveMaestra, ip,
+      llaveMaestra: d.llaveMaestra, ip, recordar: b.recordar === true,
     });
     if (!r.ok) {
       if (!d.fallos.contar(ip)) return frenado(c);
@@ -248,6 +248,12 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (token) await salir(d.db, token);
     deleteCookie(c, COOKIE, { path: '/', secure: true });
     return c.json({ ok: true });
+  });
+
+  app.post('/panel/api/sesiones/cerrar-otras', async (c) => {
+    const s = await conSesion(c);
+    if (s instanceof Response) return s;
+    return c.json({ ok: true, cerradas: await cerrarOtrasSesiones(d.db, s) });
   });
 
   app.get('/panel/api/yo', async (c) => {

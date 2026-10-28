@@ -36,7 +36,7 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 | Entrar | Correo + contraseña (scrypt, mínimo 10 caracteres) + código de 6 dígitos (TOTP). Sin el segundo paso activado no se entra. |
 | Fuerza bruta | 5 fallos seguidos bloquean la cuenta 15 minutos; además, el límite de intentos por dirección de la API. Mismo mensaje para cualquier fallo y mismo tiempo de respuesta aunque el correo no exista. |
 | Código reusado | Cada código de 6 dígitos sirve una sola vez (se guarda el último paso aceptado, de forma atómica). |
-| Sesión | Token aleatorio de 256 bits en cookie `__Host-` HttpOnly, Secure, SameSite=Strict; vence a las 12 h. En la base solo su huella SHA-256. Salir, desactivar el usuario o restablecer su 2FA la cortan al instante. |
+| Sesión | Token aleatorio de 256 bits en cookie `__Host-` HttpOnly, Secure, SameSite=Strict; vence a las 12 h, o a los 30 días si se marca "Mantener mi sesión iniciada" (solo en dispositivos propios). "Cerrar sesión en los demás dispositivos" corta todas menos la actual. En la base solo su huella SHA-256. Salir, desactivar el usuario o restablecer su 2FA la cortan al instante. |
 | Otro sitio dando órdenes (CSRF) | Toda orden exige la cabecera `X-Panel: 1` y, si llega `Origin`, que sea el mismo sitio. |
 | Código malicioso en la página (XSS) | Política de contenido estricta (solo el JavaScript propio) y todo dato se pinta como texto, nunca como HTML. |
 | Roles y empresas | Cada usuario solo ve las empresas asignadas. DUEÑO, ADMIN y VENDEDOR emiten; CONTADOR y SOLO_LECTURA consultan. Comprobante de otra empresa → 404. |

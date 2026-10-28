@@ -458,4 +458,23 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect(yo.empresas).toHaveLength(2);
     expect((await pedir('/panel/api/empresas', { cookie, cuerpo: { ...nueva, razonSocial: 'OTRA COSA' } })).status).toBe(409);
   });
+
+  it('"mantener mi sesión iniciada": 30 días en vez de 12 horas; cerrar las demás sesiones', async () => {
+    const u = await usuario();
+    const dias = async (recordar: boolean, paso: number) => {
+      const r = await pedir('/panel/api/entrar', { cuerpo: { email: u.email, contrasena: CONTRASENA, codigo: codigoTotp(u.secreto, paso), recordar } });
+      expect(r.status).toBe(200);
+      const galleta = r.headers.get('set-cookie') ?? '';
+      const expira = Date.parse(/Expires=([^;]+)/i.exec(galleta)![1]!);
+      return { cookie: galleta.split(';')[0]!, horas: Math.round((expira - Date.now()) / 3_600_000) };
+    };
+    const corta = await dias(false, pasoActual());
+    const larga = await dias(true, pasoActual() + 1);
+    expect(corta.horas).toBe(12);
+    expect(larga.horas).toBe(30 * 24);
+    const r = await (await pedir('/panel/api/sesiones/cerrar-otras', { cookie: larga.cookie, cuerpo: {} })).json();
+    expect(r.cerradas).toBe(1);
+    expect((await pedir('/panel/api/yo', { cookie: corta.cookie })).status).toBe(401);
+    expect((await pedir('/panel/api/yo', { cookie: larga.cookie })).status).toBe(200);
+  });
 });

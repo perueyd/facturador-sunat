@@ -373,7 +373,7 @@ async function alEntrar(e) {
   const f = new FormData(e.target);
   $('#error-entrar').textContent = '';
   try {
-    await api('/entrar', { cuerpo: { email: f.get('email'), contrasena: f.get('contrasena'), codigo: f.get('codigo') } });
+    await api('/entrar', { cuerpo: { email: f.get('email'), contrasena: f.get('contrasena'), codigo: f.get('codigo'), recordar: f.get('recordar') === 'on' } });
     e.target.reset();
     await cargarPanel();
   } catch (err) {
@@ -759,6 +759,14 @@ async function buscarCliente(e) {
 
 document.addEventListener('DOMContentLoaded', () => {
   $('#exportar').addEventListener('click', exportar);
+  $('#cerrar-otras').addEventListener('click', async () => {
+    try {
+      const r = await api('/sesiones/cerrar-otras', { cuerpo: {} });
+      mensaje('#mensaje-sesiones', r.cerradas ? `✔ Se cerraron ${r.cerradas} sesión(es) en otros dispositivos.` : 'No había otras sesiones abiertas.');
+    } catch (err) {
+      mensaje('#mensaje-sesiones', err.message, true);
+    }
+  });
   $('#archivo-logo').addEventListener('change', subirLogo);
   $('#form-usuario').addEventListener('submit', alDarAcceso);
   $('#form-activar').addEventListener('submit', alActivar);
