@@ -69,6 +69,8 @@ export interface DependenciasPanel {
   respuestaComprobante: (c: Context, id: string) => Promise<unknown>;
   claveInstalacionValida: (clave: string) => boolean;
   claveRecuperacionValida: (clave: string) => boolean;
+  recuperacionMuyCorta: boolean;
+  instalacionMuyCorta: boolean;
   instalacionConfigurada: boolean;
 }
 
@@ -118,6 +120,9 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const ip = d.ipCliente(c);
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (d.instalacionMuyCorta) {
+      return d.error(c, 401, 'CLAVE_MUY_CORTA', 'La CLAVE_INSTALACION de Render es muy corta: debe tener 16 caracteres o más.');
+    }
     if (!d.claveInstalacionValida(typeof b.clave === 'string' ? b.clave : '')) {
       return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de instalación no es correcta.') : frenado(c);
     }
@@ -179,8 +184,11 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const ip = d.ipCliente(c);
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (d.recuperacionMuyCorta) {
+      return d.error(c, 401, 'CLAVE_MUY_CORTA', 'La CLAVE_RECUPERACION de Render es muy corta: debe tener 16 caracteres o más. Cámbiala en Render, guarda y espera a que termine de reiniciar.');
+    }
     if (!d.claveRecuperacionValida(typeof b.clave === 'string' ? b.clave : '')) {
-      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de recuperación no es correcta (o no está puesta en Render).') : frenado(c);
+      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de recuperación no es correcta (o no está puesta en Render, o Render aún no termina de reiniciar).') : frenado(c);
     }
     const u = await usuarioActivoPorCorreo(b.email);
     if (!u) return d.error(c, 404, 'NO_ENCONTRADO', 'No hay un usuario activo con ese correo.');

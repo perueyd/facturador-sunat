@@ -113,4 +113,12 @@ describe.skipIf(!URL_PRUEBAS)('primera configuración del panel', () => {
     expect((await pedir(app, '/panel/api/entrar', { email: 'dueno@prueba.pe', contrasena: CONTRASENA, codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(401);
     expect((await pedir(app, '/panel/api/entrar', { email: 'dueno@prueba.pe', contrasena: 'otra clave nueva 2026', codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(200);
   });
+
+  it('clave de Render demasiado corta: lo dice claramente en vez de "incorrecta"', async () => {
+    const corta = crearApp({ db, claveRecuperacion: 'corta', servicios: { almacen: new AlmacenLocal(tmpdir()), llaveMaestra, algoritmo: 'SHA256', entorno: {},
+      crearCliente: (url, credenciales) => new ClienteSunatSoap({ url, credenciales }) } });
+    const r = await pedir(corta, '/panel/api/recuperar', { clave: 'corta', email: 'dueno@prueba.pe', contrasena: 'otra clave nueva 2026' });
+    expect(r.status).toBe(401);
+    expect((await r.json()).error.mensaje).toMatch(/16 caracteres/);
+  });
 });
