@@ -154,6 +154,13 @@ Si cambias de celular: `npm run usuario -- restablecer-2fa --email tu@correo.com
 4. Ya dentro, **borra `CLAVE_INSTALACION` de Render**. De todos modos deja de servir apenas
    existe un usuario.
 
+**Olvidaste tu contraseña o cambiaste de celular:**
+- Desde el celular: en Render agrega `CLAVE_RECUPERACION` (una clave que inventes, 16+ caracteres)
+  → en `/panel` toca **"¿Olvidaste tu contraseña o cambiaste de celular?"** → clave, correo y
+  contraseña nueva → agrega la cuenta otra vez en tu app → código → **Activar**. Después **borra
+  `CLAVE_RECUPERACION` de Render**.
+- Desde la PC: `npm run usuario -- recuperar --email tu@correo.com`.
+
 ## Paso 6c — Avisos por correo (opcional, gratis)
 
 El facturador te escribe 7 días, 3 días y el mismo día del vencimiento de tu declaración, cuando

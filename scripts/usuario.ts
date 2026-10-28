@@ -4,6 +4,7 @@
  *   npm run usuario -- crear       --email tu@correo.com --nombre "Tu nombre" --ruc 20XXXXXXXXX --rol DUENO
  *   npm run usuario -- asignar     --email tu@correo.com --ruc 10XXXXXXXXX --rol ADMIN
  *   npm run usuario -- restablecer-2fa --email tu@correo.com
+ *   npm run usuario -- recuperar   --email tu@correo.com   (contraseña olvidada: nueva contraseña + nuevo QR)
  *   npm run usuario -- desactivar  --email tu@correo.com
  *   npm run usuario -- listar      --ruc 20XXXXXXXXX
  *   npm run usuario -- plataforma  --email tu@correo.com   (puede dar de alta empresas desde el panel)
@@ -16,7 +17,9 @@
 import { parseArgs } from 'node:util';
 import QRCode from 'qrcode';
 import { crearPool, type Db } from '../src/db/conexion.js';
-import { ROLES, activarTotp, asignarEmpresa, cerrarSesionesDe, crearUsuario, nuevoSecretoTotp, type Rol } from '../src/panel/usuarios.js';
+import {
+  ROLES, activarTotp, asignarEmpresa, cerrarSesionesDe, crearUsuario, nuevoSecretoTotp, restablecerAcceso, type Rol,
+} from '../src/panel/usuarios.js';
 import { llaveMaestraDesdeEntorno } from '../src/seguridad/cifrado.js';
 import { base32, urlOtpauth } from '../src/seguridad/totp.js';
 import { empresaPorRuc, pedirOculto } from './lib/consola.js';
@@ -78,6 +81,13 @@ try {
     await cerrarSesionesDe(db, usuarioId);
     console.log('Se cerraron todas sus sesiones. El código anterior ya no sirve.');
     await configurarApp(db, usuarioId, v.email!, secreto, llaveMaestra);
+  } else if (accion === 'recuperar') {
+    const usuarioId = await usuarioPorEmail(db, v.email);
+    const contrasena = await pedirOculto('Contraseña nueva (mínimo 10 caracteres): ');
+    if ((await pedirOculto('Repite la contraseña: ')) !== contrasena) throw new Error('Las contraseñas no coinciden.');
+    const secreto = await restablecerAcceso(db, { usuarioId, contrasena, llaveMaestra, motivo: 'comando' });
+    console.log('Contraseña cambiada y sesiones cerradas.');
+    await configurarApp(db, usuarioId, v.email!, secreto, llaveMaestra);
   } else if (accion === 'desactivar') {
     const usuarioId = await usuarioPorEmail(db, v.email);
     await db.query(`UPDATE usuarios SET activo = false WHERE id = $1`, [usuarioId]);
@@ -97,7 +107,7 @@ try {
     );
     console.table(r.rows.map((x) => ({ correo: x.email, nombre: x.nombre, rol: x.rol, estado: x.activo ? 'ACTIVO' : 'DESACTIVADO', dosPasos: x.totp_activo ? 'sí' : 'NO' })));
   } else {
-    throw new Error('Acción: crear | asignar | restablecer-2fa | desactivar | listar | plataforma (ver el encabezado de scripts/usuario.ts).');
+    throw new Error('Acción: crear | asignar | restablecer-2fa | recuperar | desactivar | listar | plataforma (ver el encabezado de scripts/usuario.ts).');
   }
 } catch (e) {
   console.error('✘', e instanceof Error ? e.message : e);

@@ -34,7 +34,8 @@ import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
 import type { Regimen } from '../tipos.js';
 import {
-  ROLES, ROLES_EMISORES, activarTotp, asignarEmpresa, cambiarContrasena, crearUsuario, elegirEmpresa, entrar, leerSesion, salir, type Rol, type Sesion,
+  ROLES, ROLES_EMISORES, activarTotp, asignarEmpresa, cambiarContrasena, crearUsuario, elegirEmpresa, entrar, leerSesion, restablecerAcceso, salir,
+  type Rol, type Sesion,
 } from './usuarios.js';
 
 /** Notas de crédito, anulaciones, productos y stock: solo quienes responden por la empresa. */
@@ -67,6 +68,7 @@ export interface DependenciasPanel {
   emitir: (c: Context, quien: { empresaId: string; canalId: string; usuarioId: string }, cuerpo: unknown) => Promise<Response>;
   respuestaComprobante: (c: Context, id: string) => Promise<unknown>;
   claveInstalacionValida: (clave: string) => boolean;
+  claveRecuperacionValida: (clave: string) => boolean;
   instalacionConfigurada: boolean;
 }
 
@@ -162,6 +164,50 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       return d.error(c, 409, 'YA_CONFIGURADO', 'El panel ya está configurado: entra con tu usuario.');
     }
     return (await activarTotp(d.db, id, typeof b.codigo === 'string' ? b.codigo.trim() : '', d.llaveMaestra))
+      ? c.json({ ok: true })
+      : (d.fallos.contar(ip) ? d.error(c, 422, 'CODIGO_INCORRECTO', 'Ese código no coincide. Revisa que la hora del celular esté en automático.') : frenado(c));
+  });
+
+  // ---------- Recuperar el acceso (contraseña olvidada o celular perdido) ----------
+  // Exige CLAVE_RECUPERACION, que solo puede poner quien entra al Render del facturador (quien
+  // ya controla todo). Pone contraseña nueva, segundo paso nuevo y cierra todas las sesiones.
+  const usuarioActivoPorCorreo = async (email: unknown) =>
+    (await d.db.query(`SELECT id, totp_activo FROM usuarios WHERE lower(email) = lower($1) AND activo`, [typeof email === 'string' ? email.trim() : ''])).rows[0] as
+      { id: string; totp_activo: boolean } | undefined;
+
+  app.post('/panel/api/recuperar', async (c) => {
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!d.claveRecuperacionValida(typeof b.clave === 'string' ? b.clave : '')) {
+      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de recuperación no es correcta (o no está puesta en Render).') : frenado(c);
+    }
+    const u = await usuarioActivoPorCorreo(b.email);
+    if (!u) return d.error(c, 404, 'NO_ENCONTRADO', 'No hay un usuario activo con ese correo.');
+    let secreto: Buffer;
+    try {
+      secreto = await restablecerAcceso(d.db, {
+        usuarioId: u.id, contrasena: typeof b.contrasena === 'string' ? b.contrasena.slice(0, 200) : '', llaveMaestra: d.llaveMaestra, motivo: `web ${ip}`,
+      });
+    } catch (e) {
+      if (e instanceof Error && /contraseña/.test(e.message)) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+    const url = urlOtpauth(String(b.email).trim().toLowerCase(), secreto);
+    return c.json({ qr: await QRCode.toDataURL(url, { margin: 1, width: 220 }), clave: base32(secreto), url });
+  });
+
+  app.post('/panel/api/recuperar/activar', async (c) => {
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!d.claveRecuperacionValida(typeof b.clave === 'string' ? b.clave : '')) {
+      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de recuperación no es correcta.') : frenado(c);
+    }
+    const u = await usuarioActivoPorCorreo(b.email);
+    // Solo se activa un segundo paso recién restablecido (inactivo): no sirve para cambiar uno vigente.
+    if (!u || u.totp_activo) return d.error(c, 409, 'NADA_QUE_ACTIVAR', 'No hay un acceso pendiente de activar para ese correo.');
+    return (await activarTotp(d.db, u.id, typeof b.codigo === 'string' ? b.codigo.trim() : '', d.llaveMaestra))
       ? c.json({ ok: true })
       : (d.fallos.contar(ip) ? d.error(c, 422, 'CODIGO_INCORRECTO', 'Ese código no coincide. Revisa que la hora del celular esté en automático.') : frenado(c));
   });

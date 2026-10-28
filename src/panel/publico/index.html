@@ -27,7 +27,33 @@
         <button type="submit">Entrar</button>
         <p class="error" id="error-entrar" role="alert"></p>
         <p id="enlace-instalar" hidden><button type="button" class="enlace" id="ir-instalar">¿Primera vez? Crea tu usuario de dueño</button></p>
+        <p><button type="button" class="enlace" id="ir-recuperar">¿Olvidaste tu contraseña o cambiaste de celular?</button></p>
       </form>
+    </section>
+
+    <!-- Recuperar el acceso: exige la CLAVE_RECUPERACION puesta en Render -->
+    <section id="vista-recuperar" hidden>
+      <h1>Recuperar el acceso</h1>
+      <p class="nota">1. En Render (Environment del facturador) agrega <strong>CLAVE_RECUPERACION</strong> con una clave
+        que inventes (16 caracteres o más) y guarda. 2. Espera unos minutos y llena esto:</p>
+      <form id="form-recuperar">
+        <label>Clave de recuperación <input name="clave" type="password" autocomplete="off" required></label>
+        <label>Tu correo <input name="email" type="email" autocomplete="username" required></label>
+        <label>Contraseña nueva <small>(mínimo 10 caracteres)</small>
+          <input name="contrasena" type="password" autocomplete="new-password" minlength="10" required></label>
+        <button type="submit">Continuar</button>
+        <p class="error" id="error-recuperar" role="alert"></p>
+      </form>
+      <form id="form-recuperar-codigo" hidden>
+        <p>Tu código de 6 dígitos anterior ya no sirve. Agrega la cuenta otra vez en <strong>Google Authenticator</strong>:</p>
+        <p><a id="abrir-app-recuperar" class="boton-enlace" href="#">📱 Agregar a mi app autenticadora</a></p>
+        <p class="qr-caja"><img id="qr-recuperar" alt="Código QR para la app autenticadora" width="220" height="220"></p>
+        <p class="nota">O en la app: "Ingresar clave de configuración" → <strong id="clave-recuperar" class="clave"></strong></p>
+        <label>Código de 6 dígitos que muestra la app <input name="codigo" inputmode="numeric" maxlength="6" required></label>
+        <button type="submit">Activar</button>
+        <p class="error" id="error-recuperar-codigo" role="alert"></p>
+      </form>
+      <p><button type="button" class="enlace" id="volver-entrar">Volver a entrar</button></p>
     </section>
 
     <!-- Primera configuración: solo aparece mientras el facturador no tiene ningún usuario -->

@@ -7,7 +7,7 @@
  * bloqueada 15 minutos.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import type { Db, Tx } from '../db/conexion.js';
+import { enTransaccion, type Db, type Tx } from '../db/conexion.js';
 import { cifrar, descifrar } from '../seguridad/cifrado.js';
 import { hashContrasena, verificarContrasena } from '../seguridad/contrasenas.js';
 import { generarSecretoTotp, verificarTotp } from '../seguridad/totp.js';
@@ -222,4 +222,24 @@ export async function cambiarContrasena(
   await db.query(`UPDATE sesiones SET revocada_en = now() WHERE usuario_id = $1 AND id <> $2 AND revocada_en IS NULL`, [d.usuarioId, d.sesionId]);
   await db.query(`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id) VALUES ($1, 'PANEL_CAMBIO_CONTRASENA', 'usuarios', $1)`, [d.usuarioId]);
   return { ok: true };
+}
+
+/**
+ * Recuperar el acceso: contraseña nueva y segundo paso nuevo (queda inactivo hasta confirmar
+ * el código). Cierra todas las sesiones y quita el bloqueo por intentos.
+ */
+export async function restablecerAcceso(
+  db: Db,
+  d: { usuarioId: string; contrasena: string; llaveMaestra: Buffer; motivo: string },
+): Promise<Buffer> {
+  const hash = await hashContrasena(d.contrasena);
+  return enTransaccion(db, async (tx) => {
+    await tx.query(`UPDATE usuarios SET password_hash = $2, intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = $1`, [d.usuarioId, hash]);
+    const secreto = await nuevoSecretoTotp(tx, d.usuarioId, d.llaveMaestra);
+    await tx.query(`UPDATE sesiones SET revocada_en = now() WHERE usuario_id = $1 AND revocada_en IS NULL`, [d.usuarioId]);
+    await tx.query(`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, 'RESTABLECER_ACCESO', 'usuarios', $1, $2)`, [
+      d.usuarioId, JSON.stringify({ motivo: d.motivo }),
+    ]);
+    return secreto;
+  });
 }
