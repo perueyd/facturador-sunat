@@ -309,16 +309,18 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
 
   it('cambiar contraseña: exige la actual y un código nuevo; cierra las otras sesiones', async () => {
     const u = await usuario();
-    const otra = await entrar(u, pasoActual());
-    const esta = await entrar(u, pasoActual() + 1);
+    // Paso fijo: si el reloj cambia de bloque de 30 s a mitad de la prueba, "el siguiente" no se corre.
+    const p = pasoActual();
+    const otra = await entrar(u, p);
+    const esta = await entrar(u, p + 1);
     const cambiar = (cuerpo: Record<string, string>) => pedir('/panel/api/contrasena', { cookie: esta, cuerpo });
-    expect((await cambiar({ actual: 'equivocada!!', nueva: 'otra clave segura', codigo: codigoTotp(u.secreto, pasoActual() - 1) })).status).toBe(422);
+    expect((await cambiar({ actual: 'equivocada!!', nueva: 'otra clave segura', codigo: codigoTotp(u.secreto, p - 1) })).status).toBe(422);
     // El último código usado (paso + 1) ya no vale.
-    expect((await cambiar({ actual: CONTRASENA, nueva: 'otra clave segura', codigo: codigoTotp(u.secreto, pasoActual() + 1) })).status).toBe(422);
+    expect((await cambiar({ actual: CONTRASENA, nueva: 'otra clave segura', codigo: codigoTotp(u.secreto, p + 1) })).status).toBe(422);
     // Con un código de un paso anterior al último usado tampoco: se exige uno nuevo. Se simula el siguiente minuto.
     await db.query(`UPDATE usuarios SET totp_ultimo_paso = totp_ultimo_paso - 2 WHERE id = $1`, [u.usuarioId]);
-    expect((await cambiar({ actual: CONTRASENA, nueva: 'corta', codigo: codigoTotp(u.secreto, pasoActual()) })).status).toBe(422);
-    expect((await cambiar({ actual: CONTRASENA, nueva: 'otra clave segura', codigo: codigoTotp(u.secreto, pasoActual()) })).status).toBe(200);
+    expect((await cambiar({ actual: CONTRASENA, nueva: 'corta', codigo: codigoTotp(u.secreto, p) })).status).toBe(422);
+    expect((await cambiar({ actual: CONTRASENA, nueva: 'otra clave segura', codigo: codigoTotp(u.secreto, p) })).status).toBe(200);
     expect((await pedir('/panel/api/yo', { cookie: esta })).status).toBe(200);
     expect((await pedir('/panel/api/yo', { cookie: otra })).status).toBe(401);
   });

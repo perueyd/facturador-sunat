@@ -615,13 +615,14 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
     es nuevo, el panel muestra el QR para el celular de esa persona y se activa con su código.
   - **Certificado digital** (.pfx/.p12): lo carga o renueva el DUEÑO; se guarda cifrado.
   - **Logo** de la empresa en el PDF (se achica en el navegador; solo PNG/JPG reales, 70 KB).
-  - **Primera configuración sin la PC**: con `CLAVE_INSTALACION` en Render se crea el primer
-    usuario (dueño y administrador de la plataforma) desde el celular; se cierra para siempre en
+  - **Primera configuración sin la PC**: con la llave de la tienda (o `CLAVE_INSTALACION` en
+    Render) se crea el primer usuario (dueño y administrador de la plataforma) desde el celular; se cierra para siempre en
     cuanto existe un usuario.
   - **Mantener la sesión iniciada** 30 días en un dispositivo propio (casilla al entrar) y
     **cerrar sesión en los demás dispositivos** (pestaña Más).
-  - **Recuperar el acceso** (contraseña olvidada o celular perdido): con `CLAVE_RECUPERACION` en
-    Render desde `/panel`, o `npm run usuario -- recuperar` en la PC.
+  - **Recuperar el acceso** sin entrar a Render: códigos de respaldo (celular perdido), enlace por
+    correo (contraseña olvidada) y, si se perdió todo, la llave de la tienda (solo el dueño).
+    En la PC: `npm run usuario -- recuperar`.
   - **Alta de empresas nuevas**: solo el administrador de la plataforma
     (`npm run usuario -- plataforma --email …`); nunca pisa una empresa que ya existe.
 - **Cada empresa elige qué funciones usa** (`npm run empresa:modulos`): panel, vencimientos,
