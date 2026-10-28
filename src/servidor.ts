@@ -17,6 +17,8 @@ const app = crearApp({
   db,
   servicios: serviciosDesdeEntorno(db, process.env, { tiempoMaximoSunatMs: 8_000 }),
   ...(process.env.CLAVE_CRON ? { claveCron: process.env.CLAVE_CRON } : {}),
+  // Primera configuración del panel desde el celular (solo sirve mientras no exista ningún usuario).
+  ...(process.env.CLAVE_INSTALACION ? { claveInstalacion: process.env.CLAVE_INSTALACION } : {}),
   // Avisos por correo: solo si están las dos variables (ver docs/PUBLICAR.md, paso 8).
   ...(process.env.RESEND_API_KEY && process.env.AVISOS_DESDE ? { correo: correoResend(process.env.RESEND_API_KEY, process.env.AVISOS_DESDE) } : {}),
 });

@@ -145,6 +145,15 @@ npm run usuario -- crear --email tu@correo.com --nombre "Tu nombre" --ruc 206166
 
 Si cambias de celular: `npm run usuario -- restablecer-2fa --email tu@correo.com`.
 
+**Sin la PC (solo para el primer usuario):**
+1. Render → facturador → **Environment** → agrega `CLAVE_INSTALACION` con una clave que inventes
+   (mínimo 16 caracteres, anótala) → **Save changes**.
+2. Abre la dirección de Render + `/panel` → **"¿Primera vez? Crea tu usuario de dueño"**.
+3. Escribe esa clave, el RUC, tus datos y una contraseña → **"Agregar a mi app autenticadora"** →
+   escribe el código que muestra la app → **Activar**.
+4. Ya dentro, **borra `CLAVE_INSTALACION` de Render**. De todos modos deja de servir apenas
+   existe un usuario.
+
 ## Paso 6c — Avisos por correo (opcional, gratis)
 
 El facturador te escribe 7 días, 3 días y el mismo día del vencimiento de tu declaración, cuando

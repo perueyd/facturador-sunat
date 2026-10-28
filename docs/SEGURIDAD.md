@@ -49,6 +49,7 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 | Certificado por el panel | Solo el DUEÑO; viaja por HTTPS y se guarda cifrado como siempre; cada contraseña equivocada cuenta como intento fallido. |
 | Logo | Se valida por contenido (firma PNG/JPEG), no por el nombre; máximo 70 KB; los anteriores se conservan. |
 | Alta de empresas | Solo usuarios marcados como administrador de la plataforma (por comando, en la PC); un RUC existente responde 409. |
+| Primera configuración por web | Solo con `CLAVE_INSTALACION` en Render (mín. 16 caracteres, comparada en tiempo constante, con límite de intentos) y solo mientras la base no tenga NINGÚN usuario (con bloqueo para que dos pestañas no creen dos). Activar exige la clave otra vez y que ese sea el único usuario, aún sin 2FA. Después se cierra para siempre; se recomienda borrar la variable. |
 | Avisos por correo | Solo a DUEÑO y ADMIN activos; cada aviso una sola vez; la clave del proveedor solo en variables de entorno. |
 
 ## Pendiente (con motivo)

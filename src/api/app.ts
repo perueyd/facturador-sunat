@@ -32,6 +32,8 @@ export interface DependenciasApi {
   servicios: ServiciosEnvio & { almacen: Almacen };
   /** Clave para el endpoint del cron (Vercel la envía como "Authorization: Bearer …"). */
   claveCron?: string;
+  /** Clave de la primera configuración del panel (crear el primer usuario sin la PC). Mínimo 16 caracteres. */
+  claveInstalacion?: string;
   /** Enviar a SUNAT apenas se emite (por defecto sí). */
   enviarAlEmitir?: boolean;
   /** Pedidos por minuto por llave. */
@@ -390,6 +392,10 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     db: dep.db, llaveMaestra: dep.servicios.llaveMaestra, almacen: dep.servicios.almacen, error, ipCliente, fallos,
     emitir: (c, quien, cuerpo) => emitirYResponder(c, quien, cuerpo, true),
     respuestaComprobante,
+    // Sin clave de instalación (o muy corta), la primera configuración por web no existe.
+    claveInstalacionValida: (clave) =>
+      Boolean(dep.claveInstalacion && dep.claveInstalacion.length >= 16 && igualesEnTiempoConstante(clave, dep.claveInstalacion)),
+    instalacionConfigurada: Boolean(dep.claveInstalacion && dep.claveInstalacion.length >= 16),
   });
 
   return app;

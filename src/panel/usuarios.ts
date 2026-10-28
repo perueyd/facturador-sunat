@@ -7,7 +7,7 @@
  * bloqueada 15 minutos.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import type { Db } from '../db/conexion.js';
+import type { Db, Tx } from '../db/conexion.js';
 import { cifrar, descifrar } from '../seguridad/cifrado.js';
 import { hashContrasena, verificarContrasena } from '../seguridad/contrasenas.js';
 import { generarSecretoTotp, verificarTotp } from '../seguridad/totp.js';
@@ -26,7 +26,7 @@ const huella = (token: string) => createHash('sha256').update(token).digest();
 
 /** Crea el usuario (sin 2FA activo todavía). Devuelve el secreto para mostrarlo como QR. */
 export async function crearUsuario(
-  db: Db,
+  db: Db | Tx,
   d: { email: string; nombre: string; contrasena: string; llaveMaestra: Buffer },
 ): Promise<{ usuarioId: string; secreto: Buffer }> {
   const email = d.email.trim().toLowerCase();
@@ -39,7 +39,7 @@ export async function crearUsuario(
 }
 
 /** Secreto TOTP nuevo (al crear o al restablecer): queda inactivo hasta confirmarlo con un código. */
-export async function nuevoSecretoTotp(db: Db, usuarioId: string, llaveMaestra: Buffer): Promise<Buffer> {
+export async function nuevoSecretoTotp(db: Db | Tx, usuarioId: string, llaveMaestra: Buffer): Promise<Buffer> {
   const secreto = generarSecretoTotp();
   await db.query(
     `UPDATE usuarios SET totp_secreto_cifrado = $2, totp_activo = false, totp_ultimo_paso = NULL WHERE id = $1`,
@@ -59,7 +59,7 @@ export async function activarTotp(db: Db, usuarioId: string, codigo: string, lla
   return true;
 }
 
-export async function asignarEmpresa(db: Db, usuarioId: string, empresaId: string, rol: Rol): Promise<void> {
+export async function asignarEmpresa(db: Db | Tx, usuarioId: string, empresaId: string, rol: Rol): Promise<void> {
   await db.query(
     `INSERT INTO usuario_empresa (usuario_id, empresa_id, rol) VALUES ($1, $2, $3)
      ON CONFLICT (usuario_id, empresa_id) DO UPDATE SET rol = EXCLUDED.rol`,

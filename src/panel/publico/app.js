@@ -25,7 +25,7 @@ async function api(ruta, opciones = {}) {
   });
   if (opciones.crudo) return res;
   const datos = await res.json().catch(() => ({}));
-  if (res.status === 401 && ruta !== '/entrar') mostrarEntrar();
+  if (res.status === 401 && ruta !== '/entrar' && !ruta.startsWith('/instalacion')) mostrarEntrar();
   if (!res.ok) {
     const e = new Error(datos.error?.mensaje || 'No se pudo completar. Intenta de nuevo.');
     e.detalles = datos.error?.detalles || [];
@@ -76,7 +76,10 @@ function agregarItem() {
 
 // ---------- Vistas ----------
 function mostrarEntrar() {
+  $('#vista-instalar').hidden = true;
   $('#vista-entrar').hidden = false;
+  // Facturador recién publicado, sin usuarios: se ofrece la primera configuración.
+  api('/instalacion').then((r) => { $('#enlace-instalar').hidden = !r.disponible; }).catch(() => {});
   $('#vista-panel').hidden = true;
   $('#salir').hidden = true;
   $('#quien').textContent = '';
@@ -290,6 +293,40 @@ function mostrarResultado(c) {
   caja.replaceChildren(...partes);
   caja.hidden = false;
   caja.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------- Primera configuración ----------
+let instalacion = null;
+async function alInstalar(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  $('#error-instalar').textContent = '';
+  try {
+    const r = await api('/instalacion', { cuerpo: Object.fromEntries(f) });
+    instalacion = { clave: f.get('clave'), usuarioId: r.usuarioId, email: f.get('email') };
+    $('#qr-instalar').src = r.qr;
+    $('#clave-instalar').textContent = r.clave;
+    $('#abrir-app').href = r.url;
+    e.target.hidden = true;
+    $('#form-instalar-codigo').hidden = false;
+  } catch (err) {
+    $('#error-instalar').textContent = err.message;
+  }
+}
+
+async function alActivarInstalacion(e) {
+  e.preventDefault();
+  $('#error-instalar-codigo').textContent = '';
+  try {
+    await api('/instalacion/activar', { cuerpo: { ...instalacion, codigo: new FormData(e.target).get('codigo') } });
+    alert('✔ Listo. Ahora entra con tu correo, tu contraseña y el código del momento.');
+    const correo = instalacion.email;
+    instalacion = null;
+    mostrarEntrar();
+    $('#form-entrar').email.value = correo;
+  } catch (err) {
+    $('#error-instalar-codigo').textContent = err.message;
+  }
 }
 
 // ---------- Formularios ----------
@@ -713,6 +750,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-contrasena').addEventListener('submit', alCambiarContrasena);
   $('[name=numero]').addEventListener('change', buscarCliente);
   $('#form-entrar').addEventListener('submit', alEntrar);
+  $('#ir-instalar').addEventListener('click', () => { $('#vista-entrar').hidden = true; $('#vista-instalar').hidden = false; });
+  $('#form-instalar').addEventListener('submit', alInstalar);
+  $('#form-instalar-codigo').addEventListener('submit', alActivarInstalacion);
   $('#form-emitir').addEventListener('submit', alEmitir);
   $('#agregar').addEventListener('click', () => { agregarItem(); recalcularTotal(); });
   $('#salir').addEventListener('click', async () => { await api('/salir', { cuerpo: {} }).catch(() => {}); mostrarEntrar(); });

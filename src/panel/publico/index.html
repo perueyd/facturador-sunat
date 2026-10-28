@@ -26,6 +26,35 @@
           <input name="codigo" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" required></label>
         <button type="submit">Entrar</button>
         <p class="error" id="error-entrar" role="alert"></p>
+        <p id="enlace-instalar" hidden><button type="button" class="enlace" id="ir-instalar">¿Primera vez? Crea tu usuario de dueño</button></p>
+      </form>
+    </section>
+
+    <!-- Primera configuración: solo aparece mientras el facturador no tiene ningún usuario -->
+    <section id="vista-instalar" hidden>
+      <h1>Primera configuración</h1>
+      <p class="nota">Crea tu usuario de dueño. Necesitas la <strong>clave de instalación</strong> que pusiste en Render
+        y la app <strong>Google Authenticator</strong> en tu celular.</p>
+      <form id="form-instalar">
+        <label>Clave de instalación <input name="clave" type="password" autocomplete="off" required></label>
+        <label>RUC de tu empresa <input name="ruc" inputmode="numeric" maxlength="11" required></label>
+        <label>Tu nombre <input name="nombre" maxlength="120" required></label>
+        <label>Tu correo <input name="email" type="email" autocomplete="username" required></label>
+        <label>Contraseña nueva <small>(mínimo 10 caracteres)</small>
+          <input name="contrasena" type="password" autocomplete="new-password" minlength="10" required></label>
+        <button type="submit">Crear mi usuario</button>
+        <p class="error" id="error-instalar" role="alert"></p>
+      </form>
+      <form id="form-instalar-codigo" hidden>
+        <p>1. Agrega tu cuenta en <strong>Google Authenticator</strong>:</p>
+        <p><a id="abrir-app" class="boton-enlace" href="#">📱 Agregar a mi app autenticadora</a></p>
+        <p class="nota">Desde otro celular: en la app toca <strong>+</strong> → <strong>Escanear código QR</strong>.</p>
+        <p class="qr-caja"><img id="qr-instalar" alt="Código QR para la app autenticadora" width="220" height="220"></p>
+        <p class="nota">Si nada de eso funciona: en la app elige <strong>"Ingresar clave de configuración"</strong>
+          y escribe esta clave: <strong id="clave-instalar" class="clave"></strong></p>
+        <label>2. Código de 6 dígitos que muestra la app <input name="codigo" inputmode="numeric" maxlength="6" required></label>
+        <button type="submit">Activar</button>
+        <p class="error" id="error-instalar-codigo" role="alert"></p>
       </form>
     </section>
 
