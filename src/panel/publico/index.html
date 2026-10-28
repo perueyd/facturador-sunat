@@ -125,8 +125,31 @@
       <label id="caja-empresa">Empresa <select id="empresa"></select></label>
 
       <!-- Tablero: cada tarjeta aparece solo si la función está activa para la empresa -->
+      <!-- Ventas en números (función "estadisticas"; dueño, administrador y contador) -->
+      <div id="kpis" class="kpis" hidden></div>
       <div id="tablero" class="tablero"></div>
       <p class="nota" id="nota-estimado" hidden>Los impuestos mostrados son <strong>estimados</strong>: confírmalos con tu contador antes de declarar.</p>
+
+      <div id="graficos" class="graficos" hidden>
+        <div class="grafico">
+          <h3>Ventas de los últimos 6 meses</h3>
+          <svg id="graf-meses" viewBox="0 0 320 170" role="img" aria-label="Ventas por mes"></svg>
+          <p class="leyenda"><span class="punto ventas"></span> Ventas <span id="leyenda-compras"><span class="punto compras"></span> Compras</span></p>
+        </div>
+        <div class="grafico">
+          <h3>Ventas de los últimos 30 días</h3>
+          <svg id="graf-dias" viewBox="0 0 320 130" role="img" aria-label="Ventas por día"></svg>
+          <p class="leyenda" id="dia-mejor"></p>
+        </div>
+        <div class="grafico">
+          <h3>¿De dónde vienen tus ventas? <small>(este mes)</small></h3>
+          <div id="graf-canales" class="barras"></div>
+        </div>
+        <div class="grafico">
+          <h3>Lo más vendido <small>(este mes)</small></h3>
+          <div id="graf-productos" class="barras"></div>
+        </div>
+      </div>
 
       <nav class="pestanas" id="pestanas">
         <button type="button" data-pestana="vender" class="activa">Vender</button>

@@ -153,6 +153,8 @@ const FECHA = new Intl.DateTimeFormat('es-PE', { weekday: 'long', day: 'numeric'
 const fechaLarga = (iso) => FECHA.format(new Date(`${iso}T00:00:00Z`));
 
 async function cargarTablero() {
+  const sinEstadisticas = () => { $('#kpis').hidden = true; $('#graficos').hidden = true; };
+  if (yo?.verEstadisticas) cargarEstadisticas().catch(sinEstadisticas); else sinEstadisticas();
   const t = await api('/tablero');
   const tarjetas = [];
   const v = t.vencimiento;
@@ -196,6 +198,134 @@ async function cargarTablero() {
   }
   $('#tablero').replaceChildren(...tarjetas);
   $('#nota-estimado').hidden = !r;
+}
+
+// ---------- Estadísticas de ventas ----------
+// Los montos llegan como texto ("11848.00") y se muestran tal cual, con separador de miles.
+// El alto de cada barra (0 a 100) ya viene calculado por el facturador: aquí no se suma nada.
+const miles = (texto) => texto.replace(/^(-?\d+)/, (ent) => ent.replace(/\B(?=(\d{3})+(?!\d))/g, ','));
+const soles = (texto) => `S/ ${miles(texto)}`;
+/** "11848.00" → "11.8 mil" (para las etiquetas pequeñas de los gráficos). */
+function corto(texto) {
+  const ent = texto.split('.')[0].replace('-', '');
+  const signo = texto.startsWith('-') ? '-' : '';
+  if (ent.length <= 3) return signo + ent;
+  if (ent.length >= 7) return `${signo}${ent.slice(0, -6)} M`;
+  const decimal = ent.slice(-3, -2);
+  return `${signo}${ent.slice(0, -3)}${decimal === '0' ? '' : `.${decimal}`} mil`;
+}
+const NS = 'http://www.w3.org/2000/svg';
+function svg(etiqueta, atributos, texto) {
+  const e = document.createElementNS(NS, etiqueta);
+  for (const [k, v] of Object.entries(atributos)) e.setAttribute(k, v);
+  if (texto !== undefined) e.textContent = texto;
+  return e;
+}
+const DIA_MES = new Intl.DateTimeFormat('es-PE', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const diaCorto = (iso) => DIA_MES.format(new Date(`${iso}T00:00:00Z`)).replace('.', '');
+
+function kpi(color, titulo, valor, detalle) {
+  const k = document.createElement('div');
+  k.className = `kpi ${color}`;
+  const b = document.createElement('b');
+  b.textContent = titulo;
+  const v = document.createElement('strong');
+  v.textContent = valor;
+  k.append(b, v);
+  if (detalle) k.append(detalle);
+  return k;
+}
+
+function graficoMeses(meses) {
+  const conCompras = meses.some((m) => m.compras !== undefined);
+  const caja = $('#graf-meses');
+  const ancho = 320 / meses.length;
+  const hijos = [svg('line', { x1: 0, y1: 140, x2: 320, y2: 140, stroke: '#e5e5e5' })];
+  meses.forEach((m, i) => {
+    const x = i * ancho;
+    const barra = (alto, dx, w, color, titulo) => {
+      const r = svg('rect', { x: x + dx, y: 140 - alto * 1.15, width: w, height: Math.max(alto * 1.15, alto ? 1 : 0), rx: 3, fill: color });
+      r.append(svg('title', {}, titulo));
+      return r;
+    };
+    if (conCompras) {
+      hijos.push(barra(m.alto, ancho / 2 - 15, 14, '#17b897', `${m.nombre}: ventas ${soles(m.ventas)}`));
+      hijos.push(barra(m.altoCompras, ancho / 2 + 1, 14, '#f472a8', `${m.nombre}: compras ${soles(m.compras)}`));
+    } else {
+      hijos.push(barra(m.alto, ancho / 2 - 13, 26, '#17b897', `${m.nombre}: ${soles(m.ventas)}`));
+    }
+    if (m.ventas !== '0.00') hijos.push(svg('text', { x: x + ancho / 2, y: 140 - m.alto * 1.15 - 4, 'text-anchor': 'middle' }, corto(m.ventas)));
+    hijos.push(svg('text', { x: x + ancho / 2, y: 155, 'text-anchor': 'middle' }, m.nombre));
+  });
+  caja.replaceChildren(...hijos);
+  $('#leyenda-compras').hidden = !conCompras;
+}
+
+function graficoDias(dias) {
+  const ancho = 320 / dias.length;
+  const hijos = [svg('line', { x1: 0, y1: 105, x2: 320, y2: 105, stroke: '#e5e5e5' })];
+  dias.forEach((d, i) => {
+    const ultimo = i === dias.length - 1;
+    const r = svg('rect', { x: i * ancho + 1, y: 105 - d.alto * 0.95, width: ancho - 2, height: Math.max(d.alto * 0.95, d.alto ? 1 : 0), rx: 2, fill: ultimo ? '#7c4dde' : '#a26bf0' });
+    r.append(svg('title', {}, `${diaCorto(d.fecha)}: ${soles(d.ventas)}`));
+    hijos.push(r);
+  });
+  for (const i of [0, 14, dias.length - 1]) {
+    hijos.push(svg('text', { x: i * ancho + ancho / 2, y: 120, 'text-anchor': i === 0 ? 'start' : i === dias.length - 1 ? 'end' : 'middle' }, i === dias.length - 1 ? 'hoy' : diaCorto(dias[i].fecha)));
+  }
+  $('#graf-dias').replaceChildren(...hijos);
+  const mejor = dias.find((d) => d.alto === 100);
+  $('#dia-mejor').textContent = mejor ? `Mejor día: ${diaCorto(mejor.fecha)} · ${soles(mejor.ventas)}. Toca una barra para ver el monto.` : 'Aún no hay ventas en estos 30 días.';
+}
+
+function barras(selector, filas, color) {
+  const caja = $(selector);
+  if (!filas.length) {
+    caja.replaceChildren(Object.assign(document.createElement('p'), { className: 'vacio', textContent: 'Aún no hay ventas este mes.' }));
+    return;
+  }
+  caja.replaceChildren(...filas.map((f) => {
+    const fila = document.createElement('div');
+    fila.className = 'fila';
+    const linea = document.createElement('div');
+    const nombre = document.createElement('span');
+    nombre.textContent = f.nombre;
+    const monto = document.createElement('span');
+    monto.textContent = f.detalle;
+    linea.append(nombre, monto);
+    const barra = svg('svg', { viewBox: '0 0 100 8', preserveAspectRatio: 'none' });
+    barra.append(svg('rect', { x: 0, y: 0, width: 100, height: 8, rx: 4, fill: '#eee' }), svg('rect', { x: 0, y: 0, width: f.ancho, height: 8, rx: 4, fill: color }));
+    fila.append(linea, barra);
+    return fila;
+  }));
+}
+
+async function cargarEstadisticas() {
+  const e = await api('/estadisticas');
+  const chip = (texto) => Object.assign(document.createElement('span'), { className: 'chip', textContent: texto });
+  const variacion = document.createElement('span');
+  if (e.mes.variacion === null) {
+    variacion.textContent = e.mes.comprobantes ? 'El mes anterior no tuvo ventas' : 'Aún sin ventas este mes';
+  } else {
+    const sube = !e.mes.variacion.startsWith('-');
+    variacion.append(chip(`${sube ? '▲' : '▼'} ${e.mes.variacion.replace('-', '')}%`), ' vs. mismos días del mes pasado');
+  }
+  const tarjetas = [
+    kpi('verde', 'Ventas de hoy', soles(e.hoy.ventas), `${e.hoy.comprobantes} comprobante(s)`),
+    kpi('morado', 'Ventas del mes', soles(e.mes.ventas), variacion),
+    kpi('azul', 'Ticket promedio', soles(e.mes.ticketPromedio), `${e.mes.comprobantes} venta(s) en el mes`),
+    kpi('ambar', 'Clientes del mes', String(e.clientes.mes), e.clientes.nuevos ? `+${e.clientes.nuevos} nuevo(s) este mes` : 'con DNI o RUC'),
+  ];
+  if (e.stockBajo !== undefined) {
+    tarjetas.push(kpi(e.stockBajo ? 'rosa' : 'gris', 'Stock bajo', String(e.stockBajo), e.stockBajo ? 'producto(s) por reponer' : 'todo en orden'));
+  }
+  $('#kpis').replaceChildren(...tarjetas);
+  graficoMeses(e.meses);
+  graficoDias(e.dias);
+  barras('#graf-canales', e.canales.map((c) => ({ nombre: c.canal, detalle: `${soles(c.ventas)} · ${c.porcentaje}%`, ancho: c.porcentaje })), '#2f80ed');
+  barras('#graf-productos', e.productos.map((p) => ({ nombre: p.descripcion, detalle: `${miles(p.cantidad)} und · ${soles(p.ventas)}`, ancho: p.alto })), '#d98a10');
+  $('#kpis').hidden = false;
+  $('#graficos').hidden = false;
 }
 
 async function cargarLista() {
