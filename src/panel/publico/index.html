@@ -22,40 +22,73 @@
       <form id="form-entrar" autocomplete="on">
         <label>Correo <input name="email" type="email" autocomplete="username" required></label>
         <label>Contraseña <input name="contrasena" type="password" autocomplete="current-password" required></label>
-        <label>Código de 6 dígitos <small>(de tu app autenticadora)</small>
-          <input name="codigo" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" required></label>
+        <label><span id="etiqueta-codigo">Código de 6 dígitos <small>(de tu app autenticadora)</small></span>
+          <input name="codigo" inputmode="numeric" maxlength="11" autocomplete="one-time-code" required></label>
+        <p><button type="button" class="enlace" id="usar-respaldo">¿Perdiste el celular? Usa un código de respaldo</button></p>
         <label class="casilla"><input type="checkbox" name="recordar"> Mantener mi sesión iniciada en este dispositivo (30 días)</label>
         <small>No la marques en un celular o computadora prestada.</small>
         <button type="submit">Entrar</button>
         <p class="error" id="error-entrar" role="alert"></p>
         <p id="enlace-instalar" hidden><button type="button" class="enlace" id="ir-instalar">¿Primera vez? Crea tu usuario de dueño</button></p>
-        <p><button type="button" class="enlace" id="ir-recuperar">¿Olvidaste tu contraseña o cambiaste de celular?</button></p>
+        <p><button type="button" class="enlace" id="ir-recuperar">¿Olvidaste tu contraseña?</button></p>
       </form>
     </section>
 
-    <!-- Recuperar el acceso: exige la CLAVE_RECUPERACION puesta en Render -->
+    <!-- Recuperar el acceso: por correo o, si se perdió todo, con la llave de la tienda -->
     <section id="vista-recuperar" hidden>
       <h1>Recuperar el acceso</h1>
-      <p class="nota">1. En Render (Environment del facturador) agrega <strong>CLAVE_RECUPERACION</strong> con una clave
-        que inventes (16 caracteres o más) y guarda. 2. Espera unos minutos y llena esto:</p>
-      <form id="form-recuperar">
-        <label>Clave de recuperación <input name="clave" type="password" autocomplete="off" required></label>
+      <form id="form-recuperar-correo" hidden>
+        <p class="nota">Te enviamos un enlace a tu correo para poner una contraseña nueva. Vale 30 minutos.</p>
         <label>Tu correo <input name="email" type="email" autocomplete="username" required></label>
+        <button type="submit">Enviarme el enlace</button>
+        <p id="mensaje-recuperar-correo" role="status"></p>
+      </form>
+      <details id="caja-recuperar-llave">
+        <summary>¿Perdiste el celular y no tienes códigos de respaldo?</summary>
+        <p class="nota">Solo para el <strong>dueño</strong>. Pega la llave de tu tienda (Vercel → Settings → Environment
+          Variables → <code>FACTURADOR_LLAVE</code>, empieza con <code>fk_</code>). Tendrás contraseña y código nuevos.</p>
+        <form id="form-recuperar">
+          <label>Llave de la tienda <small>(fk_…)</small> <input name="clave" type="password" autocomplete="off" required></label>
+          <label>Tu correo <input name="email" type="email" autocomplete="username" required></label>
+          <label>Contraseña nueva <small>(mínimo 10 caracteres)</small>
+            <input name="contrasena" type="password" autocomplete="new-password" minlength="10" required></label>
+          <button type="submit">Continuar</button>
+          <p class="error" id="error-recuperar" role="alert"></p>
+        </form>
+        <form id="form-recuperar-codigo" hidden>
+          <p>Tu código de 6 dígitos anterior ya no sirve. Agrega la cuenta otra vez en <strong>Google Authenticator</strong>:</p>
+          <p><a id="abrir-app-recuperar" class="boton-enlace" href="#">📱 Agregar a mi app autenticadora</a></p>
+          <p class="qr-caja"><img id="qr-recuperar" alt="Código QR para la app autenticadora" width="220" height="220"></p>
+          <p class="nota">O en la app: "Ingresar clave de configuración" → <strong id="clave-recuperar" class="clave"></strong></p>
+          <label>Código de 6 dígitos que muestra la app <input name="codigo" inputmode="numeric" maxlength="6" required></label>
+          <button type="submit">Activar</button>
+          <p class="error" id="error-recuperar-codigo" role="alert"></p>
+        </form>
+      </details>
+      <p><button type="button" class="enlace" id="volver-entrar">Volver a entrar</button></p>
+    </section>
+
+    <!-- Llegó desde el enlace del correo (#recuperar=…) -->
+    <section id="vista-enlace" hidden>
+      <h1>Contraseña nueva</h1>
+      <form id="form-enlace">
         <label>Contraseña nueva <small>(mínimo 10 caracteres)</small>
           <input name="contrasena" type="password" autocomplete="new-password" minlength="10" required></label>
-        <button type="submit">Continuar</button>
-        <p class="error" id="error-recuperar" role="alert"></p>
+        <label>Código de 6 dígitos de tu app <small>(o un código de respaldo)</small>
+          <input name="codigo" maxlength="11" autocomplete="one-time-code" required></label>
+        <button type="submit">Cambiar contraseña</button>
+        <p class="error" id="error-enlace" role="alert"></p>
       </form>
-      <form id="form-recuperar-codigo" hidden>
-        <p>Tu código de 6 dígitos anterior ya no sirve. Agrega la cuenta otra vez en <strong>Google Authenticator</strong>:</p>
-        <p><a id="abrir-app-recuperar" class="boton-enlace" href="#">📱 Agregar a mi app autenticadora</a></p>
-        <p class="qr-caja"><img id="qr-recuperar" alt="Código QR para la app autenticadora" width="220" height="220"></p>
-        <p class="nota">O en la app: "Ingresar clave de configuración" → <strong id="clave-recuperar" class="clave"></strong></p>
-        <label>Código de 6 dígitos que muestra la app <input name="codigo" inputmode="numeric" maxlength="6" required></label>
-        <button type="submit">Activar</button>
-        <p class="error" id="error-recuperar-codigo" role="alert"></p>
-      </form>
-      <p><button type="button" class="enlace" id="volver-entrar">Volver a entrar</button></p>
+    </section>
+
+    <!-- Códigos de respaldo recién creados: se muestran UNA sola vez -->
+    <section id="vista-codigos" hidden>
+      <h1>Tus códigos de respaldo</h1>
+      <p class="nota">Si pierdes el celular, entra escribiendo <strong>uno</strong> de estos en lugar del código de la app.
+        Cada uno sirve una sola vez. <strong>Guárdalos ahora</strong> (foto, papel o tu gestor de contraseñas): no se vuelven a mostrar.</p>
+      <ol id="lista-codigos" class="codigos"></ol>
+      <button type="button" id="copiar-codigos" class="secundario">Copiar</button>
+      <button type="button" id="codigos-guardados">Ya los guardé</button>
     </section>
 
     <!-- Primera configuración: solo aparece mientras el facturador no tiene ningún usuario -->
@@ -333,6 +366,17 @@
         <p class="nota">PNG o JPG. Se achica solo antes de subirlo.</p>
         <input type="file" id="archivo-logo" accept="image/png,image/jpeg">
         <p id="mensaje-logo" role="status"></p>
+      </details>
+
+      <details class="ajustes">
+        <summary>Códigos de respaldo</summary>
+        <p class="nota" id="estado-respaldo"></p>
+        <p class="nota">Sirven para entrar si pierdes el celular. Al generar nuevos, los anteriores dejan de servir.</p>
+        <form id="form-respaldo">
+          <label>Código de 6 dígitos <input name="codigo" inputmode="numeric" maxlength="11" autocomplete="one-time-code" required></label>
+          <button type="submit" class="secundario">Generar códigos nuevos</button>
+          <p id="mensaje-respaldo" role="status"></p>
+        </form>
       </details>
 
       <details class="ajustes">

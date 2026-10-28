@@ -400,6 +400,7 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     // Clave puesta en Render pero con menos de 16 caracteres: se ignora, y el panel lo explica.
     recuperacionMuyCorta: Boolean(dep.claveRecuperacion && dep.claveRecuperacion.length < 16),
     instalacionMuyCorta: Boolean(dep.claveInstalacion && dep.claveInstalacion.length < 16),
+    ...(dep.correo ? { correo: dep.correo } : {}),
     claveRecuperacionValida: (clave) =>
       Boolean(dep.claveRecuperacion && dep.claveRecuperacion.length >= 16 && igualesEnTiempoConstante(clave, dep.claveRecuperacion)),
   });

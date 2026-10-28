@@ -78,7 +78,12 @@ function agregarItem() {
 function mostrarEntrar() {
   $('#vista-instalar').hidden = true;
   $('#vista-recuperar').hidden = true;
+  $('#vista-enlace').hidden = true;
+  $('#vista-codigos').hidden = true;
   $('#vista-entrar').hidden = false;
+  $('#form-entrar').codigo.inputMode = 'numeric';
+  $('#etiqueta-codigo').textContent = 'Código de 6 dígitos (de tu app autenticadora)';
+  $('#usar-respaldo').hidden = false;
   // Facturador recién publicado, sin usuarios: se ofrece la primera configuración.
   api('/instalacion').then((r) => { $('#enlace-instalar').hidden = !r.disponible; }).catch(() => {});
   $('#vista-panel').hidden = true;
@@ -122,6 +127,10 @@ async function cargarPanel() {
   $('#caja-usuarios').hidden = !yo.esDueno;
   $('#caja-certificado').hidden = !yo.esDueno;
   $('#caja-empresa-nueva').hidden = !yo.adminPlataforma;
+  // Sin códigos de respaldo, perder el celular obliga a usar la llave de la tienda: se avisa.
+  $('#estado-respaldo').textContent = yo.codigosRespaldo
+    ? `Te quedan ${yo.codigosRespaldo} códigos sin usar.`
+    : '⚠️ No tienes códigos de respaldo: genéralos ahora por si pierdes el celular.';
   $('#caja-ajuste').hidden = !yo.puedeAdministrar;
   if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
   productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
@@ -319,12 +328,11 @@ async function alActivarInstalacion(e) {
   e.preventDefault();
   $('#error-instalar-codigo').textContent = '';
   try {
-    await api('/instalacion/activar', { cuerpo: { ...instalacion, codigo: new FormData(e.target).get('codigo') } });
-    alert('✔ Listo. Ahora entra con tu correo, tu contraseña y el código del momento.');
+    const r = await api('/instalacion/activar', { cuerpo: { ...instalacion, codigo: new FormData(e.target).get('codigo') } });
     const correo = instalacion.email;
     instalacion = null;
-    mostrarEntrar();
-    $('#form-entrar').email.value = correo;
+    $('#vista-instalar').hidden = true;
+    mostrarCodigos(r.codigosRespaldo, correo);
   } catch (err) {
     $('#error-instalar-codigo').textContent = err.message;
   }
@@ -353,17 +361,93 @@ async function alActivarRecuperacion(e) {
   e.preventDefault();
   $('#error-recuperar-codigo').textContent = '';
   try {
-    await api('/recuperar/activar', { cuerpo: { ...recuperacion, codigo: new FormData(e.target).get('codigo') } });
-    alert('✔ Acceso recuperado. Entra con tu contraseña nueva y el código del momento. Luego borra CLAVE_RECUPERACION de Render.');
+    const r = await api('/recuperar/activar', { cuerpo: { ...recuperacion, codigo: new FormData(e.target).get('codigo') } });
     const correo = recuperacion.email;
     recuperacion = null;
     $('#form-recuperar').hidden = false;
     $('#form-recuperar').reset();
     $('#form-recuperar-codigo').hidden = true;
-    mostrarEntrar();
-    $('#form-entrar').email.value = correo;
+    $('#vista-recuperar').hidden = true;
+    mostrarCodigos(r.codigosRespaldo, correo);
   } catch (err) {
     $('#error-recuperar-codigo').textContent = err.message;
+  }
+}
+
+function irARecuperar() {
+  $('#vista-entrar').hidden = true;
+  $('#vista-recuperar').hidden = false;
+  // Por correo solo si el facturador tiene correo configurado; si no, queda la llave de la tienda.
+  api('/recuperar').then((r) => {
+    $('#form-recuperar-correo').hidden = !r.correo;
+    $('#caja-recuperar-llave').open = !r.correo;
+  }).catch(() => { $('#caja-recuperar-llave').open = true; });
+}
+
+async function alPedirEnlace(e) {
+  e.preventDefault();
+  try {
+    await api('/recuperar/correo', { cuerpo: Object.fromEntries(new FormData(e.target)) });
+    mensaje('#mensaje-recuperar-correo', '✔ Si ese correo tiene usuario, te llegó un enlace (revisa también "Spam"). Vale 30 minutos.');
+  } catch (err) {
+    mensaje('#mensaje-recuperar-correo', err.message, true);
+  }
+}
+
+// El token del correo llega después de "#": nunca viaja a un servidor ni queda en el historial.
+let tokenEnlace = null;
+function revisarEnlaceDelCorreo() {
+  const m = /^#recuperar=([\w-]{20,100})$/.exec(location.hash);
+  if (!m) return false;
+  tokenEnlace = m[1];
+  history.replaceState(null, '', location.pathname);
+  for (const v of ['#vista-entrar', '#vista-panel', '#vista-recuperar', '#vista-instalar']) $(v).hidden = true;
+  $('#vista-enlace').hidden = false;
+  return true;
+}
+
+async function alCambiarConEnlace(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  $('#error-enlace').textContent = '';
+  try {
+    const r = await api('/recuperar/correo/cambiar', { cuerpo: { token: tokenEnlace, contrasena: f.get('contrasena'), codigo: f.get('codigo') } });
+    tokenEnlace = null;
+    e.target.reset();
+    alert('✔ Contraseña cambiada. Entra con la nueva.');
+    mostrarEntrar();
+    $('#form-entrar').email.value = r.email;
+  } catch (err) {
+    $('#error-enlace').textContent = err.message;
+  }
+}
+
+function mostrarCodigos(codigos, correo) {
+  $('#lista-codigos').replaceChildren(...codigos.map((c) => Object.assign(document.createElement('li'), { textContent: c })));
+  $('#vista-codigos').hidden = false;
+  $('#codigos-guardados').onclick = () => {
+    $('#lista-codigos').replaceChildren();
+    if (correo) {
+      mostrarEntrar();
+      $('#form-entrar').email.value = correo;
+    } else {
+      $('#vista-codigos').hidden = true;
+      $('#vista-panel').hidden = false;
+    }
+  };
+}
+
+async function alGenerarRespaldo(e) {
+  e.preventDefault();
+  try {
+    const r = await api('/codigos-respaldo', { cuerpo: { codigo: new FormData(e.target).get('codigo') } });
+    e.target.reset();
+    mensaje('#mensaje-respaldo', '');
+    $('#vista-panel').hidden = true;
+    mostrarCodigos(r.codigosRespaldo);
+    $('#estado-respaldo').textContent = `Te quedan ${r.codigosRespaldo.length} códigos sin usar.`;
+  } catch (err) {
+    mensaje('#mensaje-respaldo', err.message, true);
   }
 }
 
@@ -798,7 +882,22 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-entrar').addEventListener('submit', alEntrar);
   $('#ir-instalar').addEventListener('click', () => { $('#vista-entrar').hidden = true; $('#vista-instalar').hidden = false; });
   $('#form-instalar').addEventListener('submit', alInstalar);
-  $('#ir-recuperar').addEventListener('click', () => { $('#vista-entrar').hidden = true; $('#vista-recuperar').hidden = false; });
+  $('#ir-recuperar').addEventListener('click', irARecuperar);
+  $('#form-recuperar-correo').addEventListener('submit', alPedirEnlace);
+  $('#form-enlace').addEventListener('submit', alCambiarConEnlace);
+  $('#form-respaldo').addEventListener('submit', alGenerarRespaldo);
+  $('#copiar-codigos').addEventListener('click', () => {
+    const texto = [...document.querySelectorAll('#lista-codigos li')].map((li) => li.textContent).join('\n');
+    navigator.clipboard?.writeText(texto).then(() => alert('✔ Copiados.')).catch(() => alert('No se pudo copiar: anótalos a mano.'));
+  });
+  $('#usar-respaldo').addEventListener('click', () => {
+    // Los códigos de respaldo llevan letras: se cambia el teclado del celular.
+    const campo = $('#form-entrar').codigo;
+    campo.inputMode = 'text';
+    campo.focus();
+    $('#etiqueta-codigo').textContent = 'Código de respaldo (ej. K7QM2-XW9RP)';
+    $('#usar-respaldo').hidden = true;
+  });
   $('#volver-entrar').addEventListener('click', mostrarEntrar);
   $('#form-recuperar').addEventListener('submit', alRecuperar);
   $('#form-recuperar-codigo').addEventListener('submit', alActivarRecuperacion);
@@ -813,5 +912,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await cargarPanel();
   });
   agregarItem();
-  cargarPanel().catch(mostrarEntrar);
+  if (!revisarEnlaceDelCorreo()) cargarPanel().catch(mostrarEntrar);
+  // El enlace pegado en una pestaña donde el panel ya estaba abierto no recarga la página.
+  window.addEventListener('hashchange', revisarEnlaceDelCorreo);
 });

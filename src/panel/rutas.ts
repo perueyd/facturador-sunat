@@ -17,6 +17,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Almacen } from '../almacen/almacen.js';
 import { autenticarLlave } from '../api/llaves.js';
+import type { EnviarCorreo } from '../avisos/avisos.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
 import { enTransaccion, type Db } from '../db/conexion.js';
@@ -35,7 +36,8 @@ import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
 import type { Regimen } from '../tipos.js';
 import {
-  ROLES, ROLES_EMISORES, activarTotp, asignarEmpresa, cambiarContrasena, cerrarOtrasSesiones, crearUsuario, elegirEmpresa, entrar, leerSesion, restablecerAcceso, salir,
+  ROLES, ROLES_EMISORES, activarTotp, asignarEmpresa, cambiarContrasena, cerrarOtrasSesiones, codigosRespaldoRestantes, crearEnlaceRecuperacion,
+  crearUsuario, elegirEmpresa, entrar, leerSesion, nuevosCodigosRespaldo, recuperarConEnlace, regenerarCodigosRespaldo, restablecerAcceso, salir,
   type Rol, type Sesion,
 } from './usuarios.js';
 
@@ -72,6 +74,8 @@ export interface DependenciasPanel {
   claveRecuperacionValida: (clave: string) => boolean;
   recuperacionMuyCorta: boolean;
   instalacionMuyCorta: boolean;
+  /** Correo (Resend) para los enlaces de recuperación. Sin esto, esa opción no aparece. */
+  correo?: EnviarCorreo;
 }
 
 /** Origen público de esta petición (detrás de Render llega por https aunque el servidor vea http). */
@@ -177,29 +181,91 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (!fila || fila.totp_activo) {
       return d.error(c, 409, 'YA_CONFIGURADO', 'El panel ya está configurado: entra con tu usuario.');
     }
-    return (await activarTotp(d.db, id, typeof b.codigo === 'string' ? b.codigo.trim() : '', d.llaveMaestra))
-      ? c.json({ ok: true })
-      : (d.fallos.contar(ip) ? d.error(c, 422, 'CODIGO_INCORRECTO', 'Ese código no coincide. Revisa que la hora del celular esté en automático.') : frenado(c));
+    return activarConRespaldo(c, ip, id, b.codigo);
   });
 
-  // ---------- Recuperar el acceso (contraseña olvidada o celular perdido) ----------
-  // Exige CLAVE_RECUPERACION, que solo puede poner quien entra al Render del facturador (quien
-  // ya controla todo). Pone contraseña nueva, segundo paso nuevo y cierra todas las sesiones.
+  // ---------- Recuperar el acceso ----------
+  // 1. Contraseña olvidada: enlace por correo (pide además el código de la app o uno de respaldo).
+  // 2. Celular perdido: se entra con un código de respaldo en lugar del de la app.
+  // 3. Perdió las dos cosas: contraseña y segundo paso nuevos, probando que es el DUEÑO con la
+  //    llave de la tienda (fk_…) de su empresa, o con CLAVE_RECUPERACION puesta en Render.
+
+  // Activa el segundo paso recién configurado y entrega los códigos de respaldo (se ven UNA vez).
+  const activarConRespaldo = async (c: Context, ip: string, usuarioId: string, codigo: unknown) => {
+    if (!(await activarTotp(d.db, usuarioId, typeof codigo === 'string' ? codigo.trim() : '', d.llaveMaestra))) {
+      return d.fallos.contar(ip) ? d.error(c, 422, 'CODIGO_INCORRECTO', 'Ese código no coincide. Revisa que la hora del celular esté en automático.') : frenado(c);
+    }
+    return c.json({ ok: true, codigosRespaldo: await nuevosCodigosRespaldo(d.db, usuarioId) });
+  };
+  // Aviso al dueño de la cuenta: si no fue él, se entera enseguida.
+  const avisarCambioDeAcceso = (email: string, como: string, ip: string) => {
+    void d.correo?.({
+      para: [email], asunto: 'Se cambió el acceso a tu facturador',
+      texto: `Se cambió la contraseña de tu usuario del facturador (${como}, desde la dirección ${ip}).\n\nSi fuiste tú, no hagas nada. Si NO fuiste tú, avisa de inmediato a quien administra el facturador.`,
+    }).catch((e: unknown) => console.error('[recuperar] no se pudo avisar:', e instanceof Error ? e.message : e));
+  };
+
   const usuarioActivoPorCorreo = async (email: unknown) =>
-    (await d.db.query(`SELECT id, totp_activo FROM usuarios WHERE lower(email) = lower($1) AND activo`, [typeof email === 'string' ? email.trim() : ''])).rows[0] as
-      { id: string; totp_activo: boolean } | undefined;
+    (await d.db.query(`SELECT id, email, totp_activo FROM usuarios WHERE lower(email) = lower($1) AND activo`, [typeof email === 'string' ? email.trim() : ''])).rows[0] as
+      { id: string; email: string; totp_activo: boolean } | undefined;
+  const pruebaParaRecuperar = async (clave: unknown, usuarioId: string | undefined) => {
+    const t = typeof clave === 'string' ? clave : '';
+    if (d.claveRecuperacionValida(t)) return true;
+    if (!usuarioId) return false;
+    const llave = await autenticarLlave(d.db, t.trim());
+    if (!llave) return false;
+    const dueno = await d.db.query(`SELECT 1 FROM usuario_empresa WHERE usuario_id = $1 AND empresa_id = $2 AND rol = 'DUENO'`, [usuarioId, llave.empresaId]);
+    return Boolean(dueno.rowCount);
+  };
+  const recuperacionIncorrecta = (c: Context, ip: string) => {
+    if (!d.fallos.contar(ip)) return frenado(c);
+    return d.recuperacionMuyCorta
+      ? d.error(c, 401, 'CLAVE_MUY_CORTA', 'La CLAVE_RECUPERACION de Render es muy corta: debe tener 16 caracteres o más. O usa la llave de la tienda (fk_…).')
+      : d.error(c, 401, 'CLAVE_INCORRECTA', 'La llave no es correcta para ese correo. Usa la llave de la tienda (FACTURADOR_LLAVE en Vercel, empieza con fk_) de una empresa de la que eres dueño.');
+  };
+
+  app.get('/panel/api/recuperar', (c) => c.json({ correo: Boolean(d.correo) }));
+
+  app.post('/panel/api/recuperar/correo', async (c) => {
+    const ip = d.ipCliente(c);
+    // Cada pedido cuenta (exista o no el correo): frena a quien quiera llenar buzones ajenos.
+    if (d.fallos.excedido(ip) || !d.fallos.contar(ip)) return frenado(c);
+    if (!d.correo) return d.error(c, 409, 'SIN_CORREO', 'El envío de correos no está configurado. Usa la llave de la tienda.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const enlace = await crearEnlaceRecuperacion(d.db, { email: typeof b.email === 'string' ? b.email.slice(0, 200) : '', ip });
+    if (enlace) {
+      // El token va después de "#": el navegador no lo manda a ningún servidor ni queda en registros.
+      const url = `${origenPropio(c)}/panel#recuperar=${enlace.token}`;
+      // Sin esperar el envío: la respuesta tarda lo mismo exista o no el correo.
+      void d.correo({
+        para: [enlace.email], asunto: 'Recupera tu acceso al facturador',
+        texto: `Para poner una contraseña nueva abre este enlace (vale 30 minutos y una sola vez):\n\n${url}\n\nTe pedirá también el código de tu app autenticadora o uno de tus códigos de respaldo.\nSi no lo pediste tú, ignora este correo: tu contraseña no cambia.`,
+      }).catch((e: unknown) => console.error('[recuperar] no se pudo enviar:', e instanceof Error ? e.message : e));
+    }
+    return c.json({ ok: true });
+  });
+
+  app.post('/panel/api/recuperar/correo/cambiar', async (c) => {
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
+    const r = await recuperarConEnlace(d.db, { token: texto(b.token, 100), contrasena: texto(b.contrasena, 200), codigo: texto(b.codigo, 20).trim(), llaveMaestra: d.llaveMaestra });
+    if (r.ok) {
+      avisarCambioDeAcceso(r.email, 'con el enlace del correo', ip);
+      return c.json({ ok: true, email: r.email });
+    }
+    if (r.motivo === 'CONTRASENA') return d.error(c, 422, 'DATOS_INVALIDOS', r.mensaje);
+    if (!d.fallos.contar(ip)) return frenado(c);
+    return r.motivo === 'ENLACE' ? d.error(c, 422, 'ENLACE_VENCIDO', r.mensaje) : d.error(c, 422, 'CODIGO_INCORRECTO', r.mensaje);
+  });
 
   app.post('/panel/api/recuperar', async (c) => {
     const ip = d.ipCliente(c);
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    if (d.recuperacionMuyCorta) {
-      return d.error(c, 401, 'CLAVE_MUY_CORTA', 'La CLAVE_RECUPERACION de Render es muy corta: debe tener 16 caracteres o más. Cámbiala en Render, guarda y espera a que termine de reiniciar.');
-    }
-    if (!d.claveRecuperacionValida(typeof b.clave === 'string' ? b.clave : '')) {
-      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de recuperación no es correcta (o no está puesta en Render, o Render aún no termina de reiniciar).') : frenado(c);
-    }
     const u = await usuarioActivoPorCorreo(b.email);
+    if (!(await pruebaParaRecuperar(b.clave, u?.id))) return recuperacionIncorrecta(c, ip);
     if (!u) return d.error(c, 404, 'NO_ENCONTRADO', 'No hay un usuario activo con ese correo.');
     let secreto: Buffer;
     try {
@@ -210,7 +276,8 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       if (e instanceof Error && /contraseña/.test(e.message)) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
       throw e;
     }
-    const url = urlOtpauth(String(b.email).trim().toLowerCase(), secreto);
+    avisarCambioDeAcceso(u.email, 'con la llave de la tienda o la clave de Render', ip);
+    const url = urlOtpauth(u.email, secreto);
     return c.json({ qr: await QRCode.toDataURL(url, { margin: 1, width: 220 }), clave: base32(secreto), url });
   });
 
@@ -218,15 +285,11 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const ip = d.ipCliente(c);
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!d.claveRecuperacionValida(typeof b.clave === 'string' ? b.clave : '')) {
-      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de recuperación no es correcta.') : frenado(c);
-    }
     const u = await usuarioActivoPorCorreo(b.email);
+    if (!(await pruebaParaRecuperar(b.clave, u?.id))) return recuperacionIncorrecta(c, ip);
     // Solo se activa un segundo paso recién restablecido (inactivo): no sirve para cambiar uno vigente.
     if (!u || u.totp_activo) return d.error(c, 409, 'NADA_QUE_ACTIVAR', 'No hay un acceso pendiente de activar para ese correo.');
-    return (await activarTotp(d.db, u.id, typeof b.codigo === 'string' ? b.codigo.trim() : '', d.llaveMaestra))
-      ? c.json({ ok: true })
-      : (d.fallos.contar(ip) ? d.error(c, 422, 'CODIGO_INCORRECTO', 'Ese código no coincide. Revisa que la hora del celular esté en automático.') : frenado(c));
+    return activarConRespaldo(c, ip, u.id, b.codigo);
   });
 
   app.post('/panel/api/entrar', async (c) => {
@@ -235,7 +298,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
     const r = await entrar(d.db, {
-      email: texto(b.email, 200), contrasena: texto(b.contrasena, 200), codigo: texto(b.codigo, 6).trim(),
+      email: texto(b.email, 200), contrasena: texto(b.contrasena, 200), codigo: texto(b.codigo, 20).trim(),
       llaveMaestra: d.llaveMaestra, ip, recordar: b.recordar === true,
     });
     if (!r.ok) {
@@ -267,6 +330,18 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     return c.json({ ok: true });
   });
 
+  // Códigos de respaldo nuevos (los anteriores dejan de servir). Exige un código del momento.
+  app.post('/panel/api/codigos-respaldo', async (c) => {
+    const s = await conSesion(c);
+    if (s instanceof Response) return s;
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const codigos = await regenerarCodigosRespaldo(d.db, { usuarioId: s.usuarioId, codigo: typeof b.codigo === 'string' ? b.codigo.slice(0, 20).trim() : '', llaveMaestra: d.llaveMaestra });
+    if (codigos) return c.json({ codigosRespaldo: codigos });
+    return d.fallos.contar(ip) ? d.error(c, 422, 'CODIGO_INCORRECTO', 'El código no es correcto o ya se usó. Espera el siguiente.') : frenado(c);
+  });
+
   app.post('/panel/api/sesiones/cerrar-otras', async (c) => {
     const s = await conSesion(c);
     if (s instanceof Response) return s;
@@ -285,7 +360,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
          AND vigente_desde <= current_date AND (vigente_hasta IS NULL OR vigente_hasta >= current_date) ORDER BY vigente_desde DESC LIMIT 1`,
     )).rows[0]?.valor as string | undefined;
     return c.json({
-      nombre: s.nombre, email: s.email, empresas: s.empresas, empresa: s.empresa ?? null, canales, igvTasa: igv ?? null,
+      nombre: s.nombre, email: s.email, codigosRespaldo: await codigosRespaldoRestantes(d.db, s.usuarioId), empresas: s.empresas, empresa: s.empresa ?? null, canales, igvTasa: igv ?? null,
       puedeEmitir: Boolean(s.empresa && ROLES_EMISORES.includes(s.empresa.rol)),
       puedeCorregir: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol) && s.empresa.modulos.includes('notas')),
       puedeAdministrar: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol)),

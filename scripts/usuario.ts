@@ -18,7 +18,7 @@ import { parseArgs } from 'node:util';
 import QRCode from 'qrcode';
 import { crearPool, type Db } from '../src/db/conexion.js';
 import {
-  ROLES, activarTotp, asignarEmpresa, cerrarSesionesDe, crearUsuario, nuevoSecretoTotp, restablecerAcceso, type Rol,
+  ROLES, activarTotp, asignarEmpresa, cerrarSesionesDe, crearUsuario, nuevoSecretoTotp, nuevosCodigosRespaldo, restablecerAcceso, type Rol,
 } from '../src/panel/usuarios.js';
 import { llaveMaestraDesdeEntorno } from '../src/seguridad/cifrado.js';
 import { base32, urlOtpauth } from '../src/seguridad/totp.js';
@@ -51,6 +51,9 @@ async function configurarApp(db: Db, usuarioId: string, email: string, secreto: 
     const codigo = (await pedirOculto('Código de 6 dígitos que muestra la app: ')).trim();
     if (await activarTotp(db, usuarioId, codigo, llaveMaestra)) {
       console.log('✔ Verificación en dos pasos activada. Ya puedes entrar al panel: la dirección de Render + /panel');
+      // Si se pierde el celular, cada uno de estos reemplaza UNA vez al código de la app.
+      console.log('\nCódigos de respaldo (guárdalos en papel o en tu gestor; no se vuelven a mostrar):');
+      for (const c of await nuevosCodigosRespaldo(db, usuarioId)) console.log(`  ${c}`);
       return;
     }
     console.log('✘ Ese código no coincide. Revisa que la hora del celular esté en automático.');

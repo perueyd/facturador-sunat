@@ -154,12 +154,22 @@ Si cambias de celular: `npm run usuario -- restablecer-2fa --email tu@correo.com
 4. Esta puerta se cierra para siempre apenas existe un usuario. (También sirve una
    `CLAVE_INSTALACION` de 16+ caracteres puesta en Render, si no tienes la llave a mano.)
 
-**Olvidaste tu contraseña o cambiaste de celular:**
-- Desde el celular: en Render agrega `CLAVE_RECUPERACION` (una clave que inventes, 16+ caracteres)
-  → en `/panel` toca **"¿Olvidaste tu contraseña o cambiaste de celular?"** → clave, correo y
-  contraseña nueva → agrega la cuenta otra vez en tu app → código → **Activar**. Después **borra
-  `CLAVE_RECUPERACION` de Render**.
+**Códigos de respaldo:** al activar tu usuario, la página te muestra 10 códigos (ej. `K7QM2-XW9RP`).
+Guárdalos (foto, papel o gestor de contraseñas). Cada uno reemplaza UNA vez al código de la app.
+Puedes generar otros en **Más → Códigos de respaldo** (los anteriores dejan de servir).
+
+**Si pierdes el acceso** (todo desde la página, sin entrar a Render):
+- **Perdiste el celular:** en "Entrar" toca **"¿Perdiste el celular? Usa un código de respaldo"** y
+  escribe uno de tus códigos.
+- **Olvidaste la contraseña:** toca **"¿Olvidaste tu contraseña?"** → tu correo → abre el enlace que
+  llega (vale 30 minutos) → contraseña nueva + el código de la app (o uno de respaldo). Requiere el
+  paso 6c (correo con Resend); sin él, esta opción no aparece.
+- **Perdiste las dos cosas (solo el dueño):** "¿Olvidaste tu contraseña?" → **"¿Perdiste el celular y
+  no tienes códigos de respaldo?"** → pega la llave de la tienda (`FACTURADOR_LLAVE` de Vercel) →
+  contraseña nueva → agrega la cuenta otra vez en tu app → código → **Activar**.
 - Desde la PC: `npm run usuario -- recuperar --email tu@correo.com`.
+
+Cada vez que se cambia la contraseña por estos caminos llega un aviso a tu correo (si está el paso 6c).
 
 ## Paso 6c — Avisos por correo (opcional, gratis)
 
