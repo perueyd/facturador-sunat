@@ -18,7 +18,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Almacen } from '../almacen/almacen.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
-import type { Db } from '../db/conexion.js';
+import { enTransaccion, type Db } from '../db/conexion.js';
 import { MEDIOS_PAGO, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
 import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
 import { ErrorEmpresa, configurarEmpresa } from '../empresas/configurar.js';
@@ -66,6 +66,8 @@ export interface DependenciasPanel {
   fallos: { contar(clave: string): boolean; excedido(clave: string): boolean };
   emitir: (c: Context, quien: { empresaId: string; canalId: string; usuarioId: string }, cuerpo: unknown) => Promise<Response>;
   respuestaComprobante: (c: Context, id: string) => Promise<unknown>;
+  claveInstalacionValida: (clave: string) => boolean;
+  instalacionConfigurada: boolean;
 }
 
 /** Origen público de esta petición (detrás de Render llega por https aunque el servidor vea http). */
@@ -101,6 +103,68 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   });
 
   const cookie = (c: Context) => getCookie(c, COOKIE);
+
+  // ---------- Primera configuración (sin la PC) ----------
+  // Crea el PRIMER usuario (dueño y administrador de la plataforma) desde el navegador.
+  // Solo existe si en Render está CLAVE_INSTALACION y mientras la base no tenga NINGÚN
+  // usuario: en cuanto hay uno, estas rutas dejan de servir para siempre.
+  const hayUsuarios = async () => Boolean((await d.db.query(`SELECT 1 FROM usuarios LIMIT 1`)).rowCount);
+
+  app.get('/panel/api/instalacion', async (c) => c.json({ disponible: d.instalacionConfigurada && !(await hayUsuarios()) }));
+
+  app.post('/panel/api/instalacion', async (c) => {
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!d.claveInstalacionValida(typeof b.clave === 'string' ? b.clave : '')) {
+      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de instalación no es correcta.') : frenado(c);
+    }
+    const ruc = typeof b.ruc === 'string' ? b.ruc.trim() : '';
+    const empresa = (await d.db.query(`SELECT id FROM empresas WHERE ruc = $1`, [ruc])).rows[0];
+    if (!empresa) return d.error(c, 422, 'DATOS_INVALIDOS', `No existe la empresa con RUC ${ruc}.`);
+    // Bloqueo: dos pestañas a la vez no pueden crear dos "primeros" usuarios.
+    const email = (typeof b.email === 'string' ? b.email : '').trim().toLowerCase().slice(0, 200);
+    try {
+      const r = await enTransaccion(d.db, async (tx) => {
+        await tx.query(`SELECT pg_advisory_xact_lock(hashtext('panel-instalacion'))`);
+        if ((await tx.query(`SELECT 1 FROM usuarios LIMIT 1`)).rowCount) return undefined;
+        const u = await crearUsuario(tx, {
+          email, nombre: typeof b.nombre === 'string' ? b.nombre.slice(0, 120) : '',
+          contrasena: typeof b.contrasena === 'string' ? b.contrasena.slice(0, 200) : '', llaveMaestra: d.llaveMaestra,
+        });
+        await asignarEmpresa(tx, u.usuarioId, empresa.id as string, 'DUENO');
+        await tx.query(`UPDATE usuarios SET admin_plataforma = true WHERE id = $1`, [u.usuarioId]);
+        await tx.query(`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, 'PANEL_INSTALACION', 'usuarios', $1, $2)`, [u.usuarioId, JSON.stringify({ ip })]);
+        return u;
+      });
+      if (!r) return d.error(c, 409, 'YA_CONFIGURADO', 'El panel ya tiene usuarios: entra con el tuyo.');
+      const url = urlOtpauth(email, r.secreto);
+      // `url` abre la app autenticadora directo cuando se configura desde el mismo celular.
+      return c.json({ usuarioId: r.usuarioId, qr: await QRCode.toDataURL(url, { margin: 1, width: 220 }), clave: base32(r.secreto), url }, 201);
+    } catch (e) {
+      // Datos del usuario inválidos (correo, contraseña corta): se explica; lo demás es error interno.
+      if (e instanceof Error && /contraseña|Correo/.test(e.message)) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+
+  // Confirma el código de la app del primer usuario (vuelve a exigir la clave de instalación).
+  app.post('/panel/api/instalacion/activar', async (c) => {
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!d.claveInstalacionValida(typeof b.clave === 'string' ? b.clave : '')) {
+      return d.fallos.contar(ip) ? d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave de instalación no es correcta.') : frenado(c);
+    }
+    const id = typeof b.usuarioId === 'string' ? b.usuarioId : '';
+    const unico = await d.db.query(`SELECT id, totp_activo FROM usuarios`);
+    if (unico.rows.length !== 1 || unico.rows[0].id !== id || unico.rows[0].totp_activo) {
+      return d.error(c, 409, 'YA_CONFIGURADO', 'El panel ya está configurado: entra con tu usuario.');
+    }
+    return (await activarTotp(d.db, id, typeof b.codigo === 'string' ? b.codigo.trim() : '', d.llaveMaestra))
+      ? c.json({ ok: true })
+      : (d.fallos.contar(ip) ? d.error(c, 422, 'CODIGO_INCORRECTO', 'Ese código no coincide. Revisa que la hora del celular esté en automático.') : frenado(c));
+  });
 
   app.post('/panel/api/entrar', async (c) => {
     const ip = d.ipCliente(c);

@@ -55,3 +55,6 @@ button.peligro { color: var(--rojo); border-color: #fda29b; }
 .item.cuota { grid-template-columns: 1fr 1fr 36px; }
 .item .sku { grid-column: 1 / -1; font-size: 13px; padding: 6px 10px; }
 .lista li.bajo { border-color: #fda29b; background: #fef3f2; }
+.qr-caja { text-align: center; }
+.clave { word-break: break-all; font-family: ui-monospace, monospace; }
+.boton-enlace { display: block; padding: 12px 16px; text-align: center; font-weight: 600; color: #fff; background: var(--tinta); border-radius: 8px; text-decoration: none; }
