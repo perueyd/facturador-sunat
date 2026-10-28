@@ -9,11 +9,12 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AlmacenLocal } from '../../src/almacen/almacen.js';
 import { crearApp } from '../../src/api/app.js';
+import { crearLlaveApi, revocarLlave } from '../../src/api/llaves.js';
 import type { Db } from '../../src/db/conexion.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
 import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
 import { ClienteSunatSoap } from '../../src/sunat/cliente.js';
-import { RUC_EMPRESA } from '../ayudantes.js';
+import { RUC_CLIENTE, RUC_EMPRESA } from '../ayudantes.js';
 import { URL_PRUEBAS, crearEmpresa, prepararBase } from './base-prueba.js';
 
 const CLAVE = 'clave-de-instalacion-larga-2026';
@@ -55,8 +56,8 @@ describe.skipIf(!URL_PRUEBAS)('primera configuración del panel', () => {
     });
   const datos = { clave: CLAVE, ruc: RUC_EMPRESA, nombre: 'Dueño', email: 'Dueno@Prueba.pe', contrasena: CONTRASENA };
 
-  it('sin CLAVE_INSTALACION en Render, no existe', async () => {
-    expect(await (await pedir(sinClave, '/panel/api/instalacion')).json()).toEqual({ disponible: false });
+  it('sin CLAVE_INSTALACION en Render, existe pero esa clave no sirve', async () => {
+    expect(await (await pedir(sinClave, '/panel/api/instalacion')).json()).toEqual({ disponible: true });
     expect((await pedir(sinClave, '/panel/api/instalacion', datos)).status).toBe(401);
   });
 
@@ -120,5 +121,57 @@ describe.skipIf(!URL_PRUEBAS)('primera configuración del panel', () => {
     const r = await pedir(corta, '/panel/api/recuperar', { clave: 'corta', email: 'dueno@prueba.pe', contrasena: 'otra clave nueva 2026' });
     expect(r.status).toBe(401);
     expect((await r.json()).error.mensaje).toMatch(/16 caracteres/);
+  });
+});
+
+// El dueño sin acceso a Render: prueba que es él con la llave que la tienda tiene en Vercel.
+describe.skipIf(!URL_PRUEBAS)('primera configuración con la llave de la tienda', () => {
+  let db: Db;
+  let app: ReturnType<typeof crearApp>;
+  let llave: string;
+  let ajena: string;
+  let revocada: string;
+  const llaveMaestra = Buffer.from(generarLlaveMaestra(), 'base64');
+
+  beforeAll(async () => {
+    db = await prepararBase();
+    const f = await crearEmpresa(db, RUC_EMPRESA);
+    const otra = await crearEmpresa(db, RUC_CLIENTE);
+    llave = (await crearLlaveApi(db, { empresaId: f.empresaId, canalId: f.canalTienda })).llave;
+    ajena = (await crearLlaveApi(db, { empresaId: otra.empresaId, canalId: otra.canalTienda })).llave;
+    const r = await crearLlaveApi(db, { empresaId: f.empresaId, canalId: f.canalTienda });
+    await revocarLlave(db, f.empresaId, r.prefijo);
+    revocada = r.llave;
+    app = crearApp({ db, fallosPorMinuto: 20, servicios: {
+      almacen: new AlmacenLocal(await mkdtemp(join(tmpdir(), 'almacen-instalacion-'))), llaveMaestra, algoritmo: 'SHA256', entorno: {},
+      crearCliente: (url, credenciales) => new ClienteSunatSoap({ url, credenciales }),
+    } });
+  });
+  afterAll(async () => {
+    await db?.end();
+  });
+
+  const pedir = (ruta: string, cuerpo: unknown) =>
+    app.request(`http://localhost${ruta}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Panel': '1', 'X-Forwarded-For': '3.3.3.3' }, body: JSON.stringify(cuerpo),
+    });
+  const datos = () => ({ clave: llave, ruc: RUC_EMPRESA, nombre: 'Dueño', email: 'dueno@prueba.pe', contrasena: CONTRASENA });
+
+  it('la llave de OTRA empresa, una revocada o una inventada no sirven', async () => {
+    expect((await pedir('/panel/api/instalacion', { ...datos(), clave: ajena })).status).toBe(401);
+    expect((await pedir('/panel/api/instalacion', { ...datos(), clave: revocada })).status).toBe(401);
+    expect((await pedir('/panel/api/instalacion', { ...datos(), clave: 'fk_000000000000_' + 'a'.repeat(43) })).status).toBe(401);
+    // Con la llave buena pero el RUC de la otra empresa, tampoco.
+    expect((await pedir('/panel/api/instalacion', { ...datos(), ruc: RUC_CLIENTE })).status).toBe(401);
+  });
+
+  it('con la llave de la tienda (aunque traiga espacios) crea al dueño y lo activa', async () => {
+    const r = await pedir('/panel/api/instalacion', { ...datos(), clave: ` ${llave} ` });
+    expect(r.status).toBe(201);
+    const d = await r.json();
+    const secreto = desdeBase32(d.clave);
+    expect((await pedir('/panel/api/instalacion/activar', { clave: ajena, usuarioId: d.usuarioId, codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(401);
+    expect((await pedir('/panel/api/instalacion/activar', { clave: llave, usuarioId: d.usuarioId, codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(200);
+    expect((await pedir('/panel/api/instalacion', datos())).status).toBe(409);
   });
 });

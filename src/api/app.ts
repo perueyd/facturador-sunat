@@ -394,10 +394,9 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     db: dep.db, llaveMaestra: dep.servicios.llaveMaestra, almacen: dep.servicios.almacen, error, ipCliente, fallos,
     emitir: (c, quien, cuerpo) => emitirYResponder(c, quien, cuerpo, true),
     respuestaComprobante,
-    // Sin clave de instalación (o muy corta), la primera configuración por web no existe.
+    // Sin clave de instalación (o muy corta), la primera configuración pide la llave de la tienda.
     claveInstalacionValida: (clave) =>
       Boolean(dep.claveInstalacion && dep.claveInstalacion.length >= 16 && igualesEnTiempoConstante(clave, dep.claveInstalacion)),
-    instalacionConfigurada: Boolean(dep.claveInstalacion && dep.claveInstalacion.length >= 16),
     // Clave puesta en Render pero con menos de 16 caracteres: se ignora, y el panel lo explica.
     recuperacionMuyCorta: Boolean(dep.claveRecuperacion && dep.claveRecuperacion.length < 16),
     instalacionMuyCorta: Boolean(dep.claveInstalacion && dep.claveInstalacion.length < 16),
