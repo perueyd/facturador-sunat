@@ -6,7 +6,7 @@
  * cuentas de otras personas, y el total. Los cobros anulados no cuentan. Montos exactos
  * (NUMERIC), como texto.
  */
-import type { Db } from '../db/conexion.js';
+import { enTransaccion, type Db } from '../db/conexion.js';
 import { dec } from '../dinero.js';
 import { MEDIOS_PAGO, type MedioPago } from './pagos.js';
 
@@ -119,4 +119,110 @@ export async function caja(db: Db, empresaId: string, desde: string, hasta: stri
     totales: { empresa: empresa.toFixed(2), terceros: terceros.toFixed(2), total: empresa.plus(terceros).toFixed(2), cobros },
     vendido: dec(v.total).toFixed(2),
   };
+}
+
+// ---------- Cierre de caja diario ----------
+
+export interface LineaCierre {
+  /** Identifica la línea al contar: el id de la cuenta, o "SIN:EFECTIVO" para cobros sin cuenta. */
+  clave: string;
+  cuentaId: string | null;
+  medio: string;
+  nombre: string;
+  esperado: string;
+}
+
+export interface Cierre {
+  id: string;
+  fecha: string;
+  cerradoPor: string;
+  cerradoEn: string;
+  nota: string | null;
+  lineas: (LineaCierre & { contado: string; diferencia: string })[];
+  totales: { esperado: string; contado: string; diferencia: string };
+}
+
+const claveDe = (cuentaId: string | null, medio: string) => cuentaId ?? `SIN:${medio}`;
+
+/**
+ * Lo que debería haber en cada cuenta al final del día según los cobros registrados.
+ * Incluye las cuentas activas sin cobros (ej. el cajón de efectivo con S/ 0), porque
+ * también se cuentan: un faltante o sobrante ahí es igual de importante.
+ */
+export async function lineasParaCerrar(db: Db, empresaId: string, fecha: string): Promise<LineaCierre[]> {
+  const c = await caja(db, empresaId, fecha, fecha);
+  const lineas: LineaCierre[] = c.cuentas.map((x) => ({ clave: claveDe(x.cuentaId, x.medio), cuentaId: x.cuentaId, medio: x.medio, nombre: x.nombre, esperado: x.monto }));
+  for (const k of await listarCuentas(db, empresaId)) {
+    if (k.activa && !lineas.some((l) => l.cuentaId === k.id)) lineas.push({ clave: k.id, cuentaId: k.id, medio: k.medio, nombre: k.nombre, esperado: '0.00' });
+  }
+  return lineas;
+}
+
+/**
+ * Cierra la caja de un día con lo contado en cada cuenta. Lo esperado lo calcula el servidor
+ * (nunca lo manda el navegador). Se puede cerrar otra vez el mismo día: vale el último cierre.
+ */
+export async function cerrarCaja(
+  db: Db,
+  empresaId: string,
+  fecha: string,
+  contados: Record<string, string>,
+  nota: string | null,
+  usuarioId: string,
+  hoy: string,
+): Promise<Cierre> {
+  if (fecha > hoy) throw new ErrorCuenta('No se puede cerrar la caja de un día que aún no llega.');
+  const lineas = await lineasParaCerrar(db, empresaId, fecha);
+  if (!lineas.length) throw new ErrorCuenta('No hay cobros ni cuentas que contar ese día.');
+  const faltan = lineas.filter((l) => contados[l.clave] === undefined).map((l) => l.nombre);
+  if (faltan.length) throw new ErrorCuenta(`Falta poner cuánto contaste en: ${faltan.join(', ')}.`);
+  for (const l of lineas) {
+    if (!/^\d{1,11}(\.\d{1,2})?$/.test(contados[l.clave] ?? '')) throw new ErrorCuenta(`"${l.nombre}": escribe el monto contado, por ejemplo 150.00.`);
+  }
+  const id = await enTransaccion(db, async (tx) => {
+    const nuevo = (await tx.query(
+      `INSERT INTO cierres_caja (empresa_id, fecha, usuario_id, nota) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [empresaId, fecha, usuarioId, nota?.trim() || null],
+    )).rows[0].id as string;
+    for (const [i, l] of lineas.entries()) {
+      await tx.query(
+        `INSERT INTO cierre_caja_lineas (cierre_id, linea, cuenta_id, medio, nombre, esperado, contado) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [nuevo, i + 1, l.cuentaId, l.medio, l.nombre, l.esperado, contados[l.clave]],
+      );
+    }
+    await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'CERRAR_CAJA', 'cierres_caja', $3, $4)`, [
+      empresaId, usuarioId, nuevo, JSON.stringify({ fecha, contados }),
+    ]);
+    return nuevo;
+  });
+  const cierre = (await cierresDeCaja(db, empresaId, fecha, fecha)).find((x) => x.id === id);
+  if (!cierre) throw new Error('El cierre recién guardado no se encontró.');
+  return cierre;
+}
+
+/** Los cierres de un período, el más reciente primero (incluye los reemplazados del mismo día). */
+export async function cierresDeCaja(db: Db, empresaId: string, desde: string, hasta: string): Promise<Cierre[]> {
+  const r = await db.query(
+    `SELECT k.id, k.fecha::text AS fecha, coalesce(u.nombre, u.email) AS cerrado_por, k.creado_en, k.nota,
+            json_agg(json_build_object('cuentaId', l.cuenta_id, 'medio', l.medio, 'nombre', l.nombre, 'esperado', l.esperado::text, 'contado', l.contado::text) ORDER BY l.linea) AS lineas
+       FROM cierres_caja k JOIN usuarios u ON u.id = k.usuario_id JOIN cierre_caja_lineas l ON l.cierre_id = k.id
+      WHERE k.empresa_id = $1 AND k.fecha BETWEEN $2::date AND $3::date
+      GROUP BY k.id, u.id ORDER BY k.fecha DESC, k.creado_en DESC`,
+    [empresaId, desde, hasta],
+  );
+  return r.rows.map((f): Cierre => {
+    let esperado = dec('0');
+    let contado = dec('0');
+    const lineas = (f.lineas as { cuentaId: string | null; medio: string; nombre: string; esperado: string; contado: string }[]).map((l) => {
+      const e = dec(l.esperado);
+      const k = dec(l.contado);
+      esperado = esperado.plus(e);
+      contado = contado.plus(k);
+      return { clave: claveDe(l.cuentaId, l.medio), cuentaId: l.cuentaId, medio: l.medio, nombre: l.nombre, esperado: e.toFixed(2), contado: k.toFixed(2), diferencia: k.minus(e).toFixed(2) };
+    });
+    return {
+      id: f.id, fecha: f.fecha, cerradoPor: f.cerrado_por, cerradoEn: new Date(f.creado_en).toISOString(), nota: f.nota, lineas,
+      totales: { esperado: esperado.toFixed(2), contado: contado.toFixed(2), diferencia: contado.minus(esperado).toFixed(2) },
+    };
+  });
 }

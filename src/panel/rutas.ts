@@ -24,7 +24,7 @@ import type { EnviarCorreo } from '../avisos/avisos.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
 import { enTransaccion, type Db } from '../db/conexion.js';
-import { ErrorCuenta, caja, guardarCuenta, listarCuentas } from '../cobros/caja.js';
+import { ErrorCuenta, caja, cerrarCaja, cierresDeCaja, guardarCuenta, lineasParaCerrar, listarCuentas } from '../cobros/caja.js';
 import { MEDIOS_PAGO, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
 import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
 import { ErrorEmpresa, configurarEmpresa } from '../empresas/configurar.js';
@@ -847,6 +847,48 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const fecha = /^\d{4}-\d{2}-\d{2}$/;
     if (!fecha.test(desde) || !fecha.test(hasta) || desde > hasta) return d.error(c, 400, 'FECHAS_INVALIDAS', 'Fechas como AAAA-MM-DD, "desde" antes de "hasta".');
     return c.json(await caja(d.db, s.empresa.id, desde, hasta));
+  });
+
+  // Cierre de caja diario: lo esperado lo calcula el servidor; el usuario solo pone lo contado.
+  const sesionCaja = async (c: Context) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no cierra la caja.');
+    return s;
+  };
+  app.get('/panel/api/caja/cierre', async (c) => {
+    const s = await sesionCaja(c);
+    if (s instanceof Response) return s;
+    const hoy = ahoraLima().fecha;
+    const fecha = c.req.query('fecha') ?? hoy;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > hoy) return d.error(c, 400, 'FECHA_INVALIDA', 'Elige un día de hoy hacia atrás (AAAA-MM-DD).');
+    const hace30 = new Date(Date.parse(`${hoy}T00:00:00Z`) - 30 * 86_400_000).toISOString().slice(0, 10);
+    // Del historial, solo el último cierre de cada día (los anteriores quedaron reemplazados).
+    const historial = (await cierresDeCaja(d.db, s.empresa.id, hace30, hoy)).filter((x, i, todos) => todos.findIndex((y) => y.fecha === x.fecha) === i);
+    return c.json({
+      fecha,
+      lineas: await lineasParaCerrar(d.db, s.empresa.id, fecha),
+      cierres: await cierresDeCaja(d.db, s.empresa.id, fecha, fecha),
+      historial,
+    });
+  });
+  app.post('/panel/api/caja/cierre', async (c) => {
+    const s = await sesionCaja(c);
+    if (s instanceof Response) return s;
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const fecha = texto(b.fecha, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return d.error(c, 400, 'FECHA_INVALIDA', 'Fecha como AAAA-MM-DD.');
+    const contados: Record<string, string> = {};
+    if (b.contados && typeof b.contados === 'object') {
+      for (const [k, v] of Object.entries(b.contados as Record<string, unknown>).slice(0, 100)) if (typeof v === 'string') contados[k.slice(0, 60)] = v.trim();
+    }
+    try {
+      return c.json(await cerrarCaja(d.db, s.empresa.id, fecha, contados, texto(b.nota, 300) || null, s.usuarioId, ahoraLima().fecha), 201);
+    } catch (e) {
+      if (e instanceof ErrorCuenta) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
   });
 
   app.get('/panel/api/por-cobrar', async (c) => {

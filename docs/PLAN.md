@@ -638,6 +638,9 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   dinero (Yape de la empresa, Yape de otra persona, efectivo, banco…), cada cobro dice a cuál entró,
   y la caja muestra cada cuenta, lo de la empresa, lo de terceros y el total (hoy, 7 días, mes). La
   venta es de la empresa igual: lleva su comprobante y se declara; aquí solo se ve dónde quedó el dinero.
+- **Cierre de caja diario** (misma pestaña): por cada cuenta, lo que debería haber según los cobros
+  (lo calcula el facturador) contra lo contado; guarda la diferencia, quién cerró y una nota. No se
+  cambia ni se borra: si se contó mal, se cierra de nuevo y vale el último. Historial de 30 días.
 - **App instalable (PWA)**: manifiesto, íconos y service worker (solo guarda la página, nunca los datos);
   aviso "Hay una versión nueva · Actualizar". **Escáner** de códigos de barras (lector USB/Bluetooth o
   cámara con BarcodeDetector) y código de barras por producto. **Reportes** de los usuarios al

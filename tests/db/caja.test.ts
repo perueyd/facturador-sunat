@@ -4,7 +4,7 @@
  * total cuadre y que la cuenta de un pago no se pueda cambiar después.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { caja, guardarCuenta, listarCuentas } from '../../src/cobros/caja.js';
+import { caja, cerrarCaja, cierresDeCaja, guardarCuenta, lineasParaCerrar, listarCuentas } from '../../src/cobros/caja.js';
 import { registrarPago } from '../../src/cobros/pagos.js';
 import { emitirComprobante } from '../../src/comprobantes/emitir.js';
 import type { Db } from '../../src/db/conexion.js';
@@ -68,5 +68,32 @@ describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
     const nueva = await guardarCuenta(db, f.empresaId, { nombre: 'Yape nuevo', medio: 'YAPE', deLaEmpresa: true, predeterminada: true }, usuarioId);
     const yapes = (await listarCuentas(db, f.empresaId)).filter((c) => c.medio === 'YAPE' && c.predeterminada);
     expect(yapes.map((c) => c.id)).toEqual([nueva]);
+  });
+
+  it('cierre de caja: lo esperado lo pone el servidor, la diferencia queda guardada y el último cierre manda', async () => {
+    const lineas = await lineasParaCerrar(db, f.empresaId, hoy);
+    // Las cuentas activas sin cobros también se cuentan (S/ 0 esperado).
+    expect(lineas.find((l) => l.nombre === 'Yape nuevo')).toMatchObject({ esperado: '0.00' });
+    const efectivo = lineas.find((l) => l.clave === 'SIN:EFECTIVO');
+    expect(efectivo).toMatchObject({ cuentaId: null, esperado: '25.50' });
+
+    const contados = Object.fromEntries(lineas.map((l) => [l.clave, l.esperado]));
+    await expect(cerrarCaja(db, f.empresaId, hoy, { ...contados, 'SIN:EFECTIVO': undefined as unknown as string }, null, usuarioId, hoy)).rejects.toThrow(/Falta.*Efectivo/);
+    await expect(cerrarCaja(db, f.empresaId, hoy, { ...contados, 'SIN:EFECTIVO': '20,50' }, null, usuarioId, hoy)).rejects.toThrow(/monto contado/);
+    await expect(cerrarCaja(db, f.empresaId, '2999-01-01', contados, null, usuarioId, hoy)).rejects.toThrow(/aún no llega/);
+
+    // Faltan S/ 5.50 en el cajón.
+    const primero = await cerrarCaja(db, f.empresaId, hoy, { ...contados, 'SIN:EFECTIVO': '20' }, 'faltó sencillo', usuarioId, hoy);
+    expect(primero.lineas.find((l) => l.clave === 'SIN:EFECTIVO')).toMatchObject({ esperado: '25.50', contado: '20.00', diferencia: '-5.50' });
+    expect(primero.totales.diferencia).toBe('-5.50');
+    expect(primero).toMatchObject({ cerradoPor: 'Caja', nota: 'faltó sencillo', fecha: hoy });
+
+    // Se volvió a contar: el nuevo cierre va primero y el anterior queda de historial.
+    const segundo = await cerrarCaja(db, f.empresaId, hoy, contados, null, usuarioId, hoy);
+    expect(segundo.totales.diferencia).toBe('0.00');
+    expect((await cierresDeCaja(db, f.empresaId, hoy, hoy)).map((x) => x.id)).toEqual([segundo.id, primero.id]);
+    // Un cierre no se cambia ni se borra.
+    await expect(db.query(`UPDATE cierre_caja_lineas SET contado = 25.50 WHERE cierre_id = $1`, [primero.id])).rejects.toThrow();
+    await expect(db.query(`DELETE FROM cierres_caja WHERE id = $1`, [primero.id])).rejects.toThrow();
   });
 });

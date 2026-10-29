@@ -1088,9 +1088,81 @@ async function cargarCaja(periodo = 'hoy') {
   $('#nota-caja').hidden = c.totales.terceros === '0.00';
 }
 
+// ---------- Cierre de caja ----------
+// Lo esperado viene del facturador; aquí solo se escribe lo contado y se muestra la diferencia
+// en céntimos exactos (BigInt), sin decimales de JavaScript.
+const hoyLima = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date());
+const conSigno = (c) => (c < 0n ? `− ${textoSoles(-c)}` : c > 0n ? `+ ${textoSoles(c)}` : textoSoles(0n));
+const textoDiferencia = (d) => (d.startsWith('-') ? `falta ${soles(d.slice(1))}` : d === '0.00' ? 'cuadra ✔' : `sobra ${soles(d)}`);
+let lineasCierre = [];
+
+function recalcularCierre() {
+  let esperado = 0n;
+  let contado = 0n;
+  let completo = true;
+  for (const l of lineasCierre) {
+    const e = aCentimos(l.esperado);
+    const input = document.querySelector(`#cierre-lineas input[data-clave="${CSS.escape(l.clave)}"]`);
+    const k = aCentimos(input.value);
+    const salida = input.closest('label').querySelector('.dif');
+    esperado += e;
+    if (k === null) { completo = false; salida.textContent = ''; continue; }
+    contado += k;
+    salida.textContent = k === e ? 'cuadra ✔' : `diferencia ${conSigno(k - e)}`;
+    salida.className = `dif ${k === e ? 'ok' : 'mal'}`;
+  }
+  $('#cierre-total').textContent = completo
+    ? `Esperado ${textoSoles(esperado)} · contado ${textoSoles(contado)} · diferencia ${conSigno(contado - esperado)}`
+    : `Esperado ${textoSoles(esperado)}. Escribe lo contado en cada cuenta (0 si no hay nada).`;
+}
+
+async function cargarCierre(fecha = $('#cierre-fecha').value || hoyLima()) {
+  const r = await api(`/caja/cierre?fecha=${fecha}`);
+  $('#cierre-fecha').value = r.fecha;
+  $('#cierre-fecha').max = hoyLima();
+  lineasCierre = r.lineas;
+  $('#cierre-lineas').replaceChildren(...r.lineas.map((l) => {
+    const label = document.createElement('label');
+    label.append(`${l.nombre} — debería haber ${soles(l.esperado)}`);
+    const input = Object.assign(document.createElement('input'), { placeholder: 'lo que contaste', required: true });
+    input.dataset.clave = l.clave;
+    input.setAttribute('inputmode', 'decimal');
+    input.addEventListener('input', recalcularCierre);
+    label.append(input, Object.assign(document.createElement('small'), { className: 'dif' }));
+    return label;
+  }));
+  $('#form-cierre').hidden = !r.lineas.length;
+  const ultimo = r.cierres[0];
+  $('#cierre-estado').textContent = !r.lineas.length
+    ? 'Ese día no hubo cobros y no tienes cuentas creadas.'
+    : ultimo
+      ? `Ya cerrada por ${ultimo.cerradoPor} a las ${new Date(ultimo.cerradoEn).toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit' })}: ${textoDiferencia(ultimo.totales.diferencia)}. Si contaste mal, ciérrala otra vez (vale la última).`
+      : 'Aún no se cierra este día.';
+  $('#lista-cierres').replaceChildren(...(r.historial.length
+    ? r.historial.map((x) => linea(`${x.fecha} · ${x.cerradoPor}${x.nota ? ` · ${x.nota}` : ''}`, textoDiferencia(x.totales.diferencia), x.totales.diferencia === '0.00' ? '' : 'bajo'))
+    : [linea('Todavía no hay cierres.', '')]));
+  mensaje('#mensaje-cierre', '');
+  recalcularCierre();
+}
+
+async function alCerrarCaja(e) {
+  e.preventDefault();
+  const contados = {};
+  for (const input of document.querySelectorAll('#cierre-lineas input')) contados[input.dataset.clave] = input.value.trim().replace(',', '.');
+  try {
+    const c = await api('/caja/cierre', { cuerpo: { fecha: $('#cierre-fecha').value, contados, nota: e.target.nota.value } });
+    e.target.nota.value = '';
+    await cargarCierre(c.fecha);
+    mensaje('#mensaje-cierre', `Caja cerrada: ${textoDiferencia(c.totales.diferencia)}.`);
+  } catch (err) {
+    mensaje('#mensaje-cierre', err.message, true);
+  }
+}
+
 async function cargarPorCobrar() {
   $('#caja-dinero').hidden = !yo?.verCaja;
   if (yo?.verCaja) cargarCaja().catch(() => { $('#caja-dinero').hidden = true; });
+  if (yo?.verCaja) cargarCierre(hoyLima()).catch(() => { $('#caja-cierre').hidden = true; });
   const { porCobrar } = await api('/por-cobrar');
   $('#lista-cobrar').replaceChildren(...(porCobrar.length ? porCobrar.map((x) => {
     const li = linea(`${x.numero} · ${x.cliente}`, `S/ ${x.saldo}${x.proximaCuota ? ` · cuota ${x.proximaCuota}` : ''}`);
@@ -1589,6 +1661,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-sol').addEventListener('submit', alGuardarSol);
   $('#form-cuenta').addEventListener('submit', alGuardarCuenta);
   for (const b of document.querySelectorAll('#periodo-caja button')) b.addEventListener('click', () => cargarCaja(b.dataset.periodo).catch((err) => alert(err.message)));
+  $('#form-cierre').addEventListener('submit', alCerrarCaja);
+  $('#cierre-fecha').addEventListener('change', (e) => cargarCierre(e.target.value).catch((err) => mensaje('#mensaje-cierre', err.message, true)));
   $('#form-invitacion').addEventListener('submit', alAceptarInvitacion);
   $('#form-invitacion-codigo').addEventListener('submit', alActivarInvitacion);
   $('#form-certificado').addEventListener('submit', alCargarCertificado);

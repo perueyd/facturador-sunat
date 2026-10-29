@@ -275,6 +275,22 @@
           <ul id="lista-caja" class="lista"></ul>
           <p class="nota" id="nota-caja" hidden>El dinero que entra a cuentas de otras personas también es venta de la empresa:
             lleva su boleta o factura y se declara igual. Aquí solo se ve dónde quedó.</p>
+          <details class="ajustes" id="caja-cierre">
+            <summary>Cerrar la caja del día</summary>
+            <p class="nota">Cuenta lo que hay en cada cuenta (el efectivo del cajón, el Yape…) y escríbelo.
+              El facturador lo compara con los cobros registrados y guarda la diferencia con tu nombre.</p>
+            <label>Día <input type="date" id="cierre-fecha"></label>
+            <p id="cierre-estado"></p>
+            <form id="form-cierre">
+              <div id="cierre-lineas"></div>
+              <p id="cierre-total"></p>
+              <label>Nota (opcional) <input name="nota" maxlength="300" placeholder="ej. faltó sencillo"></label>
+              <button type="submit">Cerrar caja</button>
+              <p id="mensaje-cierre" role="status"></p>
+            </form>
+            <h2>Últimos cierres</h2>
+            <ul id="lista-cierres" class="lista"></ul>
+          </details>
         </section>
         <h1>Por cobrar</h1>
         <p class="nota">Toca una venta para registrar lo que te pagaron.</p>
