@@ -77,3 +77,7 @@ Todo se ve también en el panel → **Plataforma → Salud de la plataforma**.
 | Cobro automático con tarjeta (Culqi, suscripción) | Primero validar el negocio con cobro manual |
 | Tienda en línea como plantilla para clientes (una sola, configurable; nunca copias) | Proyecto aparte, después de tener clientes del facturador |
 | Unir la tienda Espacios y Diseño con el facturador | Decisión del dueño: por ahora siguen separados |
+| App en el celular (instalable desde Chrome, sin tienda) | Siguiente paso; APK en Google Play después (pago único a Google) |
+| "Reportar un problema o sugerencia" desde el panel (te llega por correo) | Siguiente paso |
+| Escáner de código de barras con la cámara al vender y en stock | Siguiente paso |
+| Impuestos estimados por régimen (Nuevo RUS, RER, MYPE, General) | Hay que verificar tasas, cuotas y tramos vigentes en la normativa oficial antes de programarlos |

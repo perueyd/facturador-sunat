@@ -634,6 +634,10 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   días que alcanza, punto de pedido, cantidad sugerida, valor del inventario, días de inventario,
   productos sin movimiento y **Kardex** valorizado a costo promedio ponderado (descargable a Excel;
   control interno: el formato oficial del registro de inventario lo revisa el contador).
+- **Caja y cuentas de cobro** (pestaña Cobrar; dueño, administrador y contador): cuentas donde entra el
+  dinero (Yape de la empresa, Yape de otra persona, efectivo, banco…), cada cobro dice a cuál entró,
+  y la caja muestra cada cuenta, lo de la empresa, lo de terceros y el total (hoy, 7 días, mes). La
+  venta es de la empresa igual: lleva su comprobante y se declara; aquí solo se ve dónde quedó el dinero.
 - **Cada empresa elige qué funciones usa** (`npm run empresa:modulos`): panel, vencimientos,
   resumen, certificado, cobros, notas, productos, exportar, compras, avisos, estadisticas. Sin "panel", la empresa ni aparece
   en el panel y sigue solo por API.

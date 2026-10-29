@@ -37,7 +37,7 @@ export interface PedidoApi {
   marca?: string;
   solicitud: SolicitudComprobante;
   /** Pago ya confirmado (ej. Yape): se registra por el total al emitir. */
-  pago?: { medio: MedioPago; referencia?: string };
+  pago?: { medio: MedioPago; referencia?: string; cuentaId?: string };
 }
 
 type R<T> = { ok: true; valor: T } | { ok: false; errores: string[] };
@@ -156,7 +156,10 @@ export function leerPedido(cuerpo: unknown, hoy = ahoraLima()): R<PedidoApi> {
       errores.push(`pago: indica { "medio": ${MEDIOS_PAGO.map((m) => `"${m}"`).join(' | ')}, "referencia": "nº de operación" }.`);
     } else {
       const referencia = texto(cuerpo.pago.referencia);
-      pago = { medio, ...(referencia ? { referencia } : {}) };
+      // Opcional: la cuenta donde entró el dinero (id). Sin ella, la predeterminada del medio.
+      const cuenta = texto(cuerpo.pago.cuenta);
+      if (cuenta && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cuenta)) errores.push('pago.cuenta: identificador de cuenta inválido.');
+      pago = { medio, ...(referencia ? { referencia } : {}), ...(cuenta ? { cuentaId: cuenta } : {}) };
     }
   }
 

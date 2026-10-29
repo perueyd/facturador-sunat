@@ -20,6 +20,8 @@ export interface NuevoPago {
   /** Monto como texto ("350.00"). Si se omite, se cobra el saldo completo. */
   monto?: string;
   medio: MedioPago;
+  /** Cuenta donde entró el dinero. Sin ella, se usa la predeterminada de ese medio (si hay). */
+  cuentaId?: string;
   /** Número de operación (Yape/Plin/transferencia). Evita registrar dos veces el mismo pago. */
   referencia?: string;
   fecha?: string;
@@ -116,6 +118,14 @@ export async function registrarPago(db: Db, p: NuevoPago): Promise<ResultadoPago
 
       const antes = await recalcularCobro(tx, p.comprobanteId);
       if (antes.saldo.isZero()) throw new ErrorCobro(`${nombre} ya está pagado.`);
+      // Dónde entró el dinero: la cuenta elegida (manda su medio) o la predeterminada del medio.
+      const cuenta = p.cuentaId
+        ? (await tx.query(`SELECT id, medio::text FROM cuentas_cobro WHERE id = $1 AND empresa_id = $2 AND activa`, [p.cuentaId, p.empresaId])).rows[0]
+        : (await tx.query(`SELECT id, medio::text FROM cuentas_cobro WHERE empresa_id = $1 AND medio = $2 AND predeterminada AND activa`, [p.empresaId, p.medio])).rows[0];
+      if (p.cuentaId && !cuenta) throw new ErrorCobro('Esa cuenta no existe o está desactivada.');
+      // El medio de la cuenta manda (el nº de operación se busca por medio para no registrarlo dos veces).
+      if (cuenta && cuenta.medio !== p.medio) throw new ErrorCobro(`Esa cuenta recibe ${cuenta.medio}, no ${p.medio}.`);
+      const medio = p.medio;
       let monto: Decimal;
       try {
         monto = p.monto === undefined ? antes.saldo : dec(p.monto);
@@ -128,9 +138,9 @@ export async function registrarPago(db: Db, p: NuevoPago): Promise<ResultadoPago
       if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > ahoraLima().fecha) throw new ErrorCobro('La fecha del pago debe ser AAAA-MM-DD y no futura.');
 
       const ins = await tx.query(
-        `INSERT INTO pagos (empresa_id, comprobante_id, fecha, monto, medio, referencia_operacion, notas, registrado_por, api_llave_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-        [p.empresaId, p.comprobanteId, fecha, monto.toFixed(2), p.medio, referencia ?? null, p.notas ?? null, p.usuarioId ?? null, p.apiLlaveId ?? null],
+        `INSERT INTO pagos (empresa_id, comprobante_id, fecha, monto, medio, referencia_operacion, notas, registrado_por, api_llave_id, cuenta_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+        [p.empresaId, p.comprobanteId, fecha, monto.toFixed(2), medio, referencia ?? null, p.notas ?? null, p.usuarioId ?? null, p.apiLlaveId ?? null, cuenta?.id ?? null],
       );
       const pagoId = ins.rows[0].id as string;
       const cobro = await recalcularCobro(tx, p.comprobanteId);
@@ -138,7 +148,7 @@ export async function registrarPago(db: Db, p: NuevoPago): Promise<ResultadoPago
         `INSERT INTO auditoria (empresa_id, usuario_id, api_llave_id, accion, entidad, entidad_id, despues)
          VALUES ($1, $2, $3, 'REGISTRAR_PAGO', 'pagos', $4, $5)`,
         [p.empresaId, p.usuarioId ?? null, p.apiLlaveId ?? null, pagoId,
-          JSON.stringify({ comprobante: nombre, monto: monto.toFixed(2), medio: p.medio, referencia: referencia ?? null, estadoPago: cobro.estadoPago })],
+          JSON.stringify({ comprobante: nombre, monto: monto.toFixed(2), medio, cuenta: cuenta?.id ?? null, referencia: referencia ?? null, estadoPago: cobro.estadoPago })],
       );
       return { resultado: 'REGISTRADO' as const, pagoId, cobro };
     });

@@ -23,6 +23,7 @@ import type { EnviarCorreo } from '../avisos/avisos.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
 import { enTransaccion, type Db } from '../db/conexion.js';
+import { ErrorCuenta, caja, guardarCuenta, listarCuentas } from '../cobros/caja.js';
 import { MEDIOS_PAGO, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
 import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
 import { ErrorEmpresa, configurarEmpresa } from '../empresas/configurar.js';
@@ -36,6 +37,7 @@ import { asignarProveedor, guardarDiasEntrega, kardex, reposicion } from '../inv
 import { ErrorPdf } from '../pdf/representacion.js';
 import { ErrorSuscripcion, cambiarSuscripcion, clientes, iniciarPrueba, registrarPago as registrarPagoPlan, suscripcionDe } from '../plataforma/suscripciones.js';
 import { saludPlataforma } from '../plataforma/vigilancia.js';
+import { ahoraLima } from '../fechas.js';
 import { estadisticas } from '../reportes/estadisticas.js';
 import { tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
@@ -391,6 +393,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       adminPlataforma: s.adminPlataforma,
       puedeComprar: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('compras')),
       verEstadisticas: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('estadisticas')),
+      verCaja: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('cobros')),
       verInventario: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('productos')),
     });
   });
@@ -768,12 +771,59 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const monto = texto(b.monto, 20);
     if (monto && !/^\d+(\.\d{1,2})?$/.test(monto)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Monto inválido, por ejemplo 150.00.');
     const referencia = texto(b.referencia, 60);
+    const cuenta = texto(b.cuenta, 36);
+    if (cuenta && !UUID.test(cuenta)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Cuenta inválida.');
     const r = await registrarPago(d.db, {
       empresaId: s.empresa.id, comprobanteId: id, medio, usuarioId: s.usuarioId,
-      ...(monto ? { monto } : {}), ...(referencia ? { referencia } : {}),
+      ...(monto ? { monto } : {}), ...(referencia ? { referencia } : {}), ...(cuenta ? { cuentaId: cuenta } : {}),
     });
     if (r.resultado === 'ERROR') return d.error(c, 422, 'PAGO_INVALIDO', r.errores.join(' '));
     return c.json(await d.respuestaComprobante(c, id), r.resultado === 'REGISTRADO' ? 201 : 200);
+  });
+
+  // ---------- Cuentas donde entra el dinero y caja ----------
+  app.get('/panel/api/cuentas', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    const cuentas = await listarCuentas(d.db, s.empresa.id);
+    // Quien solo vende ve las activas (para elegir dónde entró el dinero).
+    return c.json({ cuentas: ROLES_CORRIGEN.includes(s.empresa.rol) ? cuentas : cuentas.filter((x) => x.activa) });
+  });
+
+  const guardarCuentaRuta = async (c: Context, id?: string) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador cambia las cuentas.');
+    if (id !== undefined && !UUID.test(id)) return d.error(c, 404, 'NO_ENCONTRADO', 'Cuenta no encontrada.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      const cuentaId = await guardarCuenta(d.db, s.empresa.id, {
+        ...(id ? { id } : {}), nombre: texto(b.nombre, 60), medio: texto(b.medio, 20).toUpperCase(),
+        ...(typeof b.titular === 'string' || b.titular === null ? { titular: texto(b.titular, 120) } : {}),
+        deLaEmpresa: b.deLaEmpresa !== false, predeterminada: b.predeterminada === true, ...(typeof b.activa === 'boolean' ? { activa: b.activa } : {}),
+      }, s.usuarioId);
+      return c.json({ ok: true, id: cuentaId }, id ? 200 : 201);
+    } catch (e) {
+      if (e instanceof ErrorCuenta) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  };
+  app.post('/panel/api/cuentas', (c) => guardarCuentaRuta(c));
+  app.post('/panel/api/cuentas/:id', (c) => guardarCuentaRuta(c, c.req.param('id')));
+
+  app.get('/panel/api/caja', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no ve la caja.');
+    const hoy = ahoraLima().fecha;
+    const desde = c.req.query('desde') ?? hoy;
+    const hasta = c.req.query('hasta') ?? hoy;
+    const fecha = /^\d{4}-\d{2}-\d{2}$/;
+    if (!fecha.test(desde) || !fecha.test(hasta) || desde > hasta) return d.error(c, 400, 'FECHAS_INVALIDAS', 'Fechas como AAAA-MM-DD, "desde" antes de "hasta".');
+    return c.json(await caja(d.db, s.empresa.id, desde, hasta));
   });
 
   app.get('/panel/api/por-cobrar', async (c) => {
