@@ -397,6 +397,18 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect((await (await pedir('/panel/api/yo', { cookie: dueno })).json()).verEstadisticas).toBe(false);
   });
 
+  it('reposición y Kardex: dueño y contador sí, vendedor no', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    const r = await (await pedir('/panel/api/reposicion', { cookie: dueno })).json();
+    expect(r.resumen).toBeDefined();
+    expect(Array.isArray(r.proveedores)).toBe(true);
+    expect((await pedir('/panel/api/reposicion', { cookie: vendedor })).status).toBe(403);
+    expect((await pedir('/panel/api/kardex?sku=NADA', { cookie: dueno })).status).toBe(404);
+    expect((await pedir('/panel/api/proveedores/dias', { cookie: dueno, cuerpo: { ruc: '20600000013', dias: '999' } })).status).toBe(422);
+    expect((await (await pedir('/panel/api/yo', { cookie: vendedor })).json()).verInventario).toBe(false);
+  });
+
   it('función "compras" apagada: 403 aunque se llame directo', async () => {
     const cookie = await entrar(await usuario('DUENO'));
     await db.query(`UPDATE empresas SET modulos_desactivados = '{compras}' WHERE id = $1`, [f.empresaId]);
