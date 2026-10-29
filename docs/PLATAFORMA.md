@@ -41,6 +41,17 @@ Lo que el cliente hace en SUNAT con su Clave SOL (no se puede automatizar): crea
 secundario solo con permisos de comprobantes electrónicos y, para producción, los trámites de
 emisor electrónico que correspondan (verificar en la normativa vigente).
 
+## La app en el celular y el escáner
+
+- **Instalar:** abrir la dirección de Render + `/panel` en **Chrome del celular** → botón **"📲 Instalar app"**
+  (arriba) o menú ⋮ → **"Instalar app" / "Agregar a pantalla de inicio"**. Queda con su ícono, como una app.
+- Cuando se publica una versión nueva, la app muestra **"Hay una versión nueva · Actualizar"**.
+- **Escáner:** en Vender, el campo "Código o código de barras" recibe lo que lee un lector USB/Bluetooth
+  (escribe como teclado y pulsa Enter) o el botón **📷 Escanear** (cámara, en Chrome de Android). Cada
+  producto se guarda con su código de barras en Stock.
+- **Reportar un problema o sugerencia:** pestaña Más. Te llega por correo (si está Resend) y aparece en
+  Plataforma → "Lo que reportan tus clientes" hasta que lo marques atendido.
+
 ## Cómo funciona el cobro
 
 - Empresa nueva de un cliente: **14 días de prueba**. Una empresa propia (marca "Es mía") no
@@ -77,7 +88,5 @@ Todo se ve también en el panel → **Plataforma → Salud de la plataforma**.
 | Cobro automático con tarjeta (Culqi, suscripción) | Primero validar el negocio con cobro manual |
 | Tienda en línea como plantilla para clientes (una sola, configurable; nunca copias) | Proyecto aparte, después de tener clientes del facturador |
 | Unir la tienda Espacios y Diseño con el facturador | Decisión del dueño: por ahora siguen separados |
-| App en el celular (instalable desde Chrome, sin tienda) | Siguiente paso; APK en Google Play después (pago único a Google) |
-| "Reportar un problema o sugerencia" desde el panel (te llega por correo) | Siguiente paso |
-| Escáner de código de barras con la cámara al vender y en stock | Siguiente paso |
+| APK en Google Play | La app ya se instala desde Chrome; publicarla en Play exige cuenta de desarrollador (pago único a Google) |
 | Impuestos estimados por régimen (Nuevo RUS, RER, MYPE, General) | Hay que verificar tasas, cuotas y tramos vigentes en la normativa oficial antes de programarlos |

@@ -63,11 +63,13 @@ function agregarItem() {
     recalcularTotal();
   });
   for (const input of nodo.querySelectorAll('input')) input.addEventListener('input', recalcularTotal);
-  // Producto guardado: al elegirlo de la lista se pone su precio.
+  // Producto guardado: al elegirlo de la lista se pone su precio y su código (así descuenta stock).
   nodo.querySelector('[name=descripcion]').addEventListener('change', (e) => {
+    const fila = e.target.closest('.item');
     const p = productos.find((x) => x.nombre === e.target.value);
+    fila.querySelector('[name=codigo]').value = p ? p.sku : '';
     if (p) {
-      e.target.closest('.item').querySelector('[name=precio]').value = p.precio;
+      fila.querySelector('[name=precio]').value = p.precio;
       recalcularTotal();
     }
   });
@@ -605,6 +607,7 @@ async function alEmitir(e) {
   e.preventDefault();
   const f = new FormData(e.target);
   const items = [...document.querySelectorAll('#items .item')].map((fila) => ({
+    ...(fila.querySelector('[name=codigo]').value ? { codigo: fila.querySelector('[name=codigo]').value } : {}),
     descripcion: fila.querySelector('[name=descripcion]').value.trim(),
     cantidad: fila.querySelector('[name=cantidad]').value.trim().replace(',', '.'),
     precio: fila.querySelector('[name=precio]').value.trim().replace(',', '.'),
@@ -817,6 +820,7 @@ async function cargarPlataforma() {
     f.prepend(Object.assign(document.createElement('b'), { textContent: x.nombre }));
     return f;
   }));
+  cargarReportes().catch(() => {});
   $('#numeros-salud').textContent = `${salud.ultimas24h} comprobante(s) en 24 h · ${salud.enCola} en cola · base de datos ${salud.baseDatosMb} MB de ${salud.limiteBaseDatosMb} MB`;
   $('#problemas-salud').replaceChildren(...(salud.problemas.length
     ? salud.problemas.map((x) => linea(`${x.nivel === 'ROJO' ? '🔴' : '🟡'} ${x.mensaje}`, ''))
@@ -824,6 +828,132 @@ async function cargarPlataforma() {
   $('#errores-salud').replaceChildren(...(salud.errores.length
     ? salud.errores.map((x) => linea(`${x.mensaje}${x.ruta ? ` (${x.ruta})` : ''}`, x.fecha.slice(0, 16).replace('T', ' ')))
     : [linea('Sin errores registrados', '')]));
+}
+
+// ---------- Reportes: "algo no funciona" o "me falta esto" ----------
+async function alReportar(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const pantalla = document.querySelector('#pestanas button.activa')?.dataset.pestana || '';
+  try {
+    await api('/reportes', { cuerpo: { tipo: f.get('tipo'), mensaje: f.get('mensaje'), pantalla } });
+    e.target.reset();
+    mensaje('#mensaje-reporte', '✔ Gracias. Lo recibimos y te responderemos.');
+  } catch (err) {
+    mensaje('#mensaje-reporte', err.message, true);
+  }
+}
+
+async function cargarReportes() {
+  const { reportes } = await api('/plataforma/reportes');
+  $('#lista-reportes').replaceChildren(...(reportes.length ? reportes.map((r) => {
+    const li = linea(`${r.tipo === 'PROBLEMA' ? '⚠️' : '💡'} ${r.mensaje}`, `${r.empresa || ''} · ${r.usuario} · ${r.fecha.slice(0, 10)}`);
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'enlace', textContent: 'Atendido' });
+    b.addEventListener('click', async () => {
+      try { await api(`/plataforma/reportes/${r.id}/atendido`, { cuerpo: {} }); await cargarReportes(); } catch (err) { alert(err.message); }
+    });
+    li.append(b);
+    return li;
+  }) : [linea('Nada pendiente.', '')]));
+}
+
+// ---------- Escáner de códigos de barras ----------
+// Un lector USB/Bluetooth "escribe" el código y pulsa Enter: funciona en cualquier navegador.
+// Con la cámara se usa BarcodeDetector (Chrome en Android); si no existe, el botón no aparece.
+function buscarProducto(codigo) {
+  const c = codigo.trim();
+  return productos.find((p) => p.codigoBarras === c) || productos.find((p) => p.sku === c.toUpperCase());
+}
+
+function agregarPorCodigo(codigo) {
+  $('#error-codigo').textContent = '';
+  const p = buscarProducto(codigo);
+  if (!p) {
+    $('#error-codigo').textContent = `No hay un producto con el código "${codigo}". Créalo en Stock (con su código de barras).`;
+    return;
+  }
+  const filas = [...document.querySelectorAll('#items .item')];
+  // Si ya está en la venta, suma uno; si no, usa la primera fila vacía o agrega otra.
+  const misma = filas.find((f) => f.querySelector('[name=codigo]').value === p.sku);
+  if (misma) {
+    const cant = misma.querySelector('[name=cantidad]');
+    cant.value = /^\d+$/.test(cant.value.trim()) ? String(Number(cant.value.trim()) + 1) : cant.value;
+  } else {
+    let fila = filas.find((f) => !f.querySelector('[name=descripcion]').value.trim());
+    if (!fila) { agregarItem(); fila = [...document.querySelectorAll('#items .item')].at(-1); }
+    fila.querySelector('[name=codigo]').value = p.sku;
+    fila.querySelector('[name=descripcion]').value = p.nombre;
+    fila.querySelector('[name=precio]').value = p.precio;
+  }
+  recalcularTotal();
+}
+
+let flujoCamara = null;
+async function escanearConCamara(alLeer) {
+  const dialogo = $('#escaner');
+  $('#error-escaner').textContent = '';
+  dialogo.showModal();
+  try {
+    const detector = new BarcodeDetector();
+    flujoCamara = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = $('#video-escaner');
+    video.srcObject = flujoCamara;
+    await video.play();
+    const buscar = async () => {
+      if (!flujoCamara) return;
+      const [hallado] = await detector.detect(video).catch(() => []);
+      if (hallado?.rawValue) { cerrarEscaner(); alLeer(hallado.rawValue); return; }
+      setTimeout(buscar, 250);
+    };
+    buscar();
+  } catch {
+    $('#error-escaner').textContent = 'No se pudo abrir la cámara. Revisa el permiso de cámara del navegador.';
+  }
+}
+function cerrarEscaner() {
+  for (const t of flujoCamara?.getTracks() ?? []) t.stop();
+  flujoCamara = null;
+  $('#video-escaner').srcObject = null;
+  if ($('#escaner').open) $('#escaner').close();
+}
+
+// ---------- App instalable y versión nueva ----------
+let pedidoInstalar = null;
+function prepararApp() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    pedidoInstalar = e;
+    $('#instalar-app').hidden = false;
+  });
+  $('#instalar-app').addEventListener('click', async () => {
+    if (!pedidoInstalar) return;
+    pedidoInstalar.prompt();
+    await pedidoInstalar.userChoice.catch(() => {});
+    pedidoInstalar = null;
+    $('#instalar-app').hidden = true;
+  });
+  if (!('serviceWorker' in navigator)) return;
+  let recargando = false;
+  // Cuando una versión NUEVA toma el control, se recarga una sola vez. La primera instalación
+  // también "toma el control", pero ahí no hay nada que recargar (cortaría lo que se está escribiendo).
+  const habiaVersion = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (habiaVersion && !recargando) { recargando = true; location.reload(); }
+  });
+  navigator.serviceWorker.register('/panel/sw.js', { scope: '/panel' }).then((reg) => {
+    const avisar = (sw) => {
+      if (!sw || !navigator.serviceWorker.controller) return;
+      $('#aviso-version').hidden = false;
+      $('#actualizar-app').onclick = () => sw.postMessage('actualizar');
+    };
+    avisar(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const nuevo = reg.installing;
+      nuevo?.addEventListener('statechange', () => { if (nuevo.state === 'installed') avisar(nuevo); });
+    });
+    // Revisa si hay versión nueva cada vez que se vuelve a la app.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
 }
 
 // ---------- Cobrar ----------
@@ -1117,6 +1247,7 @@ async function alGuardarProducto(e) {
     await api('/productos', { cuerpo: {
       sku: f.get('sku'), nombre: f.get('nombre'), precio: String(f.get('precio')).trim().replace(',', '.'),
       controlaStock: f.get('controlaStock') === 'si', ...(f.get('stockMinimo') ? { stockMinimo: f.get('stockMinimo') } : {}),
+      ...(f.get('codigoBarras') ? { codigoBarras: String(f.get('codigoBarras')).trim() } : {}),
     } });
     // Proveedor habitual y su tiempo de entrega (para saber cuándo pedir).
     if (f.get('proveedor') || f.get('diasEntrega')) {
@@ -1385,6 +1516,22 @@ async function buscarCliente(e) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  prepararApp();
+  const conCamara = 'BarcodeDetector' in window && Boolean(navigator.mediaDevices?.getUserMedia);
+  $('#escanear-venta').hidden = !conCamara;
+  $('#escanear-producto').hidden = !conCamara;
+  $('#escanear-venta').addEventListener('click', () => escanearConCamara(agregarPorCodigo));
+  $('#escanear-producto').addEventListener('click', () => escanearConCamara((c) => { $('#form-producto').codigoBarras.value = c; }));
+  $('#cerrar-escaner').addEventListener('click', cerrarEscaner);
+  $('#escaner').addEventListener('close', cerrarEscaner);
+  $('#codigo-venta').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    // Enter del lector: agrega el producto y no envía el formulario.
+    e.preventDefault();
+    if (e.target.value.trim()) agregarPorCodigo(e.target.value);
+    e.target.value = '';
+  });
+  $('#form-reporte').addEventListener('submit', alReportar);
   $('#exportar').addEventListener('click', exportar);
   $('#cerrar-otras').addEventListener('click', async () => {
     try {

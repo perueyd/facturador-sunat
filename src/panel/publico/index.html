@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>Panel del facturador</title>
+  <meta name="theme-color" content="#1a1a1a">
+  <link rel="manifest" href="/panel/manifest.webmanifest">
+  <link rel="icon" href="/panel/icono-192.png">
+  <link rel="apple-touch-icon" href="/panel/icono-192.png">
   <link rel="stylesheet" href="/panel/estilo.css">
   <script src="/panel/app.js" defer></script>
 </head>
@@ -12,8 +16,11 @@
   <header>
     <strong>Facturador</strong>
     <span id="quien"></span>
+    <button id="instalar-app" class="enlace" hidden>📲 Instalar app</button>
     <button id="salir" class="enlace" hidden>Salir</button>
   </header>
+  <p id="aviso-version" class="aviso version" hidden>Hay una versión nueva del facturador.
+    <button type="button" id="actualizar-app" class="secundario">Actualizar</button></p>
 
   <main>
     <!-- Entrar: correo + contraseña + código de la app autenticadora -->
@@ -210,6 +217,12 @@
 
         <fieldset>
           <legend>Productos <small>(precio con IGV)</small></legend>
+          <!-- Un lector de códigos USB/Bluetooth escribe aquí como un teclado y termina con Enter. -->
+          <div class="fila escaner">
+            <label>Código o código de barras <input id="codigo-venta" autocomplete="off" maxlength="40" placeholder="Escanea o escribe y pulsa Enter"></label>
+            <button type="button" id="escanear-venta" class="secundario" hidden>📷 Escanear</button>
+          </div>
+          <p class="error" id="error-codigo" role="alert"></p>
           <div id="items"></div>
           <datalist id="lista-productos"></datalist>
           <button type="button" id="agregar" class="secundario">+ Agregar producto</button>
@@ -339,6 +352,10 @@
               <label>¿Controla stock? <select name="controlaStock"><option value="si">Sí</option><option value="no">No (servicio)</option></select></label>
               <label>Colchón (stock de seguridad) <input name="stockMinimo" inputmode="decimal"></label>
             </div>
+            <div class="fila escaner">
+              <label>Código de barras <input name="codigoBarras" maxlength="40" autocomplete="off"></label>
+              <button type="button" id="escanear-producto" class="secundario" hidden>📷 Escanear</button>
+            </div>
             <div class="fila">
               <label>RUC del proveedor habitual <input name="proveedor" inputmode="numeric" maxlength="11"></label>
               <label>Días de entrega <small>(si tarda distinto)</small> <input name="diasEntrega" inputmode="numeric" maxlength="3"></label>
@@ -371,6 +388,8 @@
           <p class="nota">Límite vacío = sin límite. Los cambios aplican a todos los clientes de ese plan.</p>
           <div id="lista-planes"></div>
         </details>
+        <h2>Lo que reportan tus clientes</h2>
+        <ul id="lista-reportes" class="lista"></ul>
         <h2>Salud de la plataforma</h2>
         <p class="nota" id="numeros-salud"></p>
         <ul id="problemas-salud" class="lista"></ul>
@@ -381,6 +400,16 @@
       </div>
 
       <div data-vista="mas" hidden>
+      <section id="caja-reporte">
+        <h2>¿Algo no funciona o te falta algo?</h2>
+        <form id="form-reporte">
+          <label>Es un
+            <select name="tipo"><option value="PROBLEMA">Problema (algo no funciona)</option><option value="SUGERENCIA">Sugerencia (me falta algo)</option></select></label>
+          <label>Cuéntanos <textarea name="mensaje" rows="3" maxlength="2000" required></textarea></label>
+          <button type="submit" class="secundario">Enviar</button>
+          <p id="mensaje-reporte" role="status"></p>
+        </form>
+      </section>
       <section id="caja-configuracion" hidden>
         <h2>Configuración de tu empresa <small id="avance-configuracion"></small></h2>
         <ul id="pasos-configuracion" class="pasos"></ul>
@@ -557,8 +586,17 @@
   </template>
   <datalist id="lista-skus"></datalist>
 
+  <!-- Escáner con la cámara (si el navegador lo permite) -->
+  <dialog id="escaner">
+    <p>Apunta la cámara al código de barras.</p>
+    <video id="video-escaner" playsinline muted></video>
+    <p class="error" id="error-escaner" role="alert"></p>
+    <button type="button" id="cerrar-escaner" class="secundario">Cerrar</button>
+  </dialog>
+
   <template id="plantilla-item">
     <div class="item">
+      <input name="codigo" type="hidden">
       <input name="descripcion" placeholder="Descripción" maxlength="250" list="lista-productos" required>
       <input name="cantidad" inputmode="decimal" value="1" aria-label="Cantidad" required>
       <input name="precio" inputmode="decimal" placeholder="0.00" aria-label="Precio con IGV" required>

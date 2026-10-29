@@ -638,6 +638,10 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   dinero (Yape de la empresa, Yape de otra persona, efectivo, banco…), cada cobro dice a cuál entró,
   y la caja muestra cada cuenta, lo de la empresa, lo de terceros y el total (hoy, 7 días, mes). La
   venta es de la empresa igual: lleva su comprobante y se declara; aquí solo se ve dónde quedó el dinero.
+- **App instalable (PWA)**: manifiesto, íconos y service worker (solo guarda la página, nunca los datos);
+  aviso "Hay una versión nueva · Actualizar". **Escáner** de códigos de barras (lector USB/Bluetooth o
+  cámara con BarcodeDetector) y código de barras por producto. **Reportes** de los usuarios al
+  administrador de la plataforma.
 - **Cada empresa elige qué funciones usa** (`npm run empresa:modulos`): panel, vencimientos,
   resumen, certificado, cobros, notas, productos, exportar, compras, avisos, estadisticas. Sin "panel", la empresa ni aparece
   en el panel y sigue solo por API.
