@@ -131,3 +131,12 @@ button.peligro { color: var(--rojo); border-color: #fda29b; }
 
 /* Caja: el período elegido se resalta. */
 #periodo-caja button.activa { background: var(--tinta); color: #fff; }
+
+/* Aviso de versión nueva (arriba, siempre visible). */
+.aviso.version { margin: 0; border-radius: 0; display: flex; gap: 8px; align-items: center; justify-content: center; }
+/* Escáner: el campo y el botón de la cámara lado a lado; el video ocupa el ancho del diálogo. */
+.escaner { align-items: end; }
+.escaner button { white-space: nowrap; margin-bottom: 8px; }
+#escaner { width: min(92vw, 420px); border: 1px solid var(--borde); border-radius: 14px; }
+#escaner video { width: 100%; border-radius: 10px; background: #000; }
+textarea { display: block; width: 100%; margin-top: 4px; padding: 10px; font: inherit; border: 1px solid var(--borde); border-radius: 8px; }

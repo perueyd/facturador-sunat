@@ -11,6 +11,7 @@
  *   - Política de contenido estricta: solo se ejecuta el JavaScript propio del panel.
  *   - Cada usuario ve y emite SOLO en las empresas que tiene asignadas, según su rol.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -60,12 +61,21 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PEDIDO_PANEL = /^PANEL-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const leer = (archivo: string) => readFileSync(new URL(`./publico/${archivo}`, import.meta.url));
-const ARCHIVOS = {
-  'index.html': { contenido: leer('index.html'), tipo: 'text/html; charset=utf-8' },
+const PAGINA = { contenido: leer('index.html'), tipo: 'text/html; charset=utf-8' };
+const BASE = {
   'app.js': { contenido: leer('app.js'), tipo: 'text/javascript; charset=utf-8' },
   'estilo.css': { contenido: leer('estilo.css'), tipo: 'text/css; charset=utf-8' },
-} as const;
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+  'manifest.webmanifest': { contenido: leer('manifest.webmanifest'), tipo: 'application/manifest+json; charset=utf-8' },
+  'icono-192.png': { contenido: leer('icono-192.png'), tipo: 'image/png' },
+  'icono-512.png': { contenido: leer('icono-512.png'), tipo: 'image/png' },
+};
+// Versión del panel = huella de sus archivos: si se publica un cambio, la app instalada lo nota.
+const VERSION_PANEL = createHash('sha256').update(PAGINA.contenido).update(BASE['app.js'].contenido).update(BASE['estilo.css'].contenido).digest('hex').slice(0, 12);
+const ARCHIVOS = {
+  ...BASE,
+  'sw.js': { contenido: Buffer.from(leer('sw.js').toString('utf8').replace("'__VERSION__'", `'${VERSION_PANEL}'`)), tipo: 'text/javascript; charset=utf-8' },
+};
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src blob:; manifest-src 'self'; worker-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 type ErrorJson = (c: Context, estado: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429, codigo: string, mensaje: string) => Response;
 
@@ -108,14 +118,18 @@ function origenPropio(c: Context): string {
 export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   const frenado = (c: Context) => d.error(c, 429, 'DEMASIADOS_INTENTOS', 'Demasiados intentos fallidos; espera un minuto.');
 
-  for (const [ruta, archivo] of [['/panel', 'index.html'], ['/panel/', 'index.html'], ['/panel/app.js', 'app.js'], ['/panel/estilo.css', 'estilo.css']] as const) {
-    app.get(ruta, (c) =>
-      c.body(new Uint8Array(ARCHIVOS[archivo].contenido), 200, {
-        'Content-Type': ARCHIVOS[archivo].tipo,
-        'Content-Security-Policy': CSP,
-        'Cache-Control': 'no-cache',
-      }),
-    );
+  const servir = (c: Context, a: { contenido: Buffer; tipo: string }, extra: Record<string, string> = {}) => c.body(new Uint8Array(a.contenido), 200, {
+    'Content-Type': a.tipo,
+    'Content-Security-Policy': CSP,
+    'Cache-Control': 'no-cache',
+    // La cámara solo para esta página (escáner de códigos de barras).
+    'Permissions-Policy': 'camera=(self)',
+    ...extra,
+  });
+  for (const ruta of ['/panel', '/panel/']) app.get(ruta, (c) => servir(c, PAGINA));
+  for (const [nombre, archivo] of Object.entries(ARCHIVOS)) {
+    // El service worker vive en /panel/sw.js pero atiende también la página /panel (sin barra final).
+    app.get(`/panel/${nombre}`, (c) => servir(c, archivo, nombre === 'sw.js' ? { 'Service-Worker-Allowed': '/panel' } : {}));
   }
 
   // Contra órdenes enviadas desde otro sitio (CSRF): cabecera propia + mismo origen.
@@ -497,10 +511,10 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (s instanceof Response) return s;
     if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
     const r = await d.db.query(
-      `SELECT sku, nombre, precio_con_igv::numeric(14,2)::text AS precio FROM productos WHERE empresa_id = $1 AND activo ORDER BY nombre LIMIT 500`,
+      `SELECT sku, nombre, precio_con_igv::numeric(14,2)::text AS precio, codigo_barras FROM productos WHERE empresa_id = $1 AND activo ORDER BY nombre LIMIT 2000`,
       [s.empresa.id],
     );
-    return c.json({ productos: r.rows });
+    return c.json({ productos: r.rows.map((p) => ({ sku: p.sku, nombre: p.nombre, precio: p.precio, codigoBarras: p.codigo_barras })) });
   });
 
   // Cliente ya conocido: con el DNI o RUC se completa el nombre.
@@ -622,6 +636,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       await guardarProducto(d.db, s.empresa.id, {
         sku: texto(b.sku, 40), nombre: texto(b.nombre, 250), precio: texto(b.precio, 20) || '0',
         controlaStock: b.controlaStock !== false, ...(texto(b.stockMinimo, 20) ? { stockMinimo: texto(b.stockMinimo, 20) } : {}),
+        ...(typeof b.codigoBarras === 'string' && b.codigoBarras.trim() ? { codigoBarras: texto(b.codigoBarras, 40) } : {}),
       });
     } catch (e) {
       return negocio(c, e);
@@ -966,6 +981,54 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       s.usuarioId, JSON.stringify({ codigo: c.req.param('codigo'), mensual, anual, comprobantes, usuarios }),
     ]);
     return c.json({ ok: true });
+  });
+
+  // ---------- Reportes: "algo no funciona" o "me falta esto" ----------
+  app.post('/panel/api/reportes', async (c) => {
+    const s = await conSesion(c);
+    if (s instanceof Response) return s;
+    const ip = d.ipCliente(c);
+    // Cada reporte cuenta: frena a quien quiera llenar el correo del administrador.
+    if (d.fallos.excedido(ip) || !d.fallos.contar(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const tipo = texto(b.tipo, 20) === 'SUGERENCIA' ? 'SUGERENCIA' : 'PROBLEMA';
+    const mensaje = texto(b.mensaje, 2000).trim();
+    if (mensaje.length < 5) return d.error(c, 422, 'DATOS_INVALIDOS', 'Cuéntanos un poco más (mínimo 5 letras).');
+    const pantalla = texto(b.pantalla, 40) || null;
+    await d.db.query(`INSERT INTO reportes (empresa_id, usuario_id, tipo, mensaje, pantalla) VALUES ($1, $2, $3, $4, $5)`, [
+      s.empresa?.id ?? null, s.usuarioId, tipo, mensaje, pantalla,
+    ]);
+    const para = (await d.db.query(`SELECT lower(email) AS email FROM usuarios WHERE admin_plataforma AND activo`)).rows.map((x) => x.email as string);
+    if (para.length) {
+      void d.correo?.({
+        para, asunto: `Facturador: ${tipo === 'PROBLEMA' ? '⚠️ problema reportado' : 'sugerencia'} de ${s.empresa?.razonSocial ?? s.nombre}`,
+        texto: `${s.nombre} (${s.email})${s.empresa ? ` · ${s.empresa.razonSocial} (${s.empresa.ruc})` : ''}${pantalla ? ` · pantalla: ${pantalla}` : ''}\n\n${mensaje}\n\nMárcalo como atendido en el panel → Plataforma.`,
+      }).catch((e: unknown) => console.error('[reportes] no se pudo enviar:', e instanceof Error ? e.message : e));
+    }
+    return c.json({ ok: true }, 201);
+  });
+
+  app.get('/panel/api/plataforma/reportes', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const r = await d.db.query(
+      `SELECT r.id, r.tipo, r.mensaje, r.pantalla, r.creado_en, u.nombre, u.email, e.razon_social
+         FROM reportes r JOIN usuarios u ON u.id = r.usuario_id LEFT JOIN empresas e ON e.id = r.empresa_id
+        WHERE r.atendido_en IS NULL ORDER BY r.id DESC LIMIT 100`,
+    );
+    return c.json({ reportes: r.rows.map((x) => ({
+      id: String(x.id), tipo: x.tipo, mensaje: x.mensaje, pantalla: x.pantalla, fecha: new Date(x.creado_en).toISOString(),
+      usuario: `${x.nombre} (${x.email})`, empresa: x.razon_social,
+    })) });
+  });
+
+  app.post('/panel/api/plataforma/reportes/:id/atendido', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const id = c.req.param('id');
+    if (!/^\d{1,15}$/.test(id)) return d.error(c, 404, 'NO_ENCONTRADO', 'Reporte no encontrado.');
+    const r = await d.db.query(`UPDATE reportes SET atendido_en = now(), atendido_por = $2 WHERE id = $1 AND atendido_en IS NULL RETURNING id`, [id, s.usuarioId]);
+    return r.rowCount ? c.json({ ok: true }) : d.error(c, 404, 'NO_ENCONTRADO', 'Reporte no encontrado o ya atendido.');
   });
 
   // ---------- Empresas, certificado y usuarios ----------

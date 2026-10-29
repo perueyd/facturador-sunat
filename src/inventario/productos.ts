@@ -14,6 +14,8 @@ export interface DatosProducto {
   controlaStock?: boolean;
   stockMinimo?: string;
   marca?: string;
+  /** Lo que lee el escáner (EAN, UPC…). Vacío = se quita. */
+  codigoBarras?: string;
 }
 
 export class ErrorInventario extends Error {}
@@ -26,6 +28,12 @@ export async function guardarProducto(db: Db, empresaId: string, p: DatosProduct
   const precio = dec(p.precio);
   if (precio.isNegative()) throw new ErrorInventario('El precio no puede ser negativo.');
   const minimo = p.stockMinimo === undefined ? null : dec(p.stockMinimo);
+  const barras = p.codigoBarras?.trim() || null;
+  if (barras && !/^[A-Za-z0-9._-]{3,40}$/.test(barras)) throw new ErrorInventario('Código de barras inválido: solo letras y números (3 a 40).');
+  if (barras) {
+    const otro = await db.query(`SELECT sku FROM productos WHERE empresa_id = $1 AND codigo_barras = $2 AND sku <> $3`, [empresaId, barras, sku]);
+    if (otro.rows[0]) throw new ErrorInventario(`Ese código de barras ya es del producto ${otro.rows[0].sku}.`);
+  }
   let marcaId: string | null = null;
   if (p.marca) {
     const m = await db.query(`SELECT id FROM marcas WHERE empresa_id = $1 AND lower(nombre) = lower($2)`, [empresaId, p.marca]);
@@ -33,13 +41,15 @@ export async function guardarProducto(db: Db, empresaId: string, p: DatosProduct
     marcaId = m.rows[0].id as string;
   }
   const r = await db.query(
-    `INSERT INTO productos (empresa_id, sku, nombre, precio_con_igv, unidad_medida, controla_stock, stock_minimo, marca_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO productos (empresa_id, sku, nombre, precio_con_igv, unidad_medida, controla_stock, stock_minimo, marca_id, codigo_barras)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (empresa_id, sku) DO UPDATE SET nombre = EXCLUDED.nombre, precio_con_igv = EXCLUDED.precio_con_igv,
        unidad_medida = EXCLUDED.unidad_medida, controla_stock = EXCLUDED.controla_stock, stock_minimo = EXCLUDED.stock_minimo,
-       marca_id = coalesce(EXCLUDED.marca_id, productos.marca_id), activo = true
+       marca_id = coalesce(EXCLUDED.marca_id, productos.marca_id), activo = true,
+       -- Sin código en el formulario se conserva el que tenía (no se borra por olvido).
+       codigo_barras = CASE WHEN $10 THEN EXCLUDED.codigo_barras ELSE productos.codigo_barras END
      RETURNING id`,
-    [empresaId, sku, p.nombre.trim(), precio.toString(), p.unidad ?? 'NIU', p.controlaStock ?? true, minimo?.toString() ?? null, marcaId],
+    [empresaId, sku, p.nombre.trim(), precio.toString(), p.unidad ?? 'NIU', p.controlaStock ?? true, minimo?.toString() ?? null, marcaId, barras, p.codigoBarras !== undefined],
   );
   return r.rows[0].id as string;
 }

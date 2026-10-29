@@ -280,7 +280,7 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
   it('productos guardados y cliente conocido por su documento', async () => {
     await guardarProducto(db, f.empresaId, { sku: 'CAB-001', nombre: 'Cabecera Milán', precio: '220.00' });
     const cookie = await entrar(await usuario());
-    expect((await (await pedir('/panel/api/productos', { cookie })).json()).productos).toEqual([{ sku: 'CAB-001', nombre: 'Cabecera Milán', precio: '220.00' }]);
+    expect((await (await pedir('/panel/api/productos', { cookie })).json()).productos).toEqual([{ sku: 'CAB-001', nombre: 'Cabecera Milán', precio: '220.00', codigoBarras: null }]);
     expect((await pedir('/panel/api/clientes?doc=12345678', { cookie })).status).toBe(404);
     await emitida(cookie);
     expect(await (await pedir('/panel/api/clientes?doc=12345678', { cookie })).json()).toEqual({ nombre: 'JUAN PÉREZ' });
@@ -427,6 +427,51 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect(c.cuentas.find((x: { cuentaId: string }) => x.cuentaId === id)).toMatchObject({ deLaEmpresa: false, cobros: 1 });
     expect((await pedir('/panel/api/caja?desde=2026-02-01&hasta=2026-01-01', { cookie: dueno })).status).toBe(400);
     expect((await (await pedir('/panel/api/yo', { cookie: vendedor })).json()).verCaja).toBe(false);
+  });
+
+  it('app instalable: manifiesto, íconos y service worker con versión; CSP lo permite', async () => {
+    const m = await app.request('http://localhost/panel/manifest.webmanifest');
+    expect(m.status).toBe(200);
+    expect(await m.json()).toMatchObject({ start_url: '/panel', display: 'standalone' });
+    const icono = await app.request('http://localhost/panel/icono-512.png');
+    expect(icono.headers.get('content-type')).toBe('image/png');
+    expect(Buffer.from(await icono.arrayBuffer()).subarray(1, 4).toString()).toBe('PNG');
+    const sw = await app.request('http://localhost/panel/sw.js');
+    expect(sw.headers.get('service-worker-allowed')).toBe('/panel');
+    const codigo = await sw.text();
+    expect(codigo).not.toContain('__VERSION__');
+    expect(codigo).toMatch(/const VERSION = '[0-9a-f]{12}'/);
+    const pagina = await app.request('http://localhost/panel');
+    expect(pagina.headers.get('content-security-policy')).toMatch(/manifest-src 'self'.*worker-src 'self'/);
+    expect(pagina.headers.get('permissions-policy')).toBe('camera=(self)');
+  });
+
+  it('reportes: cualquier usuario escribe; solo el administrador de la plataforma los ve y marca atendidos', async () => {
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    const admin = await usuario('DUENO');
+    await db.query(`UPDATE usuarios SET admin_plataforma = true WHERE id = $1`, [admin.usuarioId]);
+    const cookieAdmin = await entrar(admin);
+    expect((await pedir('/panel/api/reportes', { cuerpo: { tipo: 'PROBLEMA', mensaje: 'x' } })).status).toBe(401);
+    expect((await pedir('/panel/api/reportes', { cookie: vendedor, cuerpo: { tipo: 'PROBLEMA', mensaje: 'no' } })).status).toBe(422);
+    expect((await pedir('/panel/api/reportes', { cookie: vendedor, cuerpo: { tipo: 'SUGERENCIA', mensaje: 'Quisiera imprimir en ticketera', pantalla: 'vender' } })).status).toBe(201);
+    expect((await pedir('/panel/api/plataforma/reportes', { cookie: vendedor })).status).toBe(403);
+    const lista = (await (await pedir('/panel/api/plataforma/reportes', { cookie: cookieAdmin })).json()).reportes;
+    const r = lista.find((x: { mensaje: string }) => x.mensaje === 'Quisiera imprimir en ticketera');
+    expect(r).toMatchObject({ tipo: 'SUGERENCIA', pantalla: 'vender' });
+    expect((await pedir(`/panel/api/plataforma/reportes/${r.id}/atendido`, { cookie: cookieAdmin, cuerpo: {} })).status).toBe(200);
+    expect((await pedir(`/panel/api/plataforma/reportes/${r.id}/atendido`, { cookie: cookieAdmin, cuerpo: {} })).status).toBe(404);
+  });
+
+  it('código de barras: único por empresa, se conserva si no se manda y lo devuelve la lista de productos', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const prod = (sku: string, extra: Record<string, unknown> = {}) => pedir('/panel/api/productos', { cookie: dueno, cuerpo: { sku, nombre: sku, precio: '10.00', ...extra } });
+    expect((await prod('BAR-1', { codigoBarras: '7751234567890' })).status).toBe(201);
+    expect((await prod('BAR-2', { codigoBarras: '7751234567890' })).status).toBe(422);
+    expect((await prod('BAR-3', { codigoBarras: 'con espacios' })).status).toBe(422);
+    // Cambiar el precio sin mandar el código no lo borra.
+    expect((await prod('BAR-1', { precio: '12.00' })).status).toBe(201);
+    const lista = (await (await pedir('/panel/api/productos', { cookie: dueno })).json()).productos;
+    expect(lista.find((p: { sku: string }) => p.sku === 'BAR-1')).toEqual({ sku: 'BAR-1', nombre: 'BAR-1', precio: '12.00', codigoBarras: '7751234567890' });
   });
 
   it('función "compras" apagada: 403 aunque se llame directo', async () => {
