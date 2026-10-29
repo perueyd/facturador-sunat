@@ -149,7 +149,52 @@ async function cargarPanel() {
   if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
   productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
   $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
+  // El dueño y el administrador entran a su panel de control; quien vende, directo a vender.
+  $('#boton-inicio').hidden = !yo.puedeAdministrar;
+  if (yo.puedeAdministrar) {
+    dibujarAccesos();
+    await abrirPestana('inicio');
+  }
   await Promise.all([cargarTablero(), cargarLista(), cargarVentaRapida().catch(() => undefined)]);
+}
+
+// ---------- Panel de control (inicio del dueño) ----------
+// Cada acceso lleva a una pestaña o a una sección de "Más". Solo se muestran los que el rol
+// y el plan permiten (si la pestaña o la sección están ocultas, el acceso tampoco sale).
+const ACCESOS = [
+  ['🧾', 'Vender', 'Boletas y facturas', 'vender'],
+  ['💰', 'Cobros y caja', 'Por cobrar, caja y cierre del día', 'cobrar'],
+  ['📦', 'Stock', 'Productos, reposición y Kardex', 'stock'],
+  ['🛒', 'Compras', 'Registrar compras a proveedores', 'compras'],
+  ['🏢', 'Plataforma', 'Tus clientes, planes y salud del sistema', 'plataforma'],
+  ['⚙️', 'Configuración', 'Lo que le falta a tu empresa', 'mas', '#caja-configuracion'],
+  ['👥', 'Usuarios', 'Invitar vendedores o a tu contador', 'mas', '#caja-usuarios'],
+  ['🏦', 'Cuentas de cobro', 'Yape, efectivo, banco…', 'mas', '#caja-cuentas'],
+  ['🖼️', 'Logo', 'El que sale en tus boletas', 'mas', '#caja-logo'],
+  ['🔐', 'Certificado digital', 'Para firmar los comprobantes', 'mas', '#caja-certificado'],
+  ['🔑', 'Usuario SOL', 'Para pasar a producción', 'mas', '#caja-sol'],
+  ['📊', 'Para tu contador', 'Ventas del mes en Excel', 'mas', '#caja-exportar'],
+  ['➕', 'Empresa nueva', 'Dar de alta a un cliente', 'mas', '#caja-empresa-nueva'],
+];
+
+function dibujarAccesos() {
+  const visible = (pestana, seccion) => {
+    const boton = document.querySelector(`#pestanas button[data-pestana="${pestana}"]`);
+    return boton && !boton.hidden && !(seccion && $(seccion).hidden);
+  };
+  $('#accesos').replaceChildren(...ACCESOS.filter(([, , , pestana, seccion]) => visible(pestana, seccion)).map(([icono, titulo, detalle, pestana, seccion]) => {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'acceso' });
+    b.append(Object.assign(document.createElement('span'), { className: 'icono', textContent: icono }),
+      Object.assign(document.createElement('strong'), { textContent: titulo }), Object.assign(document.createElement('small'), { textContent: detalle }));
+    b.addEventListener('click', async () => {
+      await abrirPestana(pestana);
+      if (!seccion) return;
+      const destino = $(seccion);
+      if (destino.tagName === 'DETAILS') destino.open = true;
+      destino.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return b;
+  }));
 }
 
 // ---------- Tablero ----------
@@ -337,7 +382,7 @@ async function cargarEstadisticas() {
     variacion.append(chip(`${sube ? '▲' : '▼'} ${e.mes.variacion.replace('-', '')}%`), ' vs. mismos días del mes pasado');
   }
   const tarjetas = [
-    kpi('verde', 'Ventas de hoy', soles(e.hoy.ventas), `${e.hoy.comprobantes} comprobante(s)`),
+    kpi('verde', 'Ventas de hoy', soles(e.hoy.ventas), `${e.hoy.comprobantes} comprobante(s)${e.hoy.notasCredito !== '0.00' ? ` · notas de crédito −${soles(e.hoy.notasCredito)}` : ''}`),
     kpi('morado', 'Ventas del mes', soles(e.mes.ventas), variacion),
     kpi('azul', 'Ticket promedio', soles(e.mes.ticketPromedio), `${e.mes.comprobantes} venta(s) en el mes`),
     kpi('ambar', 'Clientes del mes', String(e.clientes.mes), e.clientes.nuevos ? `+${e.clientes.nuevos} nuevo(s) este mes` : 'con DNI o RUC'),

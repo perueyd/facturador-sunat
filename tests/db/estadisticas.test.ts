@@ -9,6 +9,7 @@ import { enTransaccion, type Db } from '../../src/db/conexion.js';
 import { ahoraLima } from '../../src/fechas.js';
 import { estadisticas } from '../../src/reportes/estadisticas.js';
 import type { SolicitudComprobante } from '../../src/comprobantes/preparar.js';
+import { TipoComprobante } from '../../src/tipos.js';
 import { TipoDocIdentidad } from '../../src/validaciones/documentos.js';
 import { item, solicitudBoleta } from '../ayudantes.js';
 import { URL_PRUEBAS, crearEmpresa, prepararBase, type Fixture } from './base-prueba.js';
@@ -60,7 +61,7 @@ describe.skipIf(!URL_PRUEBAS)('estadísticas de ventas', () => {
     await db.query(`UPDATE comprobantes SET estado = 'RECHAZADO' WHERE id = $1`, [rechazado]);
 
     const e = await estadisticas(db, f.empresaId, { hoy, compras: true, productos: true });
-    expect(e.hoy).toEqual({ ventas: '295.00', comprobantes: 2 });
+    expect(e.hoy).toEqual({ ventas: '295.00', comprobantes: 2, notasCredito: '0.00' });
     // (295 - 100) / 100 = +195 %
     expect(e.mes).toEqual({ ventas: '295.00', comprobantes: 2, ticketPromedio: '147.50', variacion: '195.0' });
     expect(e.clientes).toEqual({ mes: 2, nuevos: 1 });
@@ -86,5 +87,18 @@ describe.skipIf(!URL_PRUEBAS)('estadísticas de ventas', () => {
     const sin = await estadisticas(db, f.empresaId, { hoy });
     expect(sin.meses[0]!.compras).toBeUndefined();
     expect(sin.stockBajo).toBeUndefined();
+  });
+
+  it('una nota de crédito de hoy no deja "ventas de hoy" en negativo: se muestra aparte', async () => {
+    // Corrige una venta del mes pasado (B001-00000001): hoy no se vendió menos, se devolvió.
+    await venta(f.canalManual, {
+      ...solicitudBoleta({ fechaEmision: hoy, items: [item('100.00')] }),
+      tipo: TipoComprobante.NOTA_CREDITO, serie: 'BC01',
+      notaCredito: { referencia: { tipo: TipoComprobante.BOLETA, serie: 'B001', numero: 1 }, motivoCodigo: '07', motivoDescripcion: 'Devolución' },
+    });
+    const e = await estadisticas(db, f.empresaId, { hoy });
+    expect(e.hoy).toEqual({ ventas: '295.00', comprobantes: 2, notasCredito: '100.00' });
+    // El mes sí es neto: lo vendido menos lo devuelto.
+    expect(e.mes.ventas).toBe('195.00');
   });
 });

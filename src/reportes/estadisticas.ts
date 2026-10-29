@@ -22,7 +22,11 @@ const MES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set'
 const soles = (v: unknown) => dec(String(v ?? '0')).toFixed(2);
 
 export interface Estadisticas {
-  hoy: { ventas: string; comprobantes: number };
+  /**
+   * Hoy: lo vendido (boletas y facturas) y, aparte, las notas de crédito del día. Restarlas en
+   * un solo número mostraba "Ventas de hoy: S/ -450" el día que se corregía una venta anterior.
+   */
+  hoy: { ventas: string; comprobantes: number; notasCredito: string };
   mes: {
     ventas: string;
     comprobantes: number;
@@ -49,7 +53,8 @@ export async function estadisticas(
 
   const r = (await db.query(
     `SELECT
-       coalesce(sum(${CON_SIGNO}) FILTER (WHERE fecha_emision = $2::date), 0)::text AS hoy,
+       coalesce(sum(importe_total) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante <> '07'), 0)::text AS hoy,
+       coalesce(sum(importe_total) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante = '07'), 0)::text AS hoy_notas,
        count(*) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante <> '07')::int AS hoy_n,
        coalesce(sum(${CON_SIGNO}) FILTER (WHERE fecha_emision >= date_trunc('month', $2::date)), 0)::text AS mes,
        count(*) FILTER (WHERE fecha_emision >= date_trunc('month', $2::date) AND tipo_comprobante <> '07')::int AS mes_n,
@@ -136,7 +141,7 @@ export async function estadisticas(
   )).rows;
 
   return {
-    hoy: { ventas: soles(r.hoy), comprobantes: r.hoy_n },
+    hoy: { ventas: soles(r.hoy), comprobantes: r.hoy_n, notasCredito: soles(r.hoy_notas) },
     mes: {
       ventas: ventasMes.toFixed(2),
       comprobantes: r.mes_n,
