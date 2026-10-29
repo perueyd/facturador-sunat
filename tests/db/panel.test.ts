@@ -448,6 +448,16 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect(despues.historial[0].id).toBe(cierre.id);
   });
 
+  it('venta rápida: lo más vendido, con su precio, para venderlo con un toque', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const corte = { descripcion: `Corte clásico ${++n}`, cantidad: 1, precio: '25.00' };
+    for (let i = 0; i < 3; i++) {
+      expect((await pedir('/panel/api/comprobantes', { cookie: dueno, cuerpo: boleta({ cliente: { tipoDocumento: 'NINGUNO', numero: '', nombre: '' }, items: [corte] }) })).status).toBe(201);
+    }
+    const { productos } = await (await pedir('/panel/api/venta-rapida', { cookie: dueno })).json();
+    expect(productos[0]).toEqual({ codigo: null, descripcion: corte.descripcion, precio: '25.00' });
+  });
+
   it('clientes frecuentes y celular: valida el número y lo muestra en por cobrar', async () => {
     const dueno = await entrar(await usuario('DUENO'));
     const solo = await entrar(await usuario('SOLO_LECTURA'));

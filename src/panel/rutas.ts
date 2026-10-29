@@ -41,6 +41,7 @@ import { saludPlataforma } from '../plataforma/vigilancia.js';
 import { ahoraLima, esFecha, sumarDias } from '../fechas.js';
 import { clientesFrecuentes, guardarCelular, normalizarCelular } from '../reportes/cliente.js';
 import { estadisticas } from '../reportes/estadisticas.js';
+import { masVendidos } from '../reportes/venta-rapida.js';
 import { SECCIONES_DE_PLAN, tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
@@ -524,6 +525,12 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       [s.empresa.id],
     );
     return c.json({ productos: r.rows.map((p) => ({ sku: p.sku, nombre: p.nombre, precio: p.precio, codigoBarras: p.codigo_barras })) });
+  });
+
+  app.get('/panel/api/venta-rapida', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    return c.json({ productos: await masVendidos(d.db, s.empresa.id, ahoraLima().fecha) });
   });
 
   // Cliente ya conocido: con el DNI o RUC se completa el nombre.

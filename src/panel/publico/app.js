@@ -120,6 +120,7 @@ async function cargarPanel() {
   $('#canal').replaceChildren(...yo.canales.map((c) => new Option(c, c)));
   $('#form-emitir').hidden = !yo.puedeEmitir;
   $('#sin-permiso').hidden = yo.puedeEmitir;
+  if (!yo.puedeEmitir) $('#venta-rapida').hidden = true;
   $('#caja-exportar').hidden = !tiene('exportar');
   for (const b of document.querySelectorAll('#pestanas button')) {
     const modulo = b.dataset.modulo;
@@ -148,7 +149,7 @@ async function cargarPanel() {
   if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
   productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
   $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
-  await Promise.all([cargarTablero(), cargarLista()]);
+  await Promise.all([cargarTablero(), cargarLista(), cargarVentaRapida().catch(() => undefined)]);
 }
 
 // ---------- Tablero ----------
@@ -661,7 +662,7 @@ async function alEmitir(e) {
     $('#opcion-credito').disabled = true;
     agregarItem();
     recalcularTotal();
-    await Promise.all([cargarLista(), cargarTablero()]);
+    await Promise.all([cargarLista(), cargarTablero(), cargarVentaRapida().catch(() => undefined)]);
   } catch (err) {
     $('#error-emitir').textContent = [err.message, ...(err.detalles || [])].join('\n');
   } finally {
@@ -915,20 +916,42 @@ function agregarPorCodigo(codigo) {
     $('#error-codigo').textContent = `No hay un producto con el código "${codigo}". Créalo en Stock (con su código de barras).`;
     return;
   }
+  ponerEnVenta({ codigo: p.sku, descripcion: p.nombre, precio: p.precio });
+}
+
+/** Agrega un producto a la venta; si ya está (mismo código, o misma descripción y precio), suma uno. */
+function ponerEnVenta(p) {
   const filas = [...document.querySelectorAll('#items .item')];
-  // Si ya está en la venta, suma uno; si no, usa la primera fila vacía o agrega otra.
-  const misma = filas.find((f) => f.querySelector('[name=codigo]').value === p.sku);
+  const valor = (f, n) => f.querySelector(`[name=${n}]`).value.trim();
+  const misma = filas.find((f) => (p.codigo ? valor(f, 'codigo') === p.codigo : valor(f, 'descripcion') === p.descripcion && valor(f, 'precio') === p.precio));
   if (misma) {
     const cant = misma.querySelector('[name=cantidad]');
     cant.value = /^\d+$/.test(cant.value.trim()) ? String(Number(cant.value.trim()) + 1) : cant.value;
   } else {
-    let fila = filas.find((f) => !f.querySelector('[name=descripcion]').value.trim());
+    let fila = filas.find((f) => !valor(f, 'descripcion'));
     if (!fila) { agregarItem(); fila = [...document.querySelectorAll('#items .item')].at(-1); }
-    fila.querySelector('[name=codigo]').value = p.sku;
-    fila.querySelector('[name=descripcion]').value = p.nombre;
+    fila.querySelector('[name=codigo]').value = p.codigo ?? '';
+    fila.querySelector('[name=descripcion]').value = p.descripcion;
     fila.querySelector('[name=precio]').value = p.precio;
   }
   recalcularTotal();
+}
+
+async function cargarVentaRapida() {
+  const { productos: rapidos } = await api('/venta-rapida');
+  $('#venta-rapida').hidden = !rapidos.length || !yo?.puedeEmitir;
+  $('#botones-rapidos').replaceChildren(...rapidos.map((p) => {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'rapido' });
+    b.append(Object.assign(document.createElement('span'), { textContent: p.descripcion }), Object.assign(document.createElement('strong'), { textContent: soles(p.precio) }));
+    b.addEventListener('click', () => {
+      const f = $('#form-emitir');
+      // Venta de mostrador: si no se escribió un documento, va como cliente sin documento
+      // (el facturador avisa si el monto pasa el límite y hace falta el DNI).
+      if (!f.numero.value.trim() && f.tipo.value === 'BOLETA') f.tipoDocumento.value = 'NINGUNO';
+      ponerEnVenta(p);
+    });
+    return b;
+  }));
 }
 
 let flujoCamara = null;

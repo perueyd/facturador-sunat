@@ -154,3 +154,7 @@ textarea { display: block; width: 100%; margin-top: 4px; padding: 10px; font: in
 .whatsapp label, .whatsapp input, .whatsapp .error { flex-basis: 100%; }
 .boton-whatsapp { background: #25d366; color: #0b3d1f; font-weight: 600; text-decoration: none; padding: 8px 12px; border-radius: 10px; }
 .lista li:has(.whatsapp) { flex-wrap: wrap; }
+/* Venta rápida: botones grandes, fáciles de tocar en el celular. */
+.botones-rapidos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
+button.rapido { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; text-align: left; background: #fff; color: var(--tinta); border: 1px solid var(--borde); font-weight: 400; }
+button.rapido strong { font-size: 16px; }
