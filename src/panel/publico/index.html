@@ -121,6 +121,7 @@
     </section>
 
     <section id="vista-panel" hidden>
+      <p id="aviso-plan" class="aviso" hidden></p>
       <p id="aviso-beta" class="aviso" hidden>Ambiente de PRUEBA (beta): los comprobantes no tienen valor legal.</p>
       <label id="caja-empresa">Empresa <select id="empresa"></select></label>
 
@@ -157,6 +158,7 @@
         <button type="button" data-pestana="compras" data-modulo="compras">Compras</button>
         <button type="button" data-pestana="stock" data-modulo="productos">Stock</button>
         <button type="button" data-pestana="mas">Más</button>
+        <button type="button" data-pestana="plataforma" id="boton-plataforma" hidden>Plataforma</button>
       </nav>
 
       <div data-vista="vender">
@@ -307,7 +309,31 @@
         </details>
       </div>
 
+      <!-- Solo el administrador de la plataforma: sus clientes, cobros, precios y salud del sistema -->
+      <div data-vista="plataforma" hidden>
+        <h1>Tus clientes</h1>
+        <div id="resumen-plataforma" class="kpis"></div>
+        <ul id="lista-clientes" class="clientes"></ul>
+        <details class="ajustes">
+          <summary>Precios y límites de los planes</summary>
+          <p class="nota">Límite vacío = sin límite. Los cambios aplican a todos los clientes de ese plan.</p>
+          <div id="lista-planes"></div>
+        </details>
+        <h2>Salud de la plataforma</h2>
+        <p class="nota" id="numeros-salud"></p>
+        <ul id="problemas-salud" class="lista"></ul>
+        <details class="ajustes">
+          <summary>Últimos errores internos</summary>
+          <ul id="errores-salud" class="lista"></ul>
+        </details>
+      </div>
+
       <div data-vista="mas" hidden>
+      <section id="caja-plan" hidden>
+        <h2>Mi plan</h2>
+        <ul id="detalle-plan" class="lista"></ul>
+        <p class="nota">Para renovar o cambiar de plan, escribe a tu proveedor del facturador.</p>
+      </section>
       <section id="caja-exportar">
         <h2>Ventas para tu contador</h2>
         <div class="fila">
@@ -379,6 +405,12 @@
             <label>En el régimen desde <input name="regimenDesde" type="date" required></label>
             <label>Marca (opcional) <input name="marca" maxlength="100"></label>
           </div>
+          <label class="casilla"><input type="checkbox" name="propia"> Es mía (otro RUC propio, sin plan ni cobro)</label>
+          <div class="fila" id="datos-cliente">
+            <label>Plan de prueba <select name="plan"><option value="EMPRENDEDOR">Emprendedor</option><option value="NEGOCIO">Negocio</option><option value="EMPRESA">Empresa</option></select></label>
+            <label>Contacto del cliente <input name="contacto" maxlength="200" placeholder="correo o celular"></label>
+          </div>
+          <p class="nota">Una empresa de cliente empieza con 14 días de prueba.</p>
           <button type="submit" class="secundario">Crear empresa</button>
           <p id="mensaje-empresa" role="status"></p>
         </form>

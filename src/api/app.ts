@@ -26,6 +26,8 @@ import { autenticarLlave, type ContextoLlave, type Permiso } from './llaves.js';
 import { leerToken, tokenComprobante } from './enlaces.js';
 import { leerPedido } from './solicitud.js';
 import { registrarPanel } from '../panel/rutas.js';
+import { suscripcionDe } from '../plataforma/suscripciones.js';
+import { registrarError, vigilarPlataforma } from '../plataforma/vigilancia.js';
 
 export interface DependenciasApi {
   db: Db;
@@ -111,6 +113,8 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
 
   app.onError((e, c) => {
     console.error('[api] error interno:', e instanceof Error ? e.message : e);
+    // Queda registrado para avisar al administrador (ver plataforma/vigilancia.ts).
+    void registrarError(dep.db, 'api', e instanceof Error ? e.message : String(e), c.req.path);
     return error(c, 500, 'ERROR_INTERNO', 'Ocurrió un error interno. El pedido no se perdió si ya fue registrado; vuelve a consultar.');
   });
   app.notFound((c) => error(c, 404, 'NO_ENCONTRADO', 'La ruta no existe.'));
@@ -136,7 +140,9 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     const avisosEnviados = dep.correo
       ? await enviarAvisos(dep.db, dep.correo).catch((e: unknown) => (console.error('[avisos]', e instanceof Error ? e.message : e), 0))
       : 0;
-    return c.json({ ...cola, cuotasRevisadas, avisosEnviados });
+    const plataforma = await vigilarPlataforma(dep.db, dep.correo)
+      .catch((e: unknown) => (console.error('[vigilancia]', e instanceof Error ? e.message : e), 0));
+    return c.json({ ...cola, cuotasRevisadas, avisosEnviados, avisosPlataforma: plataforma });
   });
 
   // Enlace del cliente: ver el PDF sin llave de API, solo con un enlace firmado (ver enlaces.ts).
@@ -246,6 +252,16 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     } else {
       const m = await dep.db.query(`SELECT marca_id_por_defecto FROM canales WHERE id = $1`, [quien.canalId]);
       marcaId = (m.rows[0]?.marca_id_por_defecto as string | null) ?? undefined;
+    }
+
+    // Plan del cliente vencido, suspendido o en su límite del mes: no emite NUEVOS comprobantes.
+    // Un pedido que ya se emitió sí se devuelve (reintentar nunca debe fallar por el plan).
+    const plan = await suscripcionDe(dep.db, quien.empresaId);
+    if (plan && !plan.puedeEmitir) {
+      const yaEmitido = leido.valor.pedido && (await dep.db.query(
+        `SELECT 1 FROM comprobantes WHERE empresa_id = $1 AND pedido_externo_id = $2 AND estado <> 'RECHAZADO'`, [quien.empresaId, leido.valor.pedido],
+      )).rowCount;
+      if (!yaEmitido) return error(c, 403, 'PLAN_SIN_EMISION', plan.motivo ?? 'Tu plan no permite emitir.');
     }
 
     const autor = { ...(quien.apiLlaveId ? { apiLlaveId: quien.apiLlaveId } : {}), ...(quien.usuarioId ? { usuarioId: quien.usuarioId } : {}) };

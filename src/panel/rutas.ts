@@ -31,6 +31,8 @@ import { base32, urlOtpauth } from '../seguridad/totp.js';
 import { registrarCompra } from '../inventario/compras.js';
 import { ErrorInventario, ajustarStock, guardarProducto, listarStock } from '../inventario/productos.js';
 import { ErrorPdf } from '../pdf/representacion.js';
+import { ErrorSuscripcion, cambiarSuscripcion, clientes, iniciarPrueba, registrarPago as registrarPagoPlan, suscripcionDe } from '../plataforma/suscripciones.js';
+import { saludPlataforma } from '../plataforma/vigilancia.js';
 import { estadisticas } from '../reportes/estadisticas.js';
 import { tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
@@ -360,7 +362,11 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       `SELECT valor::text FROM parametros_tributarios WHERE codigo = 'IGV_TASA' AND regimen IS NULL
          AND vigente_desde <= current_date AND (vigente_hasta IS NULL OR vigente_hasta >= current_date) ORDER BY vigente_desde DESC LIMIT 1`,
     )).rows[0]?.valor as string | undefined;
+    // Plan del cliente: el dueño y el administrador ven todo; los demás, solo si pueden emitir.
+    const sus = s.empresa ? await suscripcionDe(d.db, s.empresa.id) : undefined;
+    const plan = !sus ? null : ROLES_CORRIGEN.includes(s.empresa!.rol) ? sus : { puedeEmitir: sus.puedeEmitir, ...(sus.motivo ? { motivo: sus.motivo } : {}) };
     return c.json({
+      plan,
       nombre: s.nombre, email: s.email, codigosRespaldo: await codigosRespaldoRestantes(d.db, s.usuarioId), empresas: s.empresas, empresa: s.empresa ?? null, canales, igvTasa: igv ?? null,
       puedeEmitir: Boolean(s.empresa && ROLES_EMISORES.includes(s.empresa.rol)),
       puedeCorregir: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol) && s.empresa.modulos.includes('notas')),
@@ -733,6 +739,96 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     return c.json({ ok: true });
   });
 
+  // ---------- Plataforma: tus clientes, sus planes y la salud del sistema ----------
+  // Solo para administradores de la plataforma (npm run usuario -- plataforma --email …).
+  const conPlataforma = async (c: Context) => {
+    const s = await conSesion(c);
+    if (s instanceof Response) return s;
+    return s.adminPlataforma ? s : d.error(c, 403, 'SIN_PERMISO', 'Solo el administrador de la plataforma.');
+  };
+  const empresaDeRuta = async (c: Context) => {
+    const id = c.req.param('empresaId') ?? '';
+    return UUID.test(id) && (await d.db.query(`SELECT 1 FROM empresas WHERE id = $1`, [id])).rowCount ? id : undefined;
+  };
+
+  app.get('/panel/api/plataforma', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const planes = (await d.db.query(
+      `SELECT codigo, nombre, precio_mensual::text AS mensual, precio_anual::text AS anual, comprobantes_mes, usuarios_max, activo FROM planes ORDER BY precio_mensual`,
+    )).rows.map((p) => ({ codigo: p.codigo, nombre: p.nombre, mensual: p.mensual, anual: p.anual, comprobantesMes: p.comprobantes_mes, usuariosMax: p.usuarios_max, activo: p.activo }));
+    return c.json({ ...(await clientes(d.db)), planes });
+  });
+
+  app.get('/panel/api/plataforma/salud', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    return c.json(await saludPlataforma(d.db));
+  });
+
+  app.post('/panel/api/plataforma/:empresaId/pago', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const empresaId = await empresaDeRuta(c);
+    if (!empresaId) return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      const r = await registrarPagoPlan(d.db, {
+        empresaId, usuarioId: s.usuarioId, periodo: texto(b.periodo, 10) as 'MENSUAL' | 'ANUAL', medio: texto(b.medio, 60),
+        ...(texto(b.monto, 12) ? { monto: texto(b.monto, 12) } : {}), ...(texto(b.referencia, 120) ? { referencia: texto(b.referencia, 120) } : {}),
+        ...(texto(b.plan, 20) ? { plan: texto(b.plan, 20) } : {}),
+      });
+      return c.json({ ok: true, ...r });
+    } catch (e) {
+      if (e instanceof ErrorSuscripcion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+
+  app.post('/panel/api/plataforma/:empresaId/cambio', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const empresaId = await empresaDeRuta(c);
+    if (!empresaId) return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      await cambiarSuscripcion(d.db, {
+        empresaId, usuarioId: s.usuarioId, motivo: texto(b.motivo, 300),
+        ...(texto(b.plan, 20) ? { plan: texto(b.plan, 20) } : {}),
+        ...(texto(b.estado, 20) ? { estado: texto(b.estado, 20) as 'ACTIVA' | 'SUSPENDIDA' | 'CANCELADA' } : {}),
+      });
+      return c.json({ ok: true });
+    } catch (e) {
+      if (e instanceof ErrorSuscripcion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+
+  // Precios de los planes: los decide el dueño de la plataforma (los de fábrica son una propuesta).
+  app.post('/panel/api/plataforma/planes/:codigo', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const monto = (v: unknown) => (typeof v === 'string' && /^\d{1,8}(\.\d{1,2})?$/.test(v) ? v : undefined);
+    const entero = (v: unknown) => (v === null || v === '' ? null : typeof v === 'string' && /^[1-9]\d{0,6}$/.test(v) ? Number(v) : undefined);
+    const mensual = monto(b.mensual);
+    const anual = monto(b.anual);
+    const comprobantes = entero(b.comprobantesMes);
+    const usuarios = entero(b.usuariosMax);
+    if (!mensual || !anual || comprobantes === undefined || usuarios === undefined) {
+      return d.error(c, 422, 'DATOS_INVALIDOS', 'Precios como 39.00; límites como números enteros (vacío = sin límite).');
+    }
+    const r = await d.db.query(
+      `UPDATE planes SET precio_mensual = $2, precio_anual = $3, comprobantes_mes = $4, usuarios_max = $5 WHERE codigo = $1 RETURNING 1`,
+      [c.req.param('codigo'), mensual, anual, comprobantes, usuarios],
+    );
+    if (!r.rowCount) return d.error(c, 404, 'NO_ENCONTRADO', 'Plan no encontrado.');
+    await d.db.query(`INSERT INTO auditoria (usuario_id, accion, entidad, despues) VALUES ($1, 'CAMBIO_PLAN_PRECIOS', 'planes', $2)`, [
+      s.usuarioId, JSON.stringify({ codigo: c.req.param('codigo'), mensual, anual, comprobantes, usuarios }),
+    ]);
+    return c.json({ ok: true });
+  });
+
   // ---------- Empresas, certificado y usuarios ----------
 
   // Alta de una empresa NUEVA (solo administrador de la plataforma). Quien la crea queda como DUEÑO.
@@ -754,6 +850,10 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
         regimenDesde: texto(b.regimenDesde, 10), ...(texto(b.marca, 100) ? { marca: texto(b.marca, 100) } : {}),
       });
       await asignarEmpresa(d.db, s.usuarioId, empresaId, 'DUENO');
+      // Empresa de un cliente: empieza con días de prueba. Una propia (otro RUC tuyo) no tiene plan.
+      if (b.propia !== true) {
+        await iniciarPrueba(d.db, { empresaId, ...(texto(b.plan, 20) ? { plan: texto(b.plan, 20) } : {}), ...(texto(b.contacto, 200) ? { contacto: texto(b.contacto, 200) } : {}) });
+      }
       // Queda elegida en esta sesión para seguir configurándola (certificado, usuarios).
       await d.db.query(`UPDATE sesiones SET empresa_id = $2 WHERE id = $1`, [s.sesionId, empresaId]);
       return c.json({ ok: true, empresaId }, 201);
@@ -808,6 +908,10 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const rol = texto(b.rol, 20).toUpperCase() as Rol;
     if (!ROLES.includes(rol) || rol === 'DUENO') return d.error(c, 422, 'DATOS_INVALIDOS', 'Rol: ADMIN, VENDEDOR, CONTADOR o SOLO_LECTURA.');
     const email = texto(b.email, 200).toLowerCase();
+    const plan = await suscripcionDe(d.db, s.empresa.id);
+    if (plan?.limiteUsuarios != null && plan.usuarios >= plan.limiteUsuarios) {
+      return d.error(c, 403, 'LIMITE_PLAN', `Tu plan ${plan.nombrePlan} permite ${plan.limiteUsuarios} usuario(s). Cambia a un plan mayor para agregar más.`);
+    }
     const existente = (await d.db.query(`SELECT id FROM usuarios WHERE lower(email) = $1`, [email])).rows[0];
     if (existente) {
       await asignarEmpresa(d.db, existente.id as string, s.empresa.id, rol);
