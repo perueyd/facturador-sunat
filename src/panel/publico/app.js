@@ -130,6 +130,8 @@ async function cargarPanel() {
   $('#caja-sol').hidden = !yo.esDueno;
   $('#caja-empresa-nueva').hidden = !yo.adminPlataforma;
   $('#boton-plataforma').hidden = !yo.adminPlataforma;
+  $('#caja-cuentas').hidden = !(yo.puedeAdministrar && tiene('cobros'));
+  cargarCuentas().catch(() => {});
   mostrarPlan(yo.plan);
   // Sin códigos de respaldo, perder el celular obliga a usar la llave de la tienda: se avisa.
   $('#estado-respaldo').textContent = yo.codigosRespaldo
@@ -616,7 +618,7 @@ async function alEmitir(e) {
     ...(tipoDocumento !== 'NINGUNO' || f.get('nombre')
       ? { cliente: { tipoDocumento, numero: String(f.get('numero')).trim(), nombre: String(f.get('nombre')).trim() } }
       : {}),
-    ...(f.get('medio') ? { pago: { medio: f.get('medio'), ...(f.get('referencia') ? { referencia: f.get('referencia') } : {}) } } : {}),
+    ...(f.get('medio') ? { pago: { ...leerMedio(f.get('medio')), ...(f.get('referencia') ? { referencia: f.get('referencia') } : {}) } } : {}),
     ...(f.get('formaPago') === 'CREDITO'
       ? { formaPago: { cuotas: [...document.querySelectorAll('#cuotas .cuota')].map((q) => ({
           monto: q.querySelector('[name=monto]').value.trim().replace(',', '.'), vence: q.querySelector('[name=vence]').value,
@@ -826,7 +828,96 @@ async function cargarPlataforma() {
 
 // ---------- Cobrar ----------
 let cobroActual = null;
+// ---------- Cuentas donde entra el dinero ----------
+const MEDIO_TEXTO = { YAPE: 'Yape', PLIN: 'Plin', EFECTIVO: 'Efectivo', TRANSFERENCIA: 'Transferencia', TARJETA: 'Tarjeta', PASARELA: 'Pasarela', OTRO: 'Otro' };
+let cuentas = [];
+/**
+ * Llena un selector de "dónde entró el dinero": primero las cuentas activas, luego los medios
+ * que no tienen cuenta. El valor es "MEDIO|idCuenta" (o "MEDIO|" sin cuenta).
+ */
+function llenarMedios(select, opcionInicial) {
+  const actual = select.value;
+  const activas = cuentas.filter((c) => c.activa);
+  const conCuenta = new Set(activas.map((c) => c.medio));
+  select.replaceChildren(
+    ...(opcionInicial ? [new Option(opcionInicial, '')] : []),
+    ...activas.map((c) => new Option(`${c.nombre} (${MEDIO_TEXTO[c.medio]})`, `${c.medio}|${c.id}`)),
+    ...['EFECTIVO', 'YAPE', 'PLIN', 'TRANSFERENCIA', 'TARJETA'].filter((m) => !conCuenta.has(m)).map((m) => new Option(MEDIO_TEXTO[m], `${m}|`)),
+  );
+  if ([...select.options].some((o) => o.value === actual)) select.value = actual;
+}
+const leerMedio = (valor) => {
+  const [medio, cuenta] = String(valor || '').split('|');
+  return { medio, ...(cuenta ? { cuenta } : {}) };
+};
+
+async function cargarCuentas() {
+  if (!tiene('cobros')) return;
+  cuentas = (await api('/cuentas')).cuentas;
+  llenarMedios($('#form-emitir').medio, 'Aún no pagó');
+  llenarMedios($('#form-cobro').medio);
+  if (!yo?.puedeAdministrar) return;
+  $('#lista-cuentas').replaceChildren(...(cuentas.length ? cuentas.map((c) => {
+    const li = linea(`${c.nombre}${c.titular ? ` · ${c.titular}` : ''}`,
+      `${MEDIO_TEXTO[c.medio]}${c.deLaEmpresa ? '' : ' · de otra persona'}${c.predeterminada ? ' · predeterminada' : ''}${c.activa ? '' : ' · desactivada'}`);
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'enlace', textContent: c.activa ? 'Desactivar' : 'Activar' });
+    b.addEventListener('click', async () => {
+      try {
+        await api(`/cuentas/${c.id}`, { cuerpo: { ...c, activa: !c.activa } });
+        await cargarCuentas();
+      } catch (err) { alert(err.message); }
+    });
+    li.append(b);
+    return li;
+  }) : [linea('Aún no tienes cuentas: agrega la primera.', '')]));
+}
+
+async function alGuardarCuenta(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    await api('/cuentas', { cuerpo: {
+      nombre: f.get('nombre'), medio: f.get('medio'), titular: f.get('titular'),
+      deLaEmpresa: f.get('deLaEmpresa') === 'on', predeterminada: f.get('predeterminada') === 'on',
+    } });
+    e.target.reset();
+    e.target.deLaEmpresa.checked = true;
+    mensaje('#mensaje-cuenta', '✔ Cuenta agregada.');
+    await cargarCuentas();
+  } catch (err) {
+    mensaje('#mensaje-cuenta', err.message, true);
+  }
+}
+
+// ---------- Caja ----------
+function rangoCaja(periodo) {
+  // Fechas de Lima (el servidor también calcula en hora de Lima).
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date());
+  const restar = (dias) => new Date(Date.parse(`${hoy}T00:00:00Z`) - dias * 86_400_000).toISOString().slice(0, 10);
+  if (periodo === 'semana') return { desde: restar(6), hasta: hoy };
+  if (periodo === 'mes') return { desde: `${hoy.slice(0, 7)}-01`, hasta: hoy };
+  return { desde: hoy, hasta: hoy };
+}
+
+async function cargarCaja(periodo = 'hoy') {
+  for (const b of document.querySelectorAll('#periodo-caja button')) b.classList.toggle('activa', b.dataset.periodo === periodo);
+  const { desde, hasta } = rangoCaja(periodo);
+  const c = await api(`/caja?desde=${desde}&hasta=${hasta}`);
+  $('#kpis-caja').replaceChildren(
+    kpi('verde', 'Total cobrado', soles(c.totales.total), `${c.totales.cobros} cobro(s)`),
+    kpi('azul', 'Cuentas de la empresa', soles(c.totales.empresa), 'lo que entró a la empresa'),
+    kpi(c.totales.terceros !== '0.00' ? 'ambar' : 'gris', 'Cuentas de otras personas', soles(c.totales.terceros), 'por rendir a la empresa'),
+    kpi('morado', 'Vendido', soles(c.vendido), 'boletas y facturas del período'),
+  );
+  $('#lista-caja').replaceChildren(...(c.cuentas.length
+    ? c.cuentas.map((x) => linea(`${x.nombre}${x.titular ? ` · ${x.titular}` : ''}${x.deLaEmpresa ? '' : ' (otra persona)'}`, `${soles(x.monto)} · ${x.cobros} cobro(s)`))
+    : [linea('Sin cobros en este período.', '')]));
+  $('#nota-caja').hidden = c.totales.terceros === '0.00';
+}
+
 async function cargarPorCobrar() {
+  $('#caja-dinero').hidden = !yo?.verCaja;
+  if (yo?.verCaja) cargarCaja().catch(() => { $('#caja-dinero').hidden = true; });
   const { porCobrar } = await api('/por-cobrar');
   $('#lista-cobrar').replaceChildren(...(porCobrar.length ? porCobrar.map((x) => {
     const li = linea(`${x.numero} · ${x.cliente}`, `S/ ${x.saldo}${x.proximaCuota ? ` · cuota ${x.proximaCuota}` : ''}`);
@@ -850,7 +941,7 @@ async function alCobrar(e) {
   $('#error-cobro').textContent = '';
   try {
     const c = await api(`/comprobantes/${cobroActual.id}/pagos`, { cuerpo: {
-      medio: f.get('medio'), ...(f.get('monto') ? { monto: String(f.get('monto')).trim().replace(',', '.') } : {}),
+      ...leerMedio(f.get('medio')), ...(f.get('monto') ? { monto: String(f.get('monto')).trim().replace(',', '.') } : {}),
       ...(f.get('referencia') ? { referencia: f.get('referencia') } : {}),
     } });
     e.target.reset();
@@ -1306,6 +1397,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#archivo-logo').addEventListener('change', subirLogo);
   $('#form-usuario').addEventListener('submit', alDarAcceso);
   $('#form-sol').addEventListener('submit', alGuardarSol);
+  $('#form-cuenta').addEventListener('submit', alGuardarCuenta);
+  for (const b of document.querySelectorAll('#periodo-caja button')) b.addEventListener('click', () => cargarCaja(b.dataset.periodo).catch((err) => alert(err.message)));
   $('#form-invitacion').addEventListener('submit', alAceptarInvitacion);
   $('#form-invitacion-codigo').addEventListener('submit', alActivarInvitacion);
   $('#form-certificado').addEventListener('submit', alCargarCertificado);

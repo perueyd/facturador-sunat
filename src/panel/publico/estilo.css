@@ -128,3 +128,6 @@ button.peligro { color: var(--rojo); border-color: #fda29b; }
 .pasos li { background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 8px 12px; margin: 6px 0; font-size: 14px; }
 .pasos li.listo { border-color: #86efac; }
 .pasos li small { display: block; color: var(--gris); }
+
+/* Caja: el período elegido se resalta. */
+#periodo-caja button.activa { background: var(--tinta); color: #fff; }

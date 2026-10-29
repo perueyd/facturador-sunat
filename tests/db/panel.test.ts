@@ -409,6 +409,26 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect((await (await pedir('/panel/api/yo', { cookie: vendedor })).json()).verInventario).toBe(false);
   });
 
+  it('cuentas y caja: el vendedor elige la cuenta al vender, pero no ve la caja ni cambia cuentas', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    const nueva = { nombre: `Yape de Ana ${++n}`, medio: 'YAPE', titular: 'Ana', deLaEmpresa: false };
+    expect((await pedir('/panel/api/cuentas', { cookie: vendedor, cuerpo: nueva })).status).toBe(403);
+    const r = await pedir('/panel/api/cuentas', { cookie: dueno, cuerpo: nueva });
+    expect(r.status).toBe(201);
+    const { id } = await r.json();
+    expect((await (await pedir('/panel/api/cuentas', { cookie: vendedor })).json()).cuentas.some((c: { id: string }) => c.id === id)).toBe(true);
+    // El vendedor vende y dice que entró al Yape de Ana.
+    const emitida = await pedir('/panel/api/comprobantes', { cookie: vendedor, cuerpo: boleta({ pago: { medio: 'YAPE', cuenta: id, referencia: `OP-${n}` } }) });
+    expect(emitida.status).toBe(201);
+    expect((await emitida.json()).errorPago).toBeUndefined();
+    expect((await pedir('/panel/api/caja', { cookie: vendedor })).status).toBe(403);
+    const c = await (await pedir('/panel/api/caja', { cookie: dueno })).json();
+    expect(c.cuentas.find((x: { cuentaId: string }) => x.cuentaId === id)).toMatchObject({ deLaEmpresa: false, cobros: 1 });
+    expect((await pedir('/panel/api/caja?desde=2026-02-01&hasta=2026-01-01', { cookie: dueno })).status).toBe(400);
+    expect((await (await pedir('/panel/api/yo', { cookie: vendedor })).json()).verCaja).toBe(false);
+  });
+
   it('función "compras" apagada: 403 aunque se llame directo', async () => {
     const cookie = await entrar(await usuario('DUENO'));
     await db.query(`UPDATE empresas SET modulos_desactivados = '{compras}' WHERE id = $1`, [f.empresaId]);

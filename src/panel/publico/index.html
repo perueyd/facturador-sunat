@@ -250,6 +250,19 @@
       </div>
 
       <div data-vista="cobrar" hidden>
+        <!-- Caja (dueño, administrador, contador): cuánto entró a cada cuenta y el total -->
+        <section id="caja-dinero" hidden>
+          <h1>Caja</h1>
+          <div class="fila" id="periodo-caja">
+            <button type="button" class="secundario" data-periodo="hoy">Hoy</button>
+            <button type="button" class="secundario" data-periodo="semana">7 días</button>
+            <button type="button" class="secundario" data-periodo="mes">Este mes</button>
+          </div>
+          <div id="kpis-caja" class="kpis"></div>
+          <ul id="lista-caja" class="lista"></ul>
+          <p class="nota" id="nota-caja" hidden>El dinero que entra a cuentas de otras personas también es venta de la empresa:
+            lleva su boleta o factura y se declara igual. Aquí solo se ve dónde quedó.</p>
+        </section>
         <h1>Por cobrar</h1>
         <p class="nota">Toca una venta para registrar lo que te pagaron.</p>
         <ul id="lista-cobrar" class="lista"></ul>
@@ -412,6 +425,26 @@
           <label>Contraseña del certificado <input name="clave" type="password" autocomplete="off" required></label>
           <button type="submit" class="secundario">Cargar certificado</button>
           <p id="mensaje-certificado" role="status"></p>
+        </form>
+      </details>
+
+      <details class="ajustes" id="caja-cuentas">
+        <summary>Cuentas donde recibes dinero</summary>
+        <p class="nota">Ej.: "Yape de la empresa", "Yape de María", "Efectivo caja", "BCP empresa". Al vender o cobrar se elige
+          a cuál entró el dinero, y la Caja muestra cada una por separado y el total.</p>
+        <ul id="lista-cuentas" class="lista"></ul>
+        <form id="form-cuenta">
+          <div class="fila">
+            <label>Nombre <input name="nombre" maxlength="60" placeholder="Yape de la empresa" required></label>
+            <label>Medio
+              <select name="medio"><option value="YAPE">Yape</option><option value="PLIN">Plin</option><option value="EFECTIVO">Efectivo</option>
+                <option value="TRANSFERENCIA">Transferencia</option><option value="TARJETA">Tarjeta</option></select></label>
+          </div>
+          <label>Titular <small>(de quién es)</small> <input name="titular" maxlength="120"></label>
+          <label class="casilla"><input type="checkbox" name="deLaEmpresa" checked> Es una cuenta de la empresa</label>
+          <label class="casilla"><input type="checkbox" name="predeterminada"> Usarla cuando no se elija cuenta (ej. pagos de la tienda web)</label>
+          <button type="submit" class="secundario">Agregar cuenta</button>
+          <p id="mensaje-cuenta" role="status"></p>
         </form>
       </details>
 

@@ -88,7 +88,7 @@ Cabecera en todos (salvo `salud`): `Authorization: Bearer fk_xxxxxxxxxxxx_…`
 | `descuento` | no | Descuento total **con IGV** (cupón u oferta), como texto: `"50.00"`. El total queda en suma de ítems − descuento; en el comprobante va como descuento global que rebaja la base del IGV. `"0.00"` = sin descuento. Solo boletas y facturas, y solo sobre productos gravados |
 | `formaPago` | no | `"CONTADO"` (por defecto) o `{ "cuotas": [{ "monto": "500.00", "vence": "2026-12-31" }] }` (solo facturas) |
 | `notaCredito` | en NC | `{ "tipo": "FACTURA", "serie": "F001", "numero": 15, "motivo": "07", "descripcion": "Devolución" }` |
-| `pago` | no | Pago ya confirmado: `{ "medio": "YAPE", "referencia": "nº de operación" }`. Se registra por el total y el comprobante queda `PAGADO`. Requiere el permiso `cobrar`. |
+| `pago` | no | Pago ya confirmado: `{ "medio": "YAPE", "referencia": "nº de operación" }`. Se registra por el total y el comprobante queda `PAGADO`. Requiere el permiso `cobrar`. El dinero queda en la cuenta **predeterminada** de ese medio (panel → Más → Cuentas donde recibes dinero); opcional `"cuenta": "<id>"` para elegir otra del mismo medio. |
 
 **Respuestas**
 
