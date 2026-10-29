@@ -13,7 +13,7 @@ import { crearLlaveApi } from '../../src/api/llaves.js';
 import type { Correo } from '../../src/avisos/avisos.js';
 import type { Db } from '../../src/db/conexion.js';
 import { ahoraLima } from '../../src/fechas.js';
-import { activarTotp, asignarEmpresa, crearUsuario } from '../../src/panel/usuarios.js';
+import { asignarEmpresa, crearUsuario } from '../../src/panel/usuarios.js';
 import { cambiarSuscripcion, clientes, iniciarPrueba, registrarPago, suscripcionDe } from '../../src/plataforma/suscripciones.js';
 import { registrarError, revisarPlataforma, vigilarPlataforma } from '../../src/plataforma/vigilancia.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
@@ -21,7 +21,7 @@ import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
 import { ClienteSunatSoap } from '../../src/sunat/cliente.js';
 import { digitoVerificadorRuc } from '../../src/validaciones/documentos.js';
 import { RUC_EMPRESA } from '../ayudantes.js';
-import { URL_PRUEBAS, crearEmpresa, prepararBase, type Fixture } from './base-prueba.js';
+import { URL_PRUEBAS, activarSegundoPaso, crearEmpresa, prepararBase, type Fixture } from './base-prueba.js';
 
 const boleta = (pedido: string) => ({
   pedido, tipo: 'BOLETA', cliente: { tipoDocumento: 'DNI', numero: '12345678', nombre: 'JUAN PÉREZ' },
@@ -47,7 +47,7 @@ describe.skipIf(!URL_PRUEBAS)('plataforma: planes, cobro y vigilancia', () => {
     const email = `p${++n}@prueba.pe`;
     const u = await crearUsuario(db, { email, nombre: 'Prueba', contrasena: CONTRASENA, llaveMaestra });
     await asignarEmpresa(db, u.usuarioId, empresaId, rol);
-    await activarTotp(db, u.usuarioId, codigoTotp(u.secreto, pasoActual() - 1), llaveMaestra);
+    await activarSegundoPaso(db, u.usuarioId, u.secreto, llaveMaestra);
     if (plataforma) await db.query(`UPDATE usuarios SET admin_plataforma = true WHERE id = $1`, [u.usuarioId]);
     const r = await app.request('http://localhost/panel/api/entrar', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Panel': '1' },

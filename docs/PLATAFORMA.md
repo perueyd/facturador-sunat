@@ -25,6 +25,22 @@ funcione. Al final, la lista de **proyectos pendientes**.
 
 Compara con los precios de otros facturadores del mercado antes de fijarlos.
 
+## Dar de alta a un cliente (todo desde el panel, sin la PC)
+
+1. **Más → Dar de alta una empresa nueva**: datos EXACTOS de su Ficha RUC, plan de prueba y su
+   contacto. Empieza con 14 días de prueba.
+2. **Plataforma → el cliente → Invitar al dueño del negocio**: su correo y nombre. Sale un enlace
+   para **copiar o mandar por WhatsApp** (y por correo si está Resend). Vale 72 horas.
+3. El cliente abre el enlace, crea su contraseña, conecta Google Authenticator y guarda sus
+   10 códigos de respaldo. Tú nunca conoces su clave.
+4. Al entrar, ve **Configuración de tu empresa** con lo que le falta: certificado digital, primera
+   boleta de prueba aceptada (beta), logo, usuario SOL secundario y producción.
+5. Él mismo invita a sus vendedores o a su contador (Más → Usuarios) con el mismo tipo de enlace.
+
+Lo que el cliente hace en SUNAT con su Clave SOL (no se puede automatizar): crear su usuario SOL
+secundario solo con permisos de comprobantes electrónicos y, para producción, los trámites de
+emisor electrónico que correspondan (verificar en la normativa vigente).
+
 ## Cómo funciona el cobro
 
 - Empresa nueva de un cliente: **14 días de prueba**. Una empresa propia (marca "Es mía") no
@@ -55,8 +71,6 @@ Todo se ve también en el panel → **Plataforma → Salud de la plataforma**.
 
 | Proyecto | Por qué espera |
 |---|---|
-| Invitación por enlace (el cliente crea su contraseña y su 2FA solo) | Siguiente paso |
-| Lista de configuración del cliente (certificado, usuario SOL, prueba en beta, producción) | Siguiente paso |
 | Guías de remisión electrónicas (GRE) | Usa otra API de SUNAT (REST con token): hay que leer el manual oficial vigente antes de programar |
 | Autocompletar datos por RUC/DNI (padrón SUNAT) | Necesita acceso a sunat.gob.pe |
 | SIRE (registros de ventas y compras) | Necesita el manual oficial |

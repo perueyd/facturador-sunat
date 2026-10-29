@@ -5,11 +5,28 @@
  */
 import { crearPool, type Db } from '../../src/db/conexion.js';
 import { configurarEmpresa } from '../../src/empresas/configurar.js';
+import { activarTotp } from '../../src/panel/usuarios.js';
+import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
 import type { Regimen } from '../../src/tipos.js';
 import { migrar } from '../../scripts/migrar.js';
 import { RUC_EMPRESA } from '../ayudantes.js';
 
 export const URL_PRUEBAS = process.env.DATABASE_URL_PRUEBAS;
+
+/**
+ * Deja libres todos los códigos de la app de un usuario (como si hubiera pasado un minuto).
+ * Las pruebas no deben depender de en qué segundo del bloque de 30 s corren: con el truco de
+ * "activar con el paso anterior", si el reloj cambiaba de bloque justo ahí, fallaban al azar.
+ */
+export async function liberarCodigos(db: Db, usuarioId: string): Promise<void> {
+  await db.query(`UPDATE usuarios SET totp_ultimo_paso = NULL WHERE id = $1`, [usuarioId]);
+}
+
+/** Activa el segundo paso con el código de ahora y deja los códigos libres para la prueba. */
+export async function activarSegundoPaso(db: Db, usuarioId: string, secreto: Buffer, llaveMaestra: Buffer): Promise<void> {
+  if (!(await activarTotp(db, usuarioId, codigoTotp(secreto, pasoActual()), llaveMaestra))) throw new Error('No se activó el segundo paso.');
+  await liberarCodigos(db, usuarioId);
+}
 
 export async function prepararBase(): Promise<Db> {
   if (!URL_PRUEBAS) throw new Error('Falta DATABASE_URL_PRUEBAS');

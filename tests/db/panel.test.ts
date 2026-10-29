@@ -11,14 +11,14 @@ import { crearApp } from '../../src/api/app.js';
 import type { Db } from '../../src/db/conexion.js';
 import { guardarCertificado } from '../../src/firma/repositorio-certificados.js';
 import { guardarProducto } from '../../src/inventario/productos.js';
-import { activarTotp, asignarEmpresa, crearUsuario, type Rol } from '../../src/panel/usuarios.js';
+import { asignarEmpresa, crearUsuario, type Rol } from '../../src/panel/usuarios.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
 import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
 import { ClienteSunatSoap } from '../../src/sunat/cliente.js';
 import { digitoVerificadorRuc } from '../../src/validaciones/documentos.js';
 import { crearPfxPrueba } from '../certificado-prueba.js';
 import { SunatSimulado } from '../sunat-simulado.js';
-import { URL_PRUEBAS, crearEmpresa, prepararBase, type Fixture } from './base-prueba.js';
+import { URL_PRUEBAS, activarSegundoPaso, crearEmpresa, liberarCodigos, prepararBase, type Fixture } from './base-prueba.js';
 
 const CONTRASENA = 'clave del panel 2026';
 
@@ -60,12 +60,12 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     f = await nuevaEmpresa();
   });
 
-  /** Usuario con 2FA activo. El código de activación gasta el paso actual: para entrar se usa el siguiente. */
+  /** Usuario con 2FA activo y todos sus códigos libres para entrar. */
   async function usuario(rol: Rol = 'VENDEDOR', empresaId = f.empresaId) {
     const email = `u${++n}@prueba.pe`;
     const { usuarioId, secreto } = await crearUsuario(db, { email, nombre: `Usuario ${n}`, contrasena: CONTRASENA, llaveMaestra });
     await asignarEmpresa(db, usuarioId, empresaId, rol);
-    expect(await activarTotp(db, usuarioId, codigoTotp(secreto, pasoActual() - 1), llaveMaestra)).toBe(true);
+    await activarSegundoPaso(db, usuarioId, secreto, llaveMaestra);
     return { email, secreto, usuarioId };
   }
 
@@ -442,25 +442,77 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     return Buffer.from((bits.match(/.{8}/g) ?? []).map((b) => Number.parseInt(b, 2)));
   };
 
-  it('dueño da acceso a un vendedor: QR, activación con su código y el vendedor entra', async () => {
+  it('dueño invita a un vendedor con un enlace: el vendedor crea su contraseña, activa su app y entra', async () => {
     const dueno = await entrar(await usuario('DUENO'));
     const admin = await entrar(await usuario('ADMIN'));
-    const nuevo = { email: `vendedor${++n}@prueba.pe`, nombre: 'Vendedora', contrasena: CONTRASENA, rol: 'VENDEDOR' };
+    const nuevo = { email: `vendedor${++n}@prueba.pe`, nombre: 'Vendedora', rol: 'VENDEDOR' };
     expect((await pedir('/panel/api/usuarios', { cookie: admin, cuerpo: nuevo })).status).toBe(403);
     expect((await pedir('/panel/api/usuarios', { cookie: dueno, cuerpo: { ...nuevo, rol: 'DUENO' } })).status).toBe(422);
     const r = await pedir('/panel/api/usuarios', { cookie: dueno, cuerpo: nuevo });
     expect(r.status).toBe(201);
     const d = await r.json();
-    expect(d.qr).toMatch(/^data:image\/png;base64,/);
-    const secreto = desdeBase32(d.clave);
-    // Sin activar todavía no entra.
-    expect((await pedir('/panel/api/entrar', { cuerpo: { email: nuevo.email, contrasena: CONTRASENA, codigo: codigoTotp(secreto, pasoActual()) } })).status).toBe(401);
-    expect((await pedir(`/panel/api/usuarios/${d.usuarioId}/activar`, { cookie: dueno, cuerpo: { codigo: '000000' } })).status).toBe(422);
-    expect((await pedir(`/panel/api/usuarios/${d.usuarioId}/activar`, { cookie: dueno, cuerpo: { codigo: codigoTotp(secreto, pasoActual() - 1) } })).status).toBe(200);
+    const token = /#invitacion=([\w-]+)$/.exec(d.enlace)![1]!;
+    // El token no queda guardado: solo su huella.
+    expect((await db.query(`SELECT 1 FROM invitaciones WHERE token_hash = convert_to($1, 'UTF8')`, [token])).rowCount).toBe(0);
+    expect(await (await pedir(`/panel/api/invitacion?token=${token}`)).json()).toMatchObject({ email: nuevo.email, nombre: 'Vendedora', rol: 'VENDEDOR' });
+    // Sin terminar, no entra (no tiene contraseña).
+    expect((await pedir('/panel/api/entrar', { cuerpo: { email: nuevo.email, contrasena: CONTRASENA, codigo: '000000' } })).status).toBe(401);
+
+    // Un enlace nuevo anula el anterior.
+    const otro = await (await pedir(`/panel/api/usuarios/${d.usuarioId}/enlace`, { cookie: dueno, cuerpo: {} })).json();
+    const token2 = /#invitacion=([\w-]+)$/.exec(otro.enlace)![1]!;
+    expect((await pedir('/panel/api/invitacion', { cuerpo: { token, contrasena: CONTRASENA } })).status).toBe(404);
+    expect((await pedir('/panel/api/invitacion', { cuerpo: { token: token2, contrasena: 'corta' } })).status).toBe(422);
+    const qr = await (await pedir('/panel/api/invitacion', { cuerpo: { token: token2, contrasena: CONTRASENA } })).json();
+    const secreto = desdeBase32(qr.clave);
+    expect((await pedir('/panel/api/invitacion/activar', { cuerpo: { token: token2, codigo: '000000' } })).status).toBe(422);
+    const act = await (await pedir('/panel/api/invitacion/activar', { cuerpo: { token: token2, codigo: codigoTotp(secreto, pasoActual()) } })).json();
+    expect(act.codigosRespaldo).toHaveLength(10);
+    await liberarCodigos(db, d.usuarioId);
+    // El enlace ya se usó; y ya activado, no se le puede generar otro.
+    expect((await pedir('/panel/api/invitacion/activar', { cuerpo: { token: token2, codigo: codigoTotp(secreto, pasoActual()) } })).status).toBe(404);
+    expect((await pedir(`/panel/api/usuarios/${d.usuarioId}/enlace`, { cookie: dueno, cuerpo: {} })).status).toBe(409);
+
     const cookie = await entrar({ email: nuevo.email, secreto });
     expect(await (await pedir('/panel/api/yo', { cookie })).json()).toMatchObject({ puedeEmitir: true, esDueno: false });
     const lista = (await (await pedir('/panel/api/usuarios', { cookie: dueno })).json()).usuarios;
-    expect(lista.some((u: { email: string; rol: string }) => u.email === nuevo.email && u.rol === 'VENDEDOR')).toBe(true);
+    expect(lista.find((u: { email: string }) => u.email === nuevo.email)).toMatchObject({ rol: 'VENDEDOR', pendiente: false });
+  });
+
+  it('invitación: no se puede reclamar la cuenta pendiente de otra empresa; un enlace vencido no sirve', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const email = `pendiente${++n}@prueba.pe`;
+    const d = await (await pedir('/panel/api/usuarios', { cookie: dueno, cuerpo: { email, nombre: 'X', rol: 'VENDEDOR' } })).json();
+    const otra = await crearEmpresa(db, '20600000013');
+    const ajeno = await usuario('DUENO');
+    await db.query(`UPDATE usuario_empresa SET empresa_id = $2 WHERE usuario_id = $1`, [ajeno.usuarioId, otra.empresaId]);
+    const cookieAjeno = await entrar(ajeno);
+    await pedir('/panel/api/empresa', { cookie: cookieAjeno, cuerpo: { empresaId: otra.empresaId } });
+    const r = await pedir('/panel/api/usuarios', { cookie: cookieAjeno, cuerpo: { email, nombre: 'X', rol: 'ADMIN' } });
+    expect(r.status).toBe(422);
+    expect((await r.json()).error.mensaje).toMatch(/otra empresa/);
+
+    await db.query(`UPDATE invitaciones SET expira_en = now() - interval '1 second' WHERE usuario_id = $1`, [d.usuarioId]);
+    const token = /#invitacion=([\w-]+)$/.exec(d.enlace)![1]!;
+    expect((await pedir(`/panel/api/invitacion?token=${token}`)).status).toBe(404);
+  });
+
+  it('lista de configuración y usuario SOL desde el panel', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    expect((await pedir('/panel/api/configuracion', { cookie: vendedor })).status).toBe(403);
+    const pasos = (await (await pedir('/panel/api/configuracion', { cookie: dueno })).json()).pasos as { clave: string; listo: boolean }[];
+    expect(pasos.map((p) => p.clave)).toEqual(['datos', 'certificado', 'prueba', 'logo', 'sol', 'produccion']);
+    expect((await pedir('/panel/api/sol', { cookie: vendedor, cuerpo: { usuario: 'FACTURA01', clave: 'clave1234' } })).status).toBe(403);
+    expect((await pedir('/panel/api/sol', { cookie: dueno, cuerpo: { usuario: 'FACTURA01', clave: 'corta' } })).status).toBe(422);
+    expect((await pedir('/panel/api/sol', { cookie: dueno, cuerpo: { usuario: 'FACTURA-01', clave: 'clave1234' } })).status).toBe(422);
+    expect((await pedir('/panel/api/sol', { cookie: dueno, cuerpo: { usuario: 'factura01', clave: 'clave1234' } })).status).toBe(200);
+    const despues = (await (await pedir('/panel/api/configuracion', { cookie: dueno })).json()).pasos as { clave: string; listo: boolean }[];
+    expect(despues.find((p) => p.clave === 'sol')!.listo).toBe(true);
+    // La clave queda cifrada, nunca en texto.
+    const guardado = (await db.query(`SELECT usuario_sol, clave_cifrada FROM credenciales_sol WHERE empresa_id = $1`, [f.empresaId])).rows[0];
+    expect(guardado.usuario_sol).toBe('FACTURA01');
+    expect(Buffer.from(guardado.clave_cifrada).toString('utf8')).not.toContain('clave1234');
   });
 
   it('certificado desde el panel: solo el dueño; contraseña equivocada se explica', async () => {

@@ -15,7 +15,7 @@ import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
 import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
 import { ClienteSunatSoap } from '../../src/sunat/cliente.js';
 import { RUC_CLIENTE, RUC_EMPRESA } from '../ayudantes.js';
-import { URL_PRUEBAS, crearEmpresa, prepararBase } from './base-prueba.js';
+import { URL_PRUEBAS, crearEmpresa, liberarCodigos, prepararBase } from './base-prueba.js';
 
 const CLAVE = 'clave-de-instalacion-larga-2026';
 const CONTRASENA = 'clave del dueño 2026';
@@ -77,7 +77,8 @@ describe.skipIf(!URL_PRUEBAS)('primera configuración del panel', () => {
     // Una segunda creación (otra pestaña, otra persona) ya no puede.
     expect((await pedir(app, '/panel/api/instalacion', { ...datos, email: 'intruso@prueba.pe' })).status).toBe(409);
     expect((await pedir(app, '/panel/api/instalacion/activar', { clave: 'no', usuarioId: d.usuarioId, codigo: '000000' })).status).toBe(401);
-    expect((await pedir(app, '/panel/api/instalacion/activar', { clave: CLAVE, usuarioId: d.usuarioId, codigo: codigoTotp(secreto, pasoActual() - 1) })).status).toBe(200);
+    expect((await pedir(app, '/panel/api/instalacion/activar', { clave: CLAVE, usuarioId: d.usuarioId, codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(200);
+    await liberarCodigos(db, d.usuarioId);
     // Ya activado: no se puede volver a "activar" (ni cambiarle el segundo paso por aquí).
     expect((await pedir(app, '/panel/api/instalacion/activar', { clave: CLAVE, usuarioId: d.usuarioId, codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(409);
     expect(await (await pedir(app, '/panel/api/instalacion')).json()).toEqual({ disponible: false });
@@ -110,7 +111,8 @@ describe.skipIf(!URL_PRUEBAS)('primera configuración del panel', () => {
     expect(sesiones.rows[0].n).toBe(0);
     // Sin activar el nuevo segundo paso, no entra ni con la contraseña nueva.
     expect((await pedir(app, '/panel/api/entrar', { email: 'dueno@prueba.pe', contrasena: 'otra clave nueva 2026', codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(401);
-    expect((await pedir(app, '/panel/api/recuperar/activar', { clave: RECUPERACION, email: 'dueno@prueba.pe', codigo: codigoTotp(secreto, pasoActual() - 1) })).status).toBe(200);
+    expect((await pedir(app, '/panel/api/recuperar/activar', { clave: RECUPERACION, email: 'dueno@prueba.pe', codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(200);
+    await liberarCodigos(db, sesionVieja);
     expect((await pedir(app, '/panel/api/entrar', { email: 'dueno@prueba.pe', contrasena: CONTRASENA, codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(401);
     expect((await pedir(app, '/panel/api/entrar', { email: 'dueno@prueba.pe', contrasena: 'otra clave nueva 2026', codigo: codigoTotp(secreto, pasoActual()) })).status).toBe(200);
   });

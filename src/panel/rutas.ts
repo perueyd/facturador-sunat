@@ -17,6 +17,8 @@ import { bodyLimit } from 'hono/body-limit';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Almacen } from '../almacen/almacen.js';
 import { autenticarLlave } from '../api/llaves.js';
+import { ErrorInvitacion, aceptarInvitacion, activarInvitacion, invitar, nuevoEnlace, verInvitacion } from './invitaciones.js';
+import { ErrorConfiguracionSunat, guardarCredencialesSol } from '../sunat/configuracion.js';
 import type { EnviarCorreo } from '../avisos/avisos.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
@@ -871,6 +873,26 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     }
   });
 
+  // Invitar al DUEÑO de la empresa de un cliente: recibe su enlace y configura todo él mismo.
+  app.post('/panel/api/plataforma/:empresaId/invitar', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const empresaId = await empresaDeRuta(c);
+    if (!empresaId) return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      const r = await invitar(d.db, { email: texto(b.email, 200), nombre: texto(b.nombre, 120), empresaId, rol: 'DUENO', creadaPor: s.usuarioId });
+      if (r.existente) return c.json({ ok: true, existente: true });
+      const razon = (await d.db.query(`SELECT razon_social FROM empresas WHERE id = $1`, [empresaId])).rows[0].razon_social as string;
+      const enlace = enlaceInvitacion(c, r.token);
+      avisarInvitacion(texto(b.email, 200).toLowerCase(), enlace, razon);
+      return c.json({ ok: true, existente: false, enlace, expira: r.expira, porCorreo: Boolean(d.correo) }, 201);
+    } catch (e) {
+      if (e instanceof ErrorInvitacion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+
   // Precios de los planes: los decide el dueño de la plataforma (los de fábrica son una propuesta).
   app.post('/panel/api/plataforma/planes/:codigo', async (c) => {
     const s = await conPlataforma(c);
@@ -962,11 +984,20 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
         WHERE ue.empresa_id = $1 ORDER BY u.nombre`,
       [s.empresa.id],
     );
-    return c.json({ usuarios: r.rows.map((x) => ({ id: x.id, email: x.email, nombre: x.nombre, rol: x.rol, activo: x.activo, dosPasos: x.totp_activo })) });
+    return c.json({ usuarios: r.rows.map((x) => ({ id: x.id, email: x.email, nombre: x.nombre, rol: x.rol, activo: x.activo, dosPasos: x.totp_activo, pendiente: !x.totp_activo })) });
   });
 
   // Dar acceso a otra persona (vendedor, contador…). Si el correo es nuevo, se crea el usuario
   // y se devuelve el QR para que lo escanee en SU celular; queda activo al confirmar el código.
+  // Invitar a una persona: si es nueva, recibe un ENLACE y ella misma pone su contraseña y su app.
+  const enlaceInvitacion = (c: Context, token: string) => `${origenPropio(c)}/panel#invitacion=${token}`;
+  const avisarInvitacion = (para: string, enlace: string, empresa: string) => {
+    void d.correo?.({
+      para: [para], asunto: `Te invitaron al facturador de ${empresa}`,
+      texto: `Para entrar, abre este enlace (vale 72 horas) y crea tu contraseña:\n\n${enlace}\n\nTen a mano Google Authenticator en tu celular.`,
+    }).catch((e: unknown) => console.error('[invitacion] no se pudo enviar:', e instanceof Error ? e.message : e));
+  };
+
   app.post('/panel/api/usuarios', async (c) => {
     const s = await conEmpresa(c);
     if (s instanceof Response) return s;
@@ -974,38 +1005,118 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const rol = texto(b.rol, 20).toUpperCase() as Rol;
     if (!ROLES.includes(rol) || rol === 'DUENO') return d.error(c, 422, 'DATOS_INVALIDOS', 'Rol: ADMIN, VENDEDOR, CONTADOR o SOLO_LECTURA.');
-    const email = texto(b.email, 200).toLowerCase();
     const plan = await suscripcionDe(d.db, s.empresa.id);
     if (plan?.limiteUsuarios != null && plan.usuarios >= plan.limiteUsuarios) {
       return d.error(c, 403, 'LIMITE_PLAN', `Tu plan ${plan.nombrePlan} permite ${plan.limiteUsuarios} usuario(s). Cambia a un plan mayor para agregar más.`);
     }
-    const existente = (await d.db.query(`SELECT id FROM usuarios WHERE lower(email) = $1`, [email])).rows[0];
-    if (existente) {
-      await asignarEmpresa(d.db, existente.id as string, s.empresa.id, rol);
-      return c.json({ ok: true, existente: true });
-    }
     try {
-      const { usuarioId, secreto } = await crearUsuario(d.db, {
-        email, nombre: texto(b.nombre, 120), contrasena: typeof b.contrasena === 'string' ? b.contrasena.slice(0, 200) : '', llaveMaestra: d.llaveMaestra,
-      });
-      await asignarEmpresa(d.db, usuarioId, s.empresa.id, rol);
-      const url = urlOtpauth(email, secreto);
-      return c.json({ ok: true, usuarioId, qr: await QRCode.toDataURL(url, { margin: 1, width: 220 }), clave: base32(secreto) }, 201);
+      const r = await invitar(d.db, { email: texto(b.email, 200), nombre: texto(b.nombre, 120), empresaId: s.empresa.id, rol, creadaPor: s.usuarioId });
+      if (r.existente) return c.json({ ok: true, existente: true });
+      const enlace = enlaceInvitacion(c, r.token);
+      avisarInvitacion(texto(b.email, 200).toLowerCase(), enlace, s.empresa.razonSocial);
+      return c.json({ ok: true, existente: false, usuarioId: r.usuarioId, enlace, expira: r.expira, porCorreo: Boolean(d.correo) }, 201);
     } catch (e) {
-      return d.error(c, 422, 'DATOS_INVALIDOS', e instanceof Error ? e.message : 'Datos inválidos.');
+      if (e instanceof ErrorInvitacion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
     }
   });
 
-  app.post('/panel/api/usuarios/:id/activar', async (c) => {
+  // Enlace nuevo para quien aún no activó su acceso (se le venció o lo perdió).
+  app.post('/panel/api/usuarios/:id/enlace', async (c) => {
     const s = await conEmpresa(c);
     if (s instanceof Response) return s;
-    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño activa usuarios.');
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño invita.');
     const id = c.req.param('id');
     const deEsta = UUID.test(id) && (await d.db.query(`SELECT 1 FROM usuario_empresa WHERE usuario_id = $1 AND empresa_id = $2`, [id, s.empresa.id])).rowCount;
     if (!deEsta) return d.error(c, 404, 'NO_ENCONTRADO', 'Usuario no encontrado.');
+    try {
+      const r = await nuevoEnlace(d.db, { usuarioId: id, empresaId: s.empresa.id, creadaPor: s.usuarioId });
+      return c.json({ ok: true, enlace: enlaceInvitacion(c, r.token), expira: r.expira });
+    } catch (e) {
+      if (e instanceof ErrorInvitacion) return d.error(c, 409, 'YA_ACTIVO', e.message);
+      throw e;
+    }
+  });
+
+  // ---------- Abrir la invitación (sin sesión; el token es la prueba) ----------
+  app.get('/panel/api/invitacion', async (c) => {
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const v = await verInvitacion(d.db, (c.req.query('token') ?? '').slice(0, 100));
+    if (v) return c.json(v);
+    return d.fallos.contar(ip) ? d.error(c, 404, 'ENLACE_VENCIDO', 'El enlace venció o ya se usó. Pide uno nuevo a quien te invitó.') : frenado(c);
+  });
+
+  app.post('/panel/api/invitacion', async (c) => {
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    return (await activarTotp(d.db, id, texto(b.codigo, 6), d.llaveMaestra))
-      ? c.json({ ok: true })
-      : d.error(c, 422, 'CODIGO_INCORRECTO', 'Ese código no coincide. Revisa que la hora del celular esté en automático.');
+    try {
+      const r = await aceptarInvitacion(d.db, { token: texto(b.token, 100), contrasena: typeof b.contrasena === 'string' ? b.contrasena.slice(0, 200) : '', llaveMaestra: d.llaveMaestra });
+      if (!r) return d.fallos.contar(ip) ? d.error(c, 404, 'ENLACE_VENCIDO', 'El enlace venció o ya se usó. Pide uno nuevo a quien te invitó.') : frenado(c);
+      const url = urlOtpauth(r.email, r.secreto);
+      return c.json({ qr: await QRCode.toDataURL(url, { margin: 1, width: 220 }), clave: base32(r.secreto), url });
+    } catch (e) {
+      if (e instanceof Error && /contraseña/.test(e.message)) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+
+  app.post('/panel/api/invitacion/activar', async (c) => {
+    const ip = d.ipCliente(c);
+    if (d.fallos.excedido(ip)) return frenado(c);
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const r = await activarInvitacion(d.db, { token: texto(b.token, 100), codigo: texto(b.codigo, 6).trim(), llaveMaestra: d.llaveMaestra });
+    if (r === 'ENLACE') return d.fallos.contar(ip) ? d.error(c, 404, 'ENLACE_VENCIDO', 'El enlace venció o ya se usó. Pide uno nuevo a quien te invitó.') : frenado(c);
+    if (r === 'CODIGO') return d.fallos.contar(ip) ? d.error(c, 422, 'CODIGO_INCORRECTO', 'Ese código no coincide. Revisa que la hora del celular esté en automático.') : frenado(c);
+    return c.json({ ok: true, email: r.email, codigosRespaldo: r.codigos });
+  });
+
+  // ---------- Lista de configuración de la empresa (para empezar a emitir) ----------
+  app.get('/panel/api/configuracion', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador.');
+    const e = (await d.db.query(
+      `SELECT e.ambiente_sunat::text AS ambiente,
+              (SELECT valido_hasta::date >= current_date FROM certificados WHERE empresa_id = e.id AND activo) AS certificado,
+              EXISTS (SELECT 1 FROM credenciales_sol WHERE empresa_id = e.id AND ambiente = 'PRODUCCION') AS sol,
+              EXISTS (SELECT 1 FROM archivos WHERE empresa_id = e.id AND tipo = 'LOGO') AS logo,
+              EXISTS (SELECT 1 FROM comprobantes WHERE empresa_id = e.id AND estado IN ('ACEPTADO', 'ACEPTADO_OBS')) AS aceptado,
+              (SELECT count(*) FROM usuario_empresa ue JOIN usuarios u ON u.id = ue.usuario_id WHERE ue.empresa_id = e.id AND u.totp_activo)::int AS usuarios
+         FROM empresas e WHERE e.id = $1`,
+      [s.empresa.id],
+    )).rows[0];
+    const pasos = [
+      { clave: 'datos', titulo: 'Datos de la empresa (Ficha RUC)', listo: true, ayuda: 'Ya están registrados.' },
+      { clave: 'certificado', titulo: 'Certificado digital', listo: e.certificado === true,
+        ayuda: e.certificado === false ? 'Tu certificado VENCIÓ: carga uno nuevo en Más → Certificado.' : 'Cárgalo en Más → Certificado digital (.pfx o .p12 y su contraseña).' },
+      { clave: 'prueba', titulo: 'Primera boleta de prueba aceptada por SUNAT (beta)', listo: e.aceptado,
+        ayuda: 'Emite una boleta de prueba en Vender. En beta no tiene valor legal.' },
+      { clave: 'logo', titulo: 'Logo para tus comprobantes (opcional)', listo: e.logo, ayuda: 'Súbelo en Más → Logo.' },
+      { clave: 'sol', titulo: 'Usuario SOL secundario (para producción)', listo: e.sol,
+        ayuda: 'Créalo en SUNAT Operaciones en Línea con permisos solo para comprobantes electrónicos; nunca uses tu Clave SOL principal. Luego guárdalo en Más.' },
+      { clave: 'produccion', titulo: 'Emitir comprobantes reales (producción)', listo: e.ambiente === 'PRODUCCION',
+        ayuda: 'Cuando todo lo anterior esté listo, pide a tu proveedor del facturador que active producción.' },
+    ];
+    return c.json({ pasos, usuarios: e.usuarios });
+  });
+
+  // Usuario SOL SECUNDARIO de la empresa (solo para producción). Se guarda cifrado.
+  app.post('/panel/api/sol', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño guarda el usuario SOL.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const clave = typeof b.clave === 'string' ? b.clave : '';
+    if (clave.length < 8 || clave.length > 12) return d.error(c, 422, 'DATOS_INVALIDOS', 'La clave SOL tiene entre 8 y 12 caracteres.');
+    try {
+      await guardarCredencialesSol(d.db, s.empresa.id, texto(b.usuario, 20), clave, d.llaveMaestra);
+    } catch (e) {
+      if (e instanceof ErrorConfiguracionSunat) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+    await d.db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id) VALUES ($1, $2, 'GUARDAR_USUARIO_SOL', 'empresas', $1)`, [s.empresa.id, s.usuarioId]);
+    return c.json({ ok: true });
   });
 }
