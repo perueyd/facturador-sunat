@@ -8,6 +8,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    ignore:
+      # Las definiciones de Node deben coincidir con la versión que corre el servidor (22);
+      # se cambian a mano cuando se cambie Node en Render.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # Un solo PR para las mejoras menores, en vez de uno por librería.
       menores:
