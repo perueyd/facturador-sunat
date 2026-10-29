@@ -8,7 +8,7 @@
 import { dec } from '../dinero.js';
 import { MEDIOS_PAGO, type MedioPago } from '../cobros/pagos.js';
 import type { SolicitudComprobante } from '../comprobantes/preparar.js';
-import { ahoraLima } from '../fechas.js';
+import { ahoraLima, esFecha } from '../fechas.js';
 import { Afectacion, TipoComprobante, type Cuota, type FormaPago, type ItemEntrada } from '../tipos.js';
 import { TipoDocIdentidad } from '../validaciones/documentos.js';
 
@@ -164,7 +164,7 @@ export function leerPedido(cuerpo: unknown, hoy = ahoraLima()): R<PedidoApi> {
   }
 
   const fecha = texto(cuerpo.fecha) ?? hoy.fecha;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) errores.push('fecha: usa el formato AAAA-MM-DD.');
+  if (!esFecha(fecha)) errores.push('fecha: usa el formato AAAA-MM-DD.');
 
   const clave = tipo === TipoComprobante.NOTA_CREDITO ? `07-${notaCredito?.referencia.tipo ?? '01'}` : tipo;
   const serie = texto(cuerpo.serie)?.toUpperCase() || SERIE_POR_DEFECTO[clave as keyof typeof SERIE_POR_DEFECTO] || '';

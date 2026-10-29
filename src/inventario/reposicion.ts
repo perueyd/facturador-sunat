@@ -10,7 +10,7 @@
  */
 import type { Db } from '../db/conexion.js';
 import { dec, type Decimal } from '../dinero.js';
-import { ahoraLima } from '../fechas.js';
+import { ahoraLima, sumarDias } from '../fechas.js';
 
 export const DIAS_ANALISIS = 30;
 /** Al pedir, que alcance para estos días después de que llegue el pedido. */
@@ -52,7 +52,6 @@ export interface Reposicion {
   };
 }
 
-const sumarDias = (iso: string, dias: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
 // Ojo: en decimal.js, isPositive() es verdadero también para 0; por eso se compara con gt(0).
 const entero = (d: Decimal) => d.toDecimalPlaces(0, 2 /* hacia arriba */);
 

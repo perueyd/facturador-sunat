@@ -11,6 +11,7 @@ import { codigoErrorPg, enTransaccion, restriccionPg, type Db } from '../db/cone
 import { esRucValido } from '../validaciones/documentos.js';
 import { ErrorInventario } from './productos.js';
 import { revisarStock, stockDe } from './stock.js';
+import { esFecha } from '../fechas.js';
 
 export interface ItemCompra {
   /** SKU del producto (opcional: si no hay, es un gasto/insumo sin stock). */
@@ -41,7 +42,7 @@ export async function registrarCompra(db: Db, empresaId: string, d: DatosCompra,
   if (!esRucValido(d.proveedor.ruc)) errores.push(`RUC del proveedor inválido: ${d.proveedor.ruc}.`);
   if (!d.proveedor.razonSocial?.trim()) errores.push('Falta la razón social del proveedor.');
   if (!/^[A-Z0-9]{1,4}$/i.test(d.serie) || !Number.isSafeInteger(d.numero) || d.numero < 1) errores.push('Serie o número del comprobante del proveedor inválidos.');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.fecha)) errores.push('Fecha inválida (AAAA-MM-DD).');
+  if (!esFecha(d.fecha)) errores.push('Fecha inválida (AAAA-MM-DD).');
   if (d.items.length === 0) errores.push('La compra debe tener al menos un ítem.');
   if (errores.length) throw new ErrorInventario(errores.join(' '));
 

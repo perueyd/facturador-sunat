@@ -1,0 +1,18 @@
+# Cada semana GitHub revisa si hay versiones nuevas de las librerías y, sobre todo, arreglos
+# de seguridad. Si los hay, abre un PR solo; las pruebas corren en ese PR y, si pasan, se une.
+# Nada se instala en el servidor sin pasar por las pruebas.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      # Un solo PR para las mejoras menores, en vez de uno por librería.
+      menores:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

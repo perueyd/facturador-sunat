@@ -18,6 +18,7 @@ import { emitirComprobante } from '../comprobantes/emitir.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
 import { cargarComprobante } from '../comprobantes/repositorio.js';
 import type { Db } from '../db/conexion.js';
+import { esFecha } from '../fechas.js';
 import { sumar } from '../dinero.js';
 import { ErrorPdf } from '../pdf/representacion.js';
 import { resumenDelDia } from '../reportes/resumen-dia.js';
@@ -331,7 +332,7 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     const sinPermiso = requiere(c, 'consultar');
     if (sinPermiso) return sinPermiso;
     const fecha = c.req.query('fecha');
-    if (fecha !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return error(c, 400, 'FECHA_INVALIDA', 'fecha: usa AAAA-MM-DD.');
+    if (fecha !== undefined && !esFecha(fecha)) return error(c, 400, 'FECHA_INVALIDA', 'fecha: usa AAAA-MM-DD.');
     return c.json(await resumenDelDia(dep.db, c.get('llave').empresaId, fecha));
   });
 

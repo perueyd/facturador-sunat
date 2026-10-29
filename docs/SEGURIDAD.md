@@ -55,11 +55,24 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 | Primera configuración por web | Solo mientras la base no tenga NINGÚN usuario (con bloqueo para que dos pestañas no creen dos). Exige una llave de API vigente de ESA empresa (la de la tienda) o `CLAVE_INSTALACION` en Render (mín. 16 caracteres), con límite de intentos. Activar exige la prueba otra vez y que ese sea el único usuario, aún sin 2FA. Después se cierra para siempre. |
 | Avisos por correo | Solo a DUEÑO y ADMIN activos; cada aviso una sola vez; la clave del proveedor solo en variables de entorno. |
 
+## Protección automática (funciona sola)
+
+| Qué | Cómo |
+|---|---|
+| SUNAT no responde | El comprobante queda en cola y se reintenta solo (cron cada 5 min). Nunca se pierde. |
+| El mismo pedido llega dos veces | Se devuelve el comprobante ya emitido; nunca se emite dos veces. |
+| Errores del servidor, cola atascada, rechazos, certificados o planes por vencer, base llena | La vigilancia avisa por correo una vez (`docs/PLATAFORMA.md`). |
+| Librerías con fallas de seguridad | Dependabot abre un PR cada semana con el arreglo; las pruebas lo validan antes de unirlo. `npm audit` frena cualquier cambio con una falla grave conocida. |
+| Algo que se rompe sin tocar el código | Las pruebas completas corren solas cada lunes, además de en cada cambio. |
+| Fechas imposibles (ej. 30 de febrero) | Se rechazan con un mensaje claro antes de llegar a la base (`esFecha`). |
+| Pérdida de datos | Respaldo diario cifrado (`respaldo.yml`); los comprobantes, pagos, cierres y la auditoría no se pueden borrar ni cambiar. |
+
+`node-forge` (aviso GHSA-86w9-cpqp-85rv): corregido al actualizar a 1.4.2 (29/10/2026).
+
 ## Pendiente (con motivo)
 
 | Pendiente | Por qué todavía no | Cuándo |
 |---|---|---|
-| `node-forge` (aviso GHSA-86w9-cpqp-85rv, sin parche) | El fallo está en *verificar* firmas RSA; aquí solo se usa para *abrir* el `.pfx`. Node no trae lector de PKCS#12. | Reemplazar si aparece una alternativa mantenida o el parche. |
 | *Row Level Security* en PostgreSQL | Hoy el aislamiento lo hace la aplicación (probado). RLS sería una segunda barrera. | Antes de vender el servicio a otros negocios. |
 | Usuario de base con permisos mínimos | Supabase entrega un usuario con todos los permisos; un usuario sin `TRUNCATE` ni permiso para quitar disparadores reduce el daño si se filtra la conexión. | Al pasar a producción. |
 | Repositorio público | No contiene secretos y los respaldos van cifrados. Se mantiene público porque así GitHub Actions (cola cada 5 min) es gratis. | Hacerlo privado si se pasa a un servidor que no se duerma y la cola se mueve fuera de GitHub. |

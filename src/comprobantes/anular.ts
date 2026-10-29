@@ -6,7 +6,7 @@
  * Nunca se borra nada: queda registro de quién, cuándo y por qué.
  */
 import { enTransaccion, type Db } from '../db/conexion.js';
-import { ahoraLima } from '../fechas.js';
+import { ahoraLima, diasEntre } from '../fechas.js';
 import { TipoComprobante, idComprobanteLegible } from '../tipos.js';
 import { parametro } from './repositorio.js';
 
@@ -25,10 +25,6 @@ export type ResultadoAnulacion =
 class ErrorAnulacion extends Error {}
 
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
-
-function diasEntre(desde: string, hasta: string): number {
-  return Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000);
-}
 
 export async function solicitarAnulacion(db: Db, s: SolicitudAnulacion): Promise<ResultadoAnulacion> {
   const motivo = s.motivo.trim();

@@ -11,7 +11,7 @@
 import { sqlSaldo } from '../cobros/pagos.js';
 import type { Db } from '../db/conexion.js';
 import { dec } from '../dinero.js';
-import { ahoraLima } from '../fechas.js';
+import { ahoraLima, diasEntre } from '../fechas.js';
 
 export const MODULOS = ['panel', 'vencimientos', 'resumen', 'certificado', 'cobros', 'notas', 'productos', 'exportar', 'compras', 'avisos', 'estadisticas'] as const;
 export type Modulo = (typeof MODULOS)[number];
@@ -25,7 +25,6 @@ export function grupoCronograma(ruc: string, buenContribuyente: boolean): string
   return d <= 1 ? String(d) : `${d - (d % 2)}-${d - (d % 2) + 1}`;
 }
 
-const diasEntre = (desde: string, hasta: string) => Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000);
 const NOMBRE_MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'setiembre', 'octubre', 'noviembre', 'diciembre'];
 export const nombrePeriodo = (periodo: string) => `${NOMBRE_MES[Number(periodo.slice(5, 7)) - 1]} ${periodo.slice(0, 4)}`;
 
