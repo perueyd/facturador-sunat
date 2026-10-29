@@ -155,7 +155,99 @@ async function cargarPanel() {
     dibujarAccesos();
     await abrirPestana('inicio');
   }
-  await Promise.all([cargarTablero(), cargarLista(), cargarVentaRapida().catch(() => undefined)]);
+  await Promise.all([cargarTablero(), cargarLista(), cargarVentaRapida().catch(() => undefined), cargarCotizaciones().catch(() => undefined)]);
+}
+
+// ---------- Cotizaciones (proformas) ----------
+// No son comprobantes: se guardan aparte con su propio número (COT-000001). Para venderla se
+// carga en el formulario de Vender y, al emitir la boleta o factura, queda enlazada.
+let cotizacionActual = null;
+
+function leerFormularioVenta() {
+  const f = new FormData($('#form-emitir'));
+  return {
+    cliente: { tipoDocumento: f.get('tipoDocumento'), numero: String(f.get('numero')).trim(), nombre: String(f.get('nombre')).trim() },
+    items: [...document.querySelectorAll('#items .item')].map((fila) => ({
+      codigo: fila.querySelector('[name=codigo]').value,
+      descripcion: fila.querySelector('[name=descripcion]').value.trim(),
+      cantidad: fila.querySelector('[name=cantidad]').value.trim().replace(',', '.'),
+      precio: fila.querySelector('[name=precio]').value.trim().replace(',', '.'),
+    })).filter((x) => x.descripcion || x.precio),
+  };
+}
+
+async function alCotizar() {
+  $('#error-emitir').textContent = '';
+  const dias = Number($('#dias-cotizacion').value || 7);
+  try {
+    const k = await api('/cotizaciones', { cuerpo: { ...leerFormularioVenta(), diasValidez: dias, nota: $('#nota-cotizacion').value } });
+    $('#nota-cotizacion').value = '';
+    await cargarCotizaciones();
+    alert(`Cotización ${k.numero} guardada por S/ ${k.total}. Mándala por WhatsApp desde la lista "Cotizaciones".`);
+  } catch (err) {
+    $('#error-emitir').textContent = err.message;
+  }
+}
+
+/** Carga una cotización en el formulario para venderla (o null para dejar de usarla). */
+function usarCotizacion(k) {
+  cotizacionActual = k;
+  $('#aviso-cotizacion').hidden = !k;
+  if (!k) return;
+  $('#aviso-cotizacion').textContent = `Vendiendo la cotización ${k.numero}: revisa los datos, elige cómo pagó y pulsa Emitir.`;
+  const f = $('#form-emitir');
+  f.tipo.value = k.cliente.tipoDocumento === 'RUC' ? 'FACTURA' : 'BOLETA';
+  f.tipoDocumento.value = k.cliente.tipoDocumento;
+  f.numero.value = k.cliente.numero;
+  f.nombre.value = k.cliente.nombre;
+  $('#items').replaceChildren();
+  for (const it of k.items) {
+    agregarItem();
+    const fila = [...document.querySelectorAll('#items .item')].at(-1);
+    fila.querySelector('[name=codigo]').value = it.codigo ?? '';
+    fila.querySelector('[name=descripcion]').value = it.descripcion;
+    fila.querySelector('[name=cantidad]').value = it.cantidad;
+    fila.querySelector('[name=precio]').value = it.precio;
+  }
+  recalcularTotal();
+  abrirPestana('vender').then(() => f.scrollIntoView({ behavior: 'smooth' }));
+}
+
+const ESTADO_COTIZACION = { VIGENTE: 'vigente', CONVERTIDA: 'vendida', ANULADA: 'anulada' };
+
+async function cargarCotizaciones() {
+  if (!yo?.puedeEmitir) return;
+  const { cotizaciones } = await api('/cotizaciones');
+  const hoy = hoyLima();
+  $('#lista-cotizaciones').replaceChildren(...(cotizaciones.length ? cotizaciones.map((k) => {
+    const vencida = k.estado === 'VIGENTE' && k.validaHasta < hoy;
+    const estado = k.estado === 'CONVERTIDA' ? `vendida (${k.comprobante})` : vencida ? 'vencida' : ESTADO_COTIZACION[k.estado];
+    const li = linea(`${k.numero} · ${k.cliente.nombre || 'sin nombre'}`, `${soles(k.total)} · ${estado}`, k.estado === 'ANULADA' ? 'apagado' : '');
+    li.addEventListener('click', (e) => {
+      if (e.target.closest('.botones')) return;
+      const abierto = li.querySelector('.botones');
+      if (abierto) { abierto.remove(); return; }
+      const botones = document.createElement('div');
+      botones.className = 'botones';
+      botones.append(boton('PDF', () => abrirArchivo(`/cotizaciones/${k.id}/pdf`)));
+      botones.append(boton('Enviar por WhatsApp', () => {
+        const texto = `Hola${k.cliente.nombre ? ` ${k.cliente.nombre}` : ''}, te envío la cotización ${k.numero} por S/ ${k.total} (válida hasta el ${fechaPeru(k.validaHasta)}): ${k.enlace}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+      }));
+      botones.append(boton('Copiar enlace', () => navigator.clipboard?.writeText(k.enlace)));
+      if (k.estado === 'VIGENTE') {
+        botones.append(boton('Vender (boleta o factura)', () => usarCotizacion(k)));
+        const anular = boton('Anular', async () => {
+          if (!confirm(`¿Anular la cotización ${k.numero}? Queda guardada como anulada.`)) return;
+          try { await api(`/cotizaciones/${k.id}/anular`, { cuerpo: {} }); await cargarCotizaciones(); } catch (err) { alert(err.message); }
+        });
+        anular.classList.add('peligro');
+        botones.append(anular);
+      }
+      li.append(botones);
+    });
+    return li;
+  }) : [linea('Aún no hay cotizaciones. Llena la venta y pulsa "Guardar como cotización".', '')]));
 }
 
 // ---------- Panel de control (inicio del dueño) ----------
@@ -434,9 +526,12 @@ function boton(texto, alPulsar) {
   return b;
 }
 
-async function abrirPdf(id, formato) {
+const abrirPdf = (id, formato) => abrirArchivo(`/comprobantes/${id}/pdf?formato=${formato}`);
+
+/** Abre un PDF del panel (necesita la sesión, por eso se descarga aquí y no con un enlace). */
+async function abrirArchivo(ruta) {
   const ventana = window.open('', '_blank');
-  const res = await api(`/comprobantes/${id}/pdf?formato=${formato}`, { crudo: true });
+  const res = await api(ruta, { crudo: true });
   if (!res.ok) {
     ventana?.close();
     const d = await res.json().catch(() => ({}));
@@ -698,6 +793,11 @@ async function alEmitir(e) {
   try {
     const c = await api('/comprobantes', { cuerpo });
     mostrarResultado(c);
+    if (cotizacionActual && c.tipo !== '07') {
+      await api(`/cotizaciones/${cotizacionActual.id}/convertida`, { cuerpo: { comprobanteId: c.id } }).catch((err) => alert(`El comprobante salió, pero no se pudo enlazar la cotización: ${err.message}`));
+      usarCotizacion(null);
+      cargarCotizaciones().catch(() => undefined);
+    }
     // Listo: el siguiente comprobante es otro pedido.
     pedidoActual = nuevoPedido();
     e.target.reset();
@@ -1809,6 +1909,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-cuenta').addEventListener('submit', alGuardarCuenta);
   for (const b of document.querySelectorAll('#periodo-caja button')) b.addEventListener('click', () => cargarCaja(b.dataset.periodo).catch((err) => alert(err.message)));
   $('#form-cierre').addEventListener('submit', alCerrarCaja);
+  $('#boton-cotizar').addEventListener('click', alCotizar);
   $('#cierre-fecha').addEventListener('change', (e) => cargarCierre(e.target.value).catch((err) => mensaje('#mensaje-cierre', err.message, true)));
   $('#form-invitacion').addEventListener('submit', alAceptarInvitacion);
   $('#form-invitacion-codigo').addEventListener('submit', alActivarInvitacion);

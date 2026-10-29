@@ -42,6 +42,8 @@ import { ahoraLima, esFecha, sumarDias } from '../fechas.js';
 import { clientesFrecuentes, guardarCelular, normalizarCelular } from '../reportes/cliente.js';
 import { estadisticas } from '../reportes/estadisticas.js';
 import { masVendidos } from '../reportes/venta-rapida.js';
+import { ErrorCotizacion, anularCotizacion, cargarCotizacion, crearCotizacion, listarCotizaciones, marcarConvertida, pdfCotizacion, type Cotizacion } from '../cotizaciones/cotizaciones.js';
+import { tokenCotizacion } from '../api/enlaces.js';
 import { SECCIONES_DE_PLAN, tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
@@ -525,6 +527,68 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       [s.empresa.id],
     );
     return c.json({ productos: r.rows.map((p) => ({ sku: p.sku, nombre: p.nombre, precio: p.precio, codigoBarras: p.codigo_barras })) });
+  });
+
+  // ---------- Cotizaciones (proformas): no son comprobantes; al pagar se emite la boleta o factura ----------
+  const sesionCotizar = async (c: Context) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no permite hacer cotizaciones.');
+    return s;
+  };
+  const conEnlace = (c: Context, k: Cotizacion) => ({ ...k, enlace: `${origenPropio(c)}/q/${tokenCotizacion(d.llaveMaestra, k.id)}` });
+  app.get('/panel/api/cotizaciones', async (c) => {
+    const s = await sesionCotizar(c);
+    if (s instanceof Response) return s;
+    return c.json({ cotizaciones: (await listarCotizaciones(d.db, s.empresa.id)).map((k) => conEnlace(c, k)) });
+  });
+  app.post('/panel/api/cotizaciones', async (c) => {
+    const s = await sesionCotizar(c);
+    if (s instanceof Response) return s;
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const cli = (b.cliente && typeof b.cliente === 'object' ? b.cliente : {}) as Record<string, unknown>;
+    const items = Array.isArray(b.items) ? b.items.slice(0, 101) : [];
+    try {
+      const k = await crearCotizacion(d.db, s.empresa.id, {
+        cliente: { tipoDocumento: texto(cli.tipoDocumento, 10) || 'NINGUNO', numero: texto(cli.numero, 15), nombre: texto(cli.nombre, 200) },
+        items: items.map((x) => {
+          const i = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
+          return { codigo: texto(i.codigo, 40), descripcion: texto(i.descripcion, 250), cantidad: texto(String(i.cantidad ?? ''), 30).replace(',', '.'), precio: texto(String(i.precio ?? ''), 30).replace(',', '.') };
+        }),
+        diasValidez: typeof b.diasValidez === 'number' ? b.diasValidez : 7,
+        ...(typeof b.nota === 'string' ? { nota: b.nota } : {}),
+      }, s.usuarioId, ahoraLima().fecha);
+      return c.json(conEnlace(c, k), 201);
+    } catch (e) {
+      if (e instanceof ErrorCotizacion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+  app.get('/panel/api/cotizaciones/:id/pdf', async (c) => {
+    const s = await sesionCotizar(c);
+    if (s instanceof Response) return s;
+    const id = c.req.param('id');
+    const k = UUID.test(id) ? await cargarCotizacion(d.db, s.empresa.id, id) : undefined;
+    if (!k) return d.error(c, 404, 'NO_ENCONTRADO', 'Cotización no encontrada.');
+    return c.body(new Uint8Array(await pdfCotizacion(d.db, s.empresa.id, k, d.almacen)), 200, {
+      'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${k.numero}.pdf"`, 'Cache-Control': 'private, no-store',
+    });
+  });
+  app.post('/panel/api/cotizaciones/:id/anular', async (c) => {
+    const s = await sesionCotizar(c);
+    if (s instanceof Response) return s;
+    const id = c.req.param('id');
+    return UUID.test(id) && (await anularCotizacion(d.db, s.empresa.id, id, s.usuarioId))
+      ? c.json({ ok: true }) : d.error(c, 409, 'NO_SE_PUEDE', 'Solo se anula una cotización vigente.');
+  });
+  app.post('/panel/api/cotizaciones/:id/convertida', async (c) => {
+    const s = await sesionCotizar(c);
+    if (s instanceof Response) return s;
+    const id = c.req.param('id');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const comprobante = typeof b.comprobanteId === 'string' ? b.comprobanteId : '';
+    return UUID.test(id) && UUID.test(comprobante) && (await marcarConvertida(d.db, s.empresa.id, id, comprobante, s.usuarioId))
+      ? c.json({ ok: true }) : d.error(c, 409, 'NO_SE_PUEDE', 'La cotización ya no está vigente o el comprobante no es de esta empresa.');
   });
 
   app.get('/panel/api/venta-rapida', async (c) => {

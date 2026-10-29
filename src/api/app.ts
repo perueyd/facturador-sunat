@@ -24,7 +24,8 @@ import { ErrorPdf } from '../pdf/representacion.js';
 import { resumenDelDia } from '../reportes/resumen-dia.js';
 import { idComprobanteLegible } from '../tipos.js';
 import { autenticarLlave, type ContextoLlave, type Permiso } from './llaves.js';
-import { leerToken, tokenComprobante } from './enlaces.js';
+import { leerToken, leerTokenCotizacion, tokenComprobante } from './enlaces.js';
+import { cargarCotizacion, pdfCotizacion } from '../cotizaciones/cotizaciones.js';
 import { leerPedido } from './solicitud.js';
 import { registrarPanel } from '../panel/rutas.js';
 import { suscripcionDe } from '../plataforma/suscripciones.js';
@@ -163,6 +164,21 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
       if (e instanceof ErrorPdf) return error(c, 409, 'PDF_NO_DISPONIBLE', e.message);
       throw e;
     }
+  });
+
+  // Enlace de una cotización para el cliente (mismo esquema firmado, con su propia clave).
+  app.get('/q/:token', async (c) => {
+    const ip = ipCliente(c);
+    if (fallos.excedido(ip)) return frenado(c);
+    const id = leerTokenCotizacion(dep.servicios.llaveMaestra, c.req.param('token'));
+    const empresa = id ? (await dep.db.query(`SELECT empresa_id FROM cotizaciones WHERE id = $1`, [id])).rows[0]?.empresa_id as string | undefined : undefined;
+    const cot = id && empresa ? await cargarCotizacion(dep.db, empresa, id) : undefined;
+    if (!cot || !empresa) return fallos.contar(ip) ? error(c, 404, 'NO_ENCONTRADO', 'Enlace inválido o vencido.') : frenado(c);
+    return c.body(new Uint8Array(await pdfCotizacion(dep.db, empresa, cot, dep.servicios.almacen)), 200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${cot.numero}.pdf"`,
+      'Cache-Control': 'private, no-store',
+    });
   });
 
   // Todo lo demás requiere una llave de canal. Se registra UNA vez para "/v1/*": registrarlo
