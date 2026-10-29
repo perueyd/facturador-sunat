@@ -429,6 +429,25 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect((await (await pedir('/panel/api/yo', { cookie: vendedor })).json()).verCaja).toBe(false);
   });
 
+  it('cierre de caja por la API: el vendedor no cierra; lo esperado no lo manda el navegador', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    expect((await pedir('/panel/api/caja/cierre', { cookie: vendedor })).status).toBe(403);
+    expect((await pedir('/panel/api/caja/cierre?fecha=2999-01-01', { cookie: dueno })).status).toBe(400);
+    expect((await pedir('/panel/api/cuentas', { cookie: dueno, cuerpo: { nombre: `Cajón ${++n}`, medio: 'EFECTIVO' } })).status).toBe(201);
+    const p = await (await pedir('/panel/api/caja/cierre', { cookie: dueno })).json();
+    expect(p.lineas.length).toBeGreaterThan(0);
+    // Un "esperado" enviado por el navegador se ignora: se guarda el del servidor.
+    const contados = Object.fromEntries(p.lineas.map((l: { clave: string }) => [l.clave, '0']));
+    const r = await pedir('/panel/api/caja/cierre', { cookie: dueno, cuerpo: { fecha: p.fecha, contados, esperado: '0' } });
+    expect(r.status).toBe(201);
+    const cierre = await r.json();
+    expect(cierre.lineas.map((l: { esperado: string }) => l.esperado)).toEqual(p.lineas.map((l: { esperado: string }) => l.esperado));
+    expect((await pedir('/panel/api/caja/cierre', { cookie: dueno, cuerpo: { fecha: p.fecha, contados: {} } })).status).toBe(422);
+    const despues = await (await pedir('/panel/api/caja/cierre', { cookie: dueno })).json();
+    expect(despues.historial[0].id).toBe(cierre.id);
+  });
+
   it('app instalable: manifiesto, íconos y service worker con versión; CSP lo permite', async () => {
     const m = await app.request('http://localhost/panel/manifest.webmanifest');
     expect(m.status).toBe(200);
