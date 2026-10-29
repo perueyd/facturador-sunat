@@ -264,7 +264,17 @@
           </div>
         </fieldset>
 
+        <p class="aviso" id="aviso-cotizacion" hidden></p>
         <button type="submit" id="boton-emitir">Emitir</button>
+        <details class="ajustes">
+          <summary>¿Solo un presupuesto? Guardar como cotización</summary>
+          <p class="nota">No es comprobante de pago: no va a SUNAT ni cuenta como venta. Cuando el cliente acepte, la vendes con un toque.</p>
+          <div class="fila">
+            <label>Válida (días) <input id="dias-cotizacion" type="number" min="1" max="90" value="7"></label>
+            <label>Nota <input id="nota-cotizacion" maxlength="500" placeholder="ej. entrega en 10 días"></label>
+          </div>
+          <button type="button" class="secundario" id="boton-cotizar">Guardar como cotización</button>
+        </details>
         <div class="error" id="error-emitir" role="alert"></div>
       </form>
 
@@ -272,6 +282,9 @@
 
       <h2>Últimos comprobantes</h2>
       <ul id="lista" class="lista"></ul>
+
+      <h2>Cotizaciones</h2>
+      <ul id="lista-cotizaciones" class="lista"></ul>
       </div>
 
       <div data-vista="cobrar" hidden>

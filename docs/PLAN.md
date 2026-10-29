@@ -641,6 +641,10 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
 - **Cierre de caja diario** (misma pestaña): por cada cuenta, lo que debería haber según los cobros
   (lo calcula el facturador) contra lo contado; guarda la diferencia, quién cerró y una nota. No se
   cambia ni se borra: si se contó mal, se cierra de nuevo y vale el último. Historial de 30 días.
+- **Cotizaciones / proformas** (pestaña Vender): el mismo formulario se guarda como cotización (COT-000001,
+  numeración propia, válida N días, nota). PDF con logo que dice "NO ES COMPROBANTE DE PAGO", enlace firmado
+  para mandarlo por WhatsApp (`/q/…`), y "Vender" la carga en el formulario: al emitir la boleta o factura
+  queda enlazada (vendida). No se cambia ni se borra: se anula.
 - **Venta rápida** (pestaña Vender): botones con lo más vendido en los últimos 60 días (sale de los
   comprobantes, funciona sin catálogo). Un toque agrega el producto; si no se escribió documento, la
   boleta va sin documento (el facturador exige el DNI si se pasa el límite vigente).
