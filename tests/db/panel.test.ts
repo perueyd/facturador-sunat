@@ -448,6 +448,22 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect(despues.historial[0].id).toBe(cierre.id);
   });
 
+  it('gastos: el vendedor anota, pero solo quien ve la caja los lista y solo el dueño los anula', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const vendedor = await entrar(await usuario('VENDEDOR'));
+    const gasto = { monto: '12,50', categoria: 'transporte', descripcion: 'Pasaje', medio: 'efectivo' };
+    const r = await pedir('/panel/api/gastos', { cookie: vendedor, cuerpo: gasto });
+    expect(r.status).toBe(201);
+    const { id } = await r.json();
+    expect((await pedir('/panel/api/gastos', { cookie: vendedor })).status).toBe(403);
+    const lista = await (await pedir('/panel/api/gastos', { cookie: dueno })).json();
+    expect(lista.gastos.find((g: { id: string }) => g.id === id)).toMatchObject({ monto: '12.50', categoria: 'TRANSPORTE' });
+    expect(lista.categorias.TRANSPORTE).toBe('Transporte y delivery');
+    expect((await pedir(`/panel/api/gastos/${id}/anular`, { cookie: vendedor, cuerpo: { motivo: 'error' } })).status).toBe(403);
+    expect((await pedir(`/panel/api/gastos/${id}/anular`, { cookie: dueno, cuerpo: { motivo: 'error' } })).status).toBe(200);
+    expect((await pedir('/panel/api/gastos', { cookie: dueno, cuerpo: { ...gasto, monto: 'mucho' } })).status).toBe(422);
+  });
+
   it('venta rápida: lo más vendido, con su precio, para venderlo con un toque', async () => {
     const dueno = await entrar(await usuario('DUENO'));
     const corte = { descripcion: `Corte clásico ${++n}`, cantidad: 1, precio: '25.00' };

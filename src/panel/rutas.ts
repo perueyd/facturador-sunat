@@ -24,6 +24,7 @@ import type { EnviarCorreo } from '../avisos/avisos.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
 import { enTransaccion, type Db } from '../db/conexion.js';
+import { CATEGORIAS_GASTO, ErrorGasto, anularGasto, gastosDelPeriodo, registrarGasto } from '../cobros/gastos.js';
 import { ErrorCuenta, caja, cerrarCaja, cierresDeCaja, guardarCuenta, lineasParaCerrar, listarCuentas } from '../cobros/caja.js';
 import { MEDIOS_PAGO, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
 import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
@@ -937,6 +938,54 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const hasta = c.req.query('hasta') ?? hoy;
     if (!esFecha(desde) || !esFecha(hasta) || desde > hasta) return d.error(c, 400, 'FECHAS_INVALIDAS', 'Fechas como AAAA-MM-DD, "desde" antes de "hasta".');
     return c.json(await caja(d.db, s.empresa.id, desde, hasta));
+  });
+
+  // Gastos y caja chica: el dinero que sale. Quien vende puede anotarlo (pagó el pasaje con el
+  // efectivo del cajón); verlos y anularlos es de quien ve la caja.
+  app.get('/panel/api/gastos', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no ve los gastos.');
+    const hoy = ahoraLima().fecha;
+    const desde = c.req.query('desde') ?? hoy;
+    const hasta = c.req.query('hasta') ?? hoy;
+    if (!esFecha(desde) || !esFecha(hasta) || desde > hasta) return d.error(c, 400, 'FECHAS_INVALIDAS', 'Fechas como AAAA-MM-DD, "desde" antes de "hasta".');
+    return c.json({ ...(await gastosDelPeriodo(d.db, s.empresa.id, desde, hasta)), categorias: CATEGORIAS_GASTO });
+  });
+  app.post('/panel/api/gastos', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no registra gastos.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const hoy = ahoraLima().fecha;
+    try {
+      const id = await registrarGasto(d.db, s.empresa.id, {
+        fecha: texto(b.fecha, 10) || hoy, monto: texto(b.monto, 20).replace(',', '.'), categoria: texto(b.categoria, 20).toUpperCase(),
+        descripcion: texto(b.descripcion, 200), medio: texto(b.medio, 20).toUpperCase(),
+        ...(typeof b.cuenta === 'string' && UUID.test(b.cuenta) ? { cuentaId: b.cuenta } : {}),
+        ...(typeof b.documento === 'string' ? { documento: b.documento } : {}),
+      }, s.usuarioId, hoy);
+      return c.json({ ok: true, id }, 201);
+    } catch (e) {
+      if (e instanceof ErrorGasto) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+  app.post('/panel/api/gastos/:id/anular', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador anula gastos.');
+    const id = c.req.param('id');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      return UUID.test(id) && (await anularGasto(d.db, s.empresa.id, id, texto(b.motivo, 200), s.usuarioId))
+        ? c.json({ ok: true }) : d.error(c, 409, 'NO_SE_PUEDE', 'Ese gasto no existe o ya estaba anulado.');
+    } catch (e) {
+      if (e instanceof ErrorGasto) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
   });
 
   // Cierre de caja diario: lo esperado lo calcula el servidor; el usuario solo pone lo contado.
