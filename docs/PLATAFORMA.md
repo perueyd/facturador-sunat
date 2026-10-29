@@ -104,3 +104,13 @@ Todo se ve también en el panel → **Plataforma → Salud de la plataforma**.
 | Unir la tienda Espacios y Diseño con el facturador | Decisión del dueño: por ahora siguen separados |
 | APK en Google Play | La app ya se instala desde Chrome; publicarla en Play exige cuenta de desarrollador (pago único a Google) |
 | Impuestos estimados por régimen (Nuevo RUS, RER, MYPE, General) | Hay que verificar tasas, cuotas y tramos vigentes en la normativa oficial antes de programarlos |
+| Detracciones, retenciones y percepciones | Verificar tasas y casos vigentes en la normativa oficial |
+
+**Próximos módulos sugeridos** (no dependen de SUNAT; cada uno como sección activable por plan):
+1. Gastos y caja chica (completa el cierre de caja: hoy solo cuenta lo que entra).
+2. Cotizaciones / proformas que se vuelven boleta o factura con un toque.
+3. Pedidos a medida: adelanto → fabricación → entrega (verificar cuándo se emite comprobante por un adelanto).
+4. Enviar el comprobante al cliente por WhatsApp o correo al emitir.
+5. Cuentas por pagar a proveedores.
+6. Después, según lo que pidan los clientes: libro de reclamaciones virtual, comisiones por vendedor,
+   puntos y cupones, sucursales y almacenes, agenda de citas, flota de vehículos.

@@ -38,7 +38,7 @@ import { asignarProveedor, guardarDiasEntrega, kardex, reposicion } from '../inv
 import { ErrorPdf } from '../pdf/representacion.js';
 import { ErrorSuscripcion, cambiarSuscripcion, clientes, iniciarPrueba, registrarPago as registrarPagoPlan, suscripcionDe } from '../plataforma/suscripciones.js';
 import { saludPlataforma } from '../plataforma/vigilancia.js';
-import { ahoraLima } from '../fechas.js';
+import { ahoraLima, esFecha, sumarDias } from '../fechas.js';
 import { clientesFrecuentes, guardarCelular, normalizarCelular } from '../reportes/cliente.js';
 import { estadisticas } from '../reportes/estadisticas.js';
 import { SECCIONES_DE_PLAN, tablero, type Modulo } from '../reportes/tablero.js';
@@ -57,6 +57,8 @@ const ROLES_CORRIGEN: readonly Rol[] = ['DUENO', 'ADMIN'];
 const ROLES_COMPRAS: readonly Rol[] = ['DUENO', 'ADMIN', 'CONTADOR'];
 
 const COOKIE = '__Host-panel';
+/** Texto tal como llegó (sin recortar espacios: una contraseña puede tenerlos), con tope de largo. */
+const crudo = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** El panel genera el número de pedido al abrir el formulario: pulsar dos veces no emite dos. */
 const PEDIDO_PANEL = /^PANEL-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -285,8 +287,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const ip = d.ipCliente(c);
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
-    const r = await recuperarConEnlace(d.db, { token: texto(b.token, 100), contrasena: texto(b.contrasena, 200), codigo: texto(b.codigo, 20).trim(), llaveMaestra: d.llaveMaestra });
+    const r = await recuperarConEnlace(d.db, { token: crudo(b.token, 100), contrasena: crudo(b.contrasena, 200), codigo: crudo(b.codigo, 20).trim(), llaveMaestra: d.llaveMaestra });
     if (r.ok) {
       avisarCambioDeAcceso(r.email, 'con el enlace del correo', ip);
       return c.json({ ok: true, email: r.email });
@@ -332,9 +333,8 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const ip = d.ipCliente(c);
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
     const r = await entrar(d.db, {
-      email: texto(b.email, 200), contrasena: texto(b.contrasena, 200), codigo: texto(b.codigo, 20).trim(),
+      email: crudo(b.email, 200), contrasena: crudo(b.contrasena, 200), codigo: crudo(b.codigo, 20).trim(),
       llaveMaestra: d.llaveMaestra, ip, recordar: b.recordar === true,
     });
     if (!r.ok) {
@@ -864,8 +864,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const hoy = ahoraLima().fecha;
     const desde = c.req.query('desde') ?? hoy;
     const hasta = c.req.query('hasta') ?? hoy;
-    const fecha = /^\d{4}-\d{2}-\d{2}$/;
-    if (!fecha.test(desde) || !fecha.test(hasta) || desde > hasta) return d.error(c, 400, 'FECHAS_INVALIDAS', 'Fechas como AAAA-MM-DD, "desde" antes de "hasta".');
+    if (!esFecha(desde) || !esFecha(hasta) || desde > hasta) return d.error(c, 400, 'FECHAS_INVALIDAS', 'Fechas como AAAA-MM-DD, "desde" antes de "hasta".');
     return c.json(await caja(d.db, s.empresa.id, desde, hasta));
   });
 
@@ -882,8 +881,8 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (s instanceof Response) return s;
     const hoy = ahoraLima().fecha;
     const fecha = c.req.query('fecha') ?? hoy;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > hoy) return d.error(c, 400, 'FECHA_INVALIDA', 'Elige un día de hoy hacia atrás (AAAA-MM-DD).');
-    const hace30 = new Date(Date.parse(`${hoy}T00:00:00Z`) - 30 * 86_400_000).toISOString().slice(0, 10);
+    if (!esFecha(fecha) || fecha > hoy) return d.error(c, 400, 'FECHA_INVALIDA', 'Elige un día de hoy hacia atrás (AAAA-MM-DD).');
+    const hace30 = sumarDias(hoy, -30);
     // Del historial, solo el último cierre de cada día (los anteriores quedaron reemplazados).
     const historial = (await cierresDeCaja(d.db, s.empresa.id, hace30, hoy)).filter((x, i, todos) => todos.findIndex((y) => y.fecha === x.fecha) === i);
     return c.json({
@@ -898,7 +897,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (s instanceof Response) return s;
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const fecha = texto(b.fecha, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return d.error(c, 400, 'FECHA_INVALIDA', 'Fecha como AAAA-MM-DD.');
+    if (!esFecha(fecha)) return d.error(c, 400, 'FECHA_INVALIDA', 'Fecha como AAAA-MM-DD.');
     const contados: Record<string, string> = {};
     if (b.contados && typeof b.contados === 'object') {
       for (const [k, v] of Object.entries(b.contados as Record<string, unknown>).slice(0, 100)) if (typeof v === 'string') contados[k.slice(0, 60)] = v.trim();

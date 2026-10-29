@@ -16,6 +16,7 @@ import {
 } from '../tipos.js';
 import { TipoDocIdentidad, esDniValido, esRucValido } from './documentos.js';
 import { esMotivoNotaCreditoValido } from '../catalogos.js';
+import { esFecha } from '../fechas.js';
 
 export interface DatosAValidar {
   tipo: TipoComprobante;
@@ -40,7 +41,6 @@ export interface DatosAValidar {
   };
 }
 
-const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 // Caracteres de control (salvo tabulación y saltos de línea) no son válidos en XML.
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 /** SUNAT acepta hasta 10 decimales en cantidad y valores unitarios; la BD guarda 10. */
@@ -62,7 +62,7 @@ export function validarComprobante(d: DatosAValidar): string[] {
   errores.push(...validarSerie(d.tipo, d.serie, d.notaCredito?.referencia.tipo));
 
   // Fecha
-  if (!PATRON_FECHA.test(d.fechaEmision)) {
+  if (!esFecha(d.fechaEmision)) {
     errores.push('La fecha de emisión debe tener el formato AAAA-MM-DD.');
   }
 
@@ -223,7 +223,7 @@ function validarFormaPago(d: DatosAValidar): string[] {
     );
   }
   cuotas.forEach((q, i) => {
-    if (!PATRON_FECHA.test(q.fechaVencimiento) || q.fechaVencimiento <= d.fechaEmision) {
+    if (!esFecha(q.fechaVencimiento) || q.fechaVencimiento <= d.fechaEmision) {
       errores.push(`La cuota ${i + 1} debe vencer después de la fecha de emisión.`);
     }
   });

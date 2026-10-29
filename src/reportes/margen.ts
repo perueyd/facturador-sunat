@@ -8,7 +8,7 @@
  */
 import { Decimal, dec, redondear } from '../dinero.js';
 import type { Db } from '../db/conexion.js';
-import { ahoraLima } from '../fechas.js';
+import { ahoraLima, esFecha } from '../fechas.js';
 import { ErrorInventario } from '../inventario/productos.js';
 
 const MOTIVOS_DEVOLUCION = new Set(['06', '07']);
@@ -95,7 +95,7 @@ export async function margenSemanal(db: Db, empresaId: string, fecha = ahoraLima
 export async function fijarMetaMargen(db: Db, empresaId: string, monto: string, desde = ahoraLima().fecha): Promise<void> {
   const valor = dec(monto);
   if (valor.lte(0)) throw new ErrorInventario('La meta debe ser mayor que cero.');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde)) throw new ErrorInventario('Fecha inválida (AAAA-MM-DD).');
+  if (!esFecha(desde)) throw new ErrorInventario('Fecha inválida (AAAA-MM-DD).');
   await db.query(
     `INSERT INTO metas (empresa_id, tipo, monto, vigente_desde) VALUES ($1, 'MARGEN_SEMANAL', $2, $3)
      ON CONFLICT (empresa_id, tipo, vigente_desde) DO UPDATE SET monto = EXCLUDED.monto`,

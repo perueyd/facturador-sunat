@@ -1,11 +1,16 @@
 # Repite en cada subida lo que se corre antes de cada commit: todas las pruebas
 # (con PostgreSQL de verdad) y el análisis de TypeScript + código sin usar.
 # Un cambio con pruebas fallando no se une (regla del proyecto).
+# Además corre solo cada lunes: así se detecta a tiempo una librería con una falla de
+# seguridad recién descubierta o algo que dejó de funcionar sin que nadie tocara el código.
 name: pruebas
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '17 13 * * 1'
+  workflow_dispatch:
 
 jobs:
   pruebas:
@@ -31,5 +36,7 @@ jobs:
       # xmllint (esquema UBL), poppler (PDF) y Python con lxml/cryptography (verificador de firmas).
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2-utils poppler-utils python3-lxml python3-cryptography
       - run: npm ci
+      # Librerías con fallas de seguridad graves conocidas (lo que se usa en el servidor).
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run analizar
       - run: npm test

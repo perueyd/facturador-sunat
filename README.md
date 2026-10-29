@@ -20,6 +20,9 @@ de baja directamente a SUNAT (SEE - Del Contribuyente), sin proveedores externos
 | 9b. Publicado (Render + Supabase + cron-job.org) | ✅ En línea, en beta |
 | 11. Panel web para emitir a mano (`/panel`) | ✅ Aprobada; tablero con vencimientos y funciones por empresa en revisión |
 | Revisión de seguridad completa | ✅ Hecha (`docs/SEGURIDAD.md`) |
+| 12. Plataforma para otros negocios (planes, invitaciones, vigilancia, secciones por plan) | ✅ Hecha (`docs/PLATAFORMA.md`) |
+| 13. Caja, cuentas, cierre de caja, clientes frecuentes y WhatsApp, inventario (Kardex, reposición), app instalable y escáner | ✅ Hecha |
+| Próximos módulos y lo que espera a SUNAT o al contador | 📋 `docs/PLATAFORMA.md` → Proyectos pendientes |
 
 Hoy el sistema valida, calcula el IGV, numera sin saltos, guarda en PostgreSQL, genera
 el XML, lo firma y lo envía a SUNAT **beta** con reintentos automáticos. Producción está

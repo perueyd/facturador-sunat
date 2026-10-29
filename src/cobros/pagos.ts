@@ -8,7 +8,7 @@
 import { crearAlerta } from '../alertas.js';
 import { Decimal, dec } from '../dinero.js';
 import { codigoErrorPg, enTransaccion, restriccionPg, type Db, type Tx } from '../db/conexion.js';
-import { ahoraLima } from '../fechas.js';
+import { ahoraLima, esFecha } from '../fechas.js';
 import { idComprobanteLegible } from '../tipos.js';
 
 export const MEDIOS_PAGO = ['YAPE', 'PLIN', 'EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'PASARELA', 'OTRO'] as const;
@@ -135,7 +135,7 @@ export async function registrarPago(db: Db, p: NuevoPago): Promise<ResultadoPago
       if (monto.lte(0) || monto.decimalPlaces() > 2) throw new ErrorCobro('El monto debe ser mayor que cero y con máximo 2 decimales.');
       if (monto.gt(antes.saldo)) throw new ErrorCobro(`El pago (S/ ${monto.toFixed(2)}) supera el saldo de ${nombre} (S/ ${antes.saldo.toFixed(2)}).`);
       const fecha = p.fecha ?? ahoraLima().fecha;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > ahoraLima().fecha) throw new ErrorCobro('La fecha del pago debe ser AAAA-MM-DD y no futura.');
+      if (!esFecha(fecha) || fecha > ahoraLima().fecha) throw new ErrorCobro('La fecha del pago debe ser AAAA-MM-DD y no futura.');
 
       const ins = await tx.query(
         `INSERT INTO pagos (empresa_id, comprobante_id, fecha, monto, medio, referencia_operacion, notas, registrado_por, api_llave_id, cuenta_id)
