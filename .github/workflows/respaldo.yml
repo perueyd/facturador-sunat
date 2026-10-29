@@ -31,7 +31,7 @@ jobs:
             | gzip -9 \
             | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:RESPALDO_CLAVE -out respaldo.sql.gz.enc
           test -s respaldo.sql.gz.enc
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: respaldo-${{ github.run_id }}
           path: respaldo.sql.gz.enc
