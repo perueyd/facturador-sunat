@@ -68,6 +68,29 @@
       <p><button type="button" class="enlace" id="volver-entrar">Volver a entrar</button></p>
     </section>
 
+    <!-- Llegó con un enlace de invitación (#invitacion=…) -->
+    <section id="vista-invitacion" hidden>
+      <h1>Bienvenido</h1>
+      <p id="saludo-invitacion"></p>
+      <form id="form-invitacion">
+        <label>Tu correo <input name="email" type="email" autocomplete="username" readonly></label>
+        <label>Crea tu contraseña <small>(mínimo 10 caracteres)</small>
+          <input name="contrasena" type="password" autocomplete="new-password" minlength="10" required></label>
+        <p class="nota">Necesitas la app <strong>Google Authenticator</strong> en tu celular (gratis).</p>
+        <button type="submit">Continuar</button>
+        <p class="error" id="error-invitacion" role="alert"></p>
+      </form>
+      <form id="form-invitacion-codigo" hidden>
+        <p>1. Agrega tu cuenta en <strong>Google Authenticator</strong>:</p>
+        <p><a id="abrir-app-invitacion" class="boton-enlace" href="#">📱 Agregar a mi app autenticadora</a></p>
+        <p class="qr-caja"><img id="qr-invitacion" alt="Código QR para la app autenticadora" width="220" height="220"></p>
+        <p class="nota">O en la app: "Ingresar clave de configuración" → <strong id="clave-invitacion" class="clave"></strong></p>
+        <label>2. Código de 6 dígitos que muestra la app <input name="codigo" inputmode="numeric" maxlength="6" required></label>
+        <button type="submit">Activar mi acceso</button>
+        <p class="error" id="error-invitacion-codigo" role="alert"></p>
+      </form>
+    </section>
+
     <!-- Llegó desde el enlace del correo (#recuperar=…) -->
     <section id="vista-enlace" hidden>
       <h1>Contraseña nueva</h1>
@@ -345,6 +368,10 @@
       </div>
 
       <div data-vista="mas" hidden>
+      <section id="caja-configuracion" hidden>
+        <h2>Configuración de tu empresa <small id="avance-configuracion"></small></h2>
+        <ul id="pasos-configuracion" class="pasos"></ul>
+      </section>
       <section id="caja-plan" hidden>
         <h2>Mi plan</h2>
         <ul id="detalle-plan" class="lista"></ul>
@@ -362,28 +389,19 @@
         <summary>Usuarios de esta empresa</summary>
         <ul id="lista-usuarios" class="lista"></ul>
         <form id="form-usuario">
-          <p class="nota">Da acceso a un vendedor, administrador o a tu contador. Si es nuevo, escanea el QR con SU celular.</p>
+          <p class="nota">Invita a un vendedor, administrador o a tu contador. Le llega un <strong>enlace</strong> (por WhatsApp o
+            correo) y él mismo crea su contraseña y conecta su celular. Tú nunca conoces su clave.</p>
           <div class="fila">
             <label>Correo <input name="email" type="email" required></label>
             <label>Rol
               <select name="rol"><option value="VENDEDOR">Vendedor (emite)</option><option value="ADMIN">Administrador</option>
                 <option value="CONTADOR">Contador (consulta y compras)</option><option value="SOLO_LECTURA">Solo lectura</option></select></label>
           </div>
-          <div class="fila">
-            <label>Nombre <input name="nombre" maxlength="120"></label>
-            <label>Contraseña inicial <input name="contrasena" type="password" autocomplete="new-password" minlength="10"></label>
-          </div>
-          <button type="submit" class="secundario">Dar acceso</button>
+          <label>Nombre <input name="nombre" maxlength="120" required></label>
+          <button type="submit" class="secundario">Invitar</button>
           <p id="mensaje-usuario" role="status"></p>
         </form>
-        <form id="form-activar" hidden>
-          <p>Que la persona escanee este QR con Google Authenticator y te dicte el código:</p>
-          <img id="qr-usuario" alt="Código QR para la app autenticadora" width="220" height="220">
-          <p class="nota">Sin cámara: en la app elige "Ingresar clave" y escribe <strong id="clave-usuario"></strong></p>
-          <label>Código de 6 dígitos <input name="codigo" inputmode="numeric" maxlength="6" required></label>
-          <button type="submit" class="secundario">Activar</button>
-          <p id="mensaje-activar" role="status"></p>
-        </form>
+        <div id="caja-enlace" class="enlace-invitacion" hidden></div>
       </details>
 
       <details class="ajustes" id="caja-certificado">
@@ -394,6 +412,20 @@
           <label>Contraseña del certificado <input name="clave" type="password" autocomplete="off" required></label>
           <button type="submit" class="secundario">Cargar certificado</button>
           <p id="mensaje-certificado" role="status"></p>
+        </form>
+      </details>
+
+      <details class="ajustes" id="caja-sol">
+        <summary>Usuario SOL secundario (para producción)</summary>
+        <form id="form-sol">
+          <p class="nota">Créalo en SUNAT Operaciones en Línea solo con permisos de comprobantes electrónicos.
+            <strong>Nunca</strong> uses tu Clave SOL principal. Se guarda cifrado.</p>
+          <div class="fila">
+            <label>Usuario (sin el RUC) <input name="usuario" maxlength="20" autocomplete="off" required></label>
+            <label>Clave <input name="clave" type="password" minlength="8" maxlength="12" autocomplete="off" required></label>
+          </div>
+          <button type="submit" class="secundario">Guardar usuario SOL</button>
+          <p id="mensaje-sol" role="status"></p>
         </form>
       </details>
 

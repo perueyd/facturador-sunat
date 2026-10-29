@@ -25,7 +25,7 @@ async function api(ruta, opciones = {}) {
   });
   if (opciones.crudo) return res;
   const datos = await res.json().catch(() => ({}));
-  if (res.status === 401 && ruta !== '/entrar' && !ruta.startsWith('/instalacion') && !ruta.startsWith('/recuperar')) mostrarEntrar();
+  if (res.status === 401 && ruta !== '/entrar' && !['/instalacion', '/recuperar', '/invitacion'].some((r) => ruta.startsWith(r))) mostrarEntrar();
   if (!res.ok) {
     const e = new Error(datos.error?.mensaje || 'No se pudo completar. Intenta de nuevo.');
     e.detalles = datos.error?.detalles || [];
@@ -79,6 +79,7 @@ function mostrarEntrar() {
   $('#vista-instalar').hidden = true;
   $('#vista-recuperar').hidden = true;
   $('#vista-enlace').hidden = true;
+  $('#vista-invitacion').hidden = true;
   $('#vista-codigos').hidden = true;
   $('#vista-entrar').hidden = false;
   $('#form-entrar').codigo.inputMode = 'numeric';
@@ -126,6 +127,7 @@ async function cargarPanel() {
   $('#caja-logo').hidden = !yo.puedeAdministrar;
   $('#caja-usuarios').hidden = !yo.esDueno;
   $('#caja-certificado').hidden = !yo.esDueno;
+  $('#caja-sol').hidden = !yo.esDueno;
   $('#caja-empresa-nueva').hidden = !yo.adminPlataforma;
   $('#boton-plataforma').hidden = !yo.adminPlataforma;
   mostrarPlan(yo.plan);
@@ -762,6 +764,17 @@ async function cargarPlataforma() {
     resumen.append(nombre, estado, datos);
     d.append(resumen);
     if (c.contacto) d.append(Object.assign(document.createElement('p'), { className: 'nota', textContent: `Contacto: ${c.contacto}` }));
+    // El dueño del negocio recibe su enlace y configura todo él mismo (certificado, usuario SOL…).
+    const cajaEnlace = Object.assign(document.createElement('div'), { className: 'enlace-invitacion', hidden: true });
+    d.append(formulario([
+      ['Invitar al dueño del negocio · correo ', entrada('email', { type: 'email', required: true, maxLength: 200 })],
+      ['Nombre ', entrada('nombre', { required: true, maxLength: 120 })],
+    ], 'Crear enlace de invitación', async (v) => {
+      const r = await api(`/plataforma/${c.empresaId}/invitar`, { cuerpo: v });
+      if (r.existente) return '✔ Ya tenía cuenta: ahora es dueño de esta empresa.';
+      mostrarEnlace(cajaEnlace, r, v.nombre);
+      return '';
+    }), cajaEnlace);
     if (s) {
       d.append(formulario([
         ['Registrar pago ', selector('periodo', [['MENSUAL', 'Mensual'], ['ANUAL', 'Anual']])],
@@ -1093,28 +1106,50 @@ const leerBase64 = (archivo) => new Promise((ok, falla) => {
 });
 
 // ---------- Usuarios, certificado y empresas ----------
-let usuarioPorActivar = null;
+/** Caja con el enlace de invitación: copiarlo o mandarlo por WhatsApp. */
+function mostrarEnlace(caja, r, nombre) {
+  caja.replaceChildren();
+  const texto = `Hola ${nombre}, te invito al facturador. Abre este enlace para crear tu contraseña (vale 72 horas): ${r.enlace}`;
+  const titulo = Object.assign(document.createElement('strong'), { textContent: `✔ Invitación lista${r.porCorreo ? ' (también se envió por correo)' : ''}` });
+  const enlace = Object.assign(document.createElement('code'), { textContent: r.enlace });
+  const copiar = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'Copiar enlace' });
+  copiar.addEventListener('click', () => navigator.clipboard?.writeText(r.enlace).then(() => { copiar.textContent = '✔ Copiado'; }).catch(() => {}));
+  const wa = Object.assign(document.createElement('a'), { className: 'boton-enlace', textContent: '💬 Enviar por WhatsApp', target: '_blank', rel: 'noopener',
+    href: `https://wa.me/?text=${encodeURIComponent(texto)}` });
+  const nota = Object.assign(document.createElement('p'), { className: 'nota', textContent: 'Vale 72 horas y una sola vez. Si se vence, genera otro desde la lista.' });
+  caja.append(titulo, enlace, copiar, wa, nota);
+  caja.hidden = false;
+}
+
 async function cargarUsuarios() {
+  if (yo?.puedeAdministrar) cargarConfiguracion().catch(() => { $('#caja-configuracion').hidden = true; });
   if (!yo?.esDueno) return;
   const { usuarios } = await api('/usuarios');
-  $('#lista-usuarios').replaceChildren(...usuarios.map((u) =>
-    linea(`${u.nombre} · ${u.email}`, `${u.rol}${u.activo ? '' : ' · desactivado'}${u.dosPasos ? '' : ' · falta activar'}`)));
+  $('#lista-usuarios').replaceChildren(...usuarios.map((u) => {
+    const li = linea(`${u.nombre} · ${u.email}`, `${u.rol}${u.activo ? '' : ' · desactivado'}${u.pendiente ? ' · invitación pendiente' : ''}`);
+    if (u.pendiente && u.activo) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'enlace', textContent: 'Nuevo enlace' });
+      b.addEventListener('click', async () => {
+        try { mostrarEnlace($('#caja-enlace'), await api(`/usuarios/${u.id}/enlace`, { cuerpo: {} }), u.nombre); } catch (err) { alert(err.message); }
+      });
+      li.append(b);
+    }
+    return li;
+  }));
 }
 
 async function alDarAcceso(e) {
   e.preventDefault();
-  const f = new FormData(e.target);
+  const datos = Object.fromEntries(new FormData(e.target));
   try {
-    const r = await api('/usuarios', { cuerpo: { email: f.get('email'), rol: f.get('rol'), nombre: f.get('nombre'), contrasena: f.get('contrasena') } });
+    const r = await api('/usuarios', { cuerpo: datos });
     e.target.reset();
     if (r.existente) {
+      $('#caja-enlace').hidden = true;
       mensaje('#mensaje-usuario', '✔ Ya tenía cuenta: ahora también tiene acceso a esta empresa.');
     } else {
-      usuarioPorActivar = r.usuarioId;
-      $('#qr-usuario').src = r.qr;
-      $('#clave-usuario').textContent = r.clave;
-      $('#form-activar').hidden = false;
       mensaje('#mensaje-usuario', '');
+      mostrarEnlace($('#caja-enlace'), r, datos.nombre);
     }
     await cargarUsuarios();
   } catch (err) {
@@ -1122,17 +1157,79 @@ async function alDarAcceso(e) {
   }
 }
 
-async function alActivar(e) {
+// ---------- Lista de configuración y usuario SOL ----------
+async function cargarConfiguracion() {
+  const { pasos } = await api('/configuracion');
+  const hechos = pasos.filter((p) => p.listo).length;
+  $('#avance-configuracion').textContent = `(${hechos} de ${pasos.length})`;
+  $('#pasos-configuracion').replaceChildren(...pasos.map((p) => {
+    const li = document.createElement('li');
+    li.className = p.listo ? 'listo' : '';
+    li.append(`${p.listo ? '✔' : '○'} ${p.titulo}`);
+    if (!p.listo) li.append(Object.assign(document.createElement('small'), { textContent: p.ayuda }));
+    return li;
+  }));
+  // Con todo listo, la lista ya no estorba.
+  $('#caja-configuracion').hidden = hechos === pasos.length;
+}
+
+async function alGuardarSol(e) {
   e.preventDefault();
   try {
-    await api(`/usuarios/${usuarioPorActivar}/activar`, { cuerpo: { codigo: new FormData(e.target).get('codigo') } });
+    await api('/sol', { cuerpo: Object.fromEntries(new FormData(e.target)) });
     e.target.reset();
-    $('#form-activar').hidden = true;
-    $('#qr-usuario').removeAttribute('src');
-    mensaje('#mensaje-usuario', '✔ Usuario activado: ya puede entrar al panel.');
-    await cargarUsuarios();
+    mensaje('#mensaje-sol', '✔ Usuario SOL guardado (cifrado). Solo se usa en producción.');
+    await cargarConfiguracion();
   } catch (err) {
-    mensaje('#mensaje-activar', err.message, true);
+    mensaje('#mensaje-sol', err.message, true);
+  }
+}
+
+// ---------- Invitación recibida (#invitacion=…) ----------
+let tokenInvitacion = null;
+const ROLES_TEXTO = { DUENO: 'dueño', ADMIN: 'administrador', VENDEDOR: 'vendedor', CONTADOR: 'contador', SOLO_LECTURA: 'consulta' };
+function revisarInvitacion() {
+  const m = /^#invitacion=([\w-]{20,100})$/.exec(location.hash);
+  if (!m) return false;
+  tokenInvitacion = m[1];
+  history.replaceState(null, '', location.pathname);
+  for (const v of ['#vista-entrar', '#vista-panel', '#vista-recuperar', '#vista-instalar', '#vista-enlace']) $(v).hidden = true;
+  $('#vista-invitacion').hidden = false;
+  api(`/invitacion?token=${encodeURIComponent(tokenInvitacion)}`).then((v) => {
+    $('#saludo-invitacion').textContent = `Hola ${v.nombre}: te invitaron a ${v.empresa} como ${ROLES_TEXTO[v.rol] || v.rol}.`;
+    $('#form-invitacion').email.value = v.email;
+  }).catch((err) => {
+    $('#saludo-invitacion').textContent = err.message;
+    $('#form-invitacion').hidden = true;
+  });
+  return true;
+}
+
+async function alAceptarInvitacion(e) {
+  e.preventDefault();
+  $('#error-invitacion').textContent = '';
+  try {
+    const r = await api('/invitacion', { cuerpo: { token: tokenInvitacion, contrasena: new FormData(e.target).get('contrasena') } });
+    $('#qr-invitacion').src = r.qr;
+    $('#clave-invitacion').textContent = r.clave;
+    $('#abrir-app-invitacion').href = r.url;
+    e.target.hidden = true;
+    $('#form-invitacion-codigo').hidden = false;
+  } catch (err) {
+    $('#error-invitacion').textContent = err.message;
+  }
+}
+
+async function alActivarInvitacion(e) {
+  e.preventDefault();
+  $('#error-invitacion-codigo').textContent = '';
+  try {
+    const r = await api('/invitacion/activar', { cuerpo: { token: tokenInvitacion, codigo: new FormData(e.target).get('codigo') } });
+    tokenInvitacion = null;
+    $('#vista-invitacion').hidden = true;
+    mostrarCodigos(r.codigosRespaldo, r.email);
+  } catch (err) {
+    $('#error-invitacion-codigo').textContent = err.message;
   }
 }
 
@@ -1208,7 +1305,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('#archivo-logo').addEventListener('change', subirLogo);
   $('#form-usuario').addEventListener('submit', alDarAcceso);
-  $('#form-activar').addEventListener('submit', alActivar);
+  $('#form-sol').addEventListener('submit', alGuardarSol);
+  $('#form-invitacion').addEventListener('submit', alAceptarInvitacion);
+  $('#form-invitacion-codigo').addEventListener('submit', alActivarInvitacion);
   $('#form-certificado').addEventListener('submit', alCargarCertificado);
   $('#form-empresa').addEventListener('submit', alCrearEmpresa);
   for (const b of document.querySelectorAll('#pestanas button')) b.addEventListener('click', () => abrirPestana(b.dataset.pestana));
@@ -1267,7 +1366,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await cargarPanel();
   });
   agregarItem();
-  if (!revisarEnlaceDelCorreo()) cargarPanel().catch(mostrarEntrar);
+  if (!revisarEnlaceDelCorreo() && !revisarInvitacion()) cargarPanel().catch(mostrarEntrar);
   // El enlace pegado en una pestaña donde el panel ya estaba abierto no recarga la página.
-  window.addEventListener('hashchange', revisarEnlaceDelCorreo);
+  window.addEventListener('hashchange', () => revisarEnlaceDelCorreo() || revisarInvitacion());
 });

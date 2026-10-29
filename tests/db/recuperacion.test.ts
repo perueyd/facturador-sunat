@@ -14,12 +14,12 @@ import { crearApp } from '../../src/api/app.js';
 import { crearLlaveApi } from '../../src/api/llaves.js';
 import type { Correo } from '../../src/avisos/avisos.js';
 import type { Db } from '../../src/db/conexion.js';
-import { activarTotp, asignarEmpresa, crearUsuario, type Rol } from '../../src/panel/usuarios.js';
+import { asignarEmpresa, crearUsuario, type Rol } from '../../src/panel/usuarios.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
 import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
 import { ClienteSunatSoap } from '../../src/sunat/cliente.js';
 import { RUC_CLIENTE, RUC_EMPRESA } from '../ayudantes.js';
-import { URL_PRUEBAS, crearEmpresa, prepararBase } from './base-prueba.js';
+import { URL_PRUEBAS, activarSegundoPaso, crearEmpresa, prepararBase } from './base-prueba.js';
 
 const CONTRASENA = 'clave del dueño 2026';
 
@@ -70,8 +70,7 @@ describe.skipIf(!URL_PRUEBAS)('recuperar el acceso', () => {
     const email = `u${++n}@prueba.pe`;
     const { usuarioId, secreto } = await crearUsuario(db, { email, nombre: 'Prueba', contrasena: CONTRASENA, llaveMaestra });
     await asignarEmpresa(db, usuarioId, empresaId, rol);
-    // Con el paso anterior: así el actual y el siguiente quedan libres para la prueba.
-    expect(await activarTotp(db, usuarioId, codigoTotp(secreto, pasoActual() - 1), llaveMaestra)).toBe(true);
+    await activarSegundoPaso(db, usuarioId, secreto, llaveMaestra);
     return { usuarioId, email, secreto };
   }
   const entrar = (email: string, codigo: string, contrasena = CONTRASENA) =>
