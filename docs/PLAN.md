@@ -641,6 +641,9 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
 - **Cierre de caja diario** (misma pestaña): por cada cuenta, lo que debería haber según los cobros
   (lo calcula el facturador) contra lo contado; guarda la diferencia, quién cerró y una nota. No se
   cambia ni se borra: si se contó mal, se cierra de nuevo y vale el último. Historial de 30 días.
+- **Venta rápida** (pestaña Vender): botones con lo más vendido en los últimos 60 días (sale de los
+  comprobantes, funciona sin catálogo). Un toque agrega el producto; si no se escribió documento, la
+  boleta va sin documento (el facturador exige el DNI si se pasa el límite vigente).
 - **Clientes frecuentes y WhatsApp** (pestaña Cobrar): los que más compran en el último año (veces,
   total, última compra, lo que deben). Se guarda su celular (validado, con código de país) y se abre
   WhatsApp con el mensaje ya escrito: recordar un cobro o saludar. Nunca se envía solo: la persona lo
