@@ -77,46 +77,64 @@ export interface FilaCaja {
   titular: string | null;
   deLaEmpresa: boolean;
   cobros: number;
+  /** Lo que entró (cobros). */
   monto: string;
+  /** Lo que salió (gastos no anulados). */
+  gastos: string;
+  /** Lo que debería quedar: entró − salió. */
+  neto: string;
 }
 
 export interface Caja {
   desde: string;
   hasta: string;
   cuentas: FilaCaja[];
-  totales: { empresa: string; terceros: string; total: string; cobros: number };
+  totales: { empresa: string; terceros: string; total: string; cobros: number; gastos: string; neto: string };
   /** Lo vendido en el período (boletas y facturas, menos notas de crédito), para comparar con lo cobrado. */
   vendido: string;
 }
 
-/** Caja de un período (fechas AAAA-MM-DD, ambas incluidas). */
+/** Caja de un período (fechas AAAA-MM-DD, ambas incluidas): por cuenta, lo que entró, lo que salió y lo que queda. */
 export async function caja(db: Db, empresaId: string, desde: string, hasta: string): Promise<Caja> {
   const r = await db.query(
-    `SELECT k.id AS cuenta_id, coalesce(k.nombre, 'Sin cuenta: ' || initcap(p.medio::text)) AS nombre, p.medio::text AS medio,
-            k.titular, coalesce(k.de_la_empresa, true) AS de_la_empresa, count(*)::int AS cobros, sum(p.monto)::text AS monto
-       FROM pagos p LEFT JOIN cuentas_cobro k ON k.id = p.cuenta_id
-      WHERE p.empresa_id = $1 AND p.anulado_en IS NULL AND p.fecha BETWEEN $2::date AND $3::date
-      GROUP BY k.id, p.medio ORDER BY sum(p.monto) DESC`,
+    `WITH mov AS (
+       SELECT cuenta_id, medio, monto AS entra, 0::numeric AS sale, 1 AS es_cobro FROM pagos
+        WHERE empresa_id = $1 AND anulado_en IS NULL AND fecha BETWEEN $2::date AND $3::date
+       UNION ALL
+       SELECT cuenta_id, medio, 0, monto, 0 FROM gastos
+        WHERE empresa_id = $1 AND anulado_en IS NULL AND fecha BETWEEN $2::date AND $3::date)
+     SELECT k.id AS cuenta_id, coalesce(k.nombre, 'Sin cuenta: ' || initcap(m.medio::text)) AS nombre, m.medio::text AS medio,
+            k.titular, coalesce(k.de_la_empresa, true) AS de_la_empresa, sum(m.es_cobro)::int AS cobros,
+            sum(m.entra)::text AS monto, sum(m.sale)::text AS gastos
+       FROM mov m LEFT JOIN cuentas_cobro k ON k.id = m.cuenta_id
+      GROUP BY k.id, m.medio ORDER BY sum(m.entra) DESC, sum(m.sale) DESC`,
     [empresaId, desde, hasta],
   );
   let empresa = dec('0');
   let terceros = dec('0');
+  let gastos = dec('0');
   let cobros = 0;
   const cuentas = r.rows.map((f): FilaCaja => {
     const monto = dec(f.monto);
+    const sale = dec(f.gastos);
     if (f.de_la_empresa) empresa = empresa.plus(monto);
     else terceros = terceros.plus(monto);
+    gastos = gastos.plus(sale);
     cobros += f.cobros as number;
-    return { cuentaId: f.cuenta_id, nombre: f.nombre, medio: f.medio, titular: f.titular, deLaEmpresa: f.de_la_empresa, cobros: f.cobros, monto: monto.toFixed(2) };
+    return {
+      cuentaId: f.cuenta_id, nombre: f.nombre, medio: f.medio, titular: f.titular, deLaEmpresa: f.de_la_empresa, cobros: f.cobros,
+      monto: monto.toFixed(2), gastos: sale.toFixed(2), neto: monto.minus(sale).toFixed(2),
+    };
   });
   const v = (await db.query(
     `SELECT coalesce(sum(CASE WHEN tipo_comprobante = '07' THEN -importe_total ELSE importe_total END), 0)::text AS total
        FROM comprobantes WHERE empresa_id = $1 AND estado NOT IN ('RECHAZADO', 'ANULADO') AND fecha_emision BETWEEN $2::date AND $3::date`,
     [empresaId, desde, hasta],
   )).rows[0];
+  const total = empresa.plus(terceros);
   return {
     desde, hasta, cuentas,
-    totales: { empresa: empresa.toFixed(2), terceros: terceros.toFixed(2), total: empresa.plus(terceros).toFixed(2), cobros },
+    totales: { empresa: empresa.toFixed(2), terceros: terceros.toFixed(2), total: total.toFixed(2), cobros, gastos: gastos.toFixed(2), neto: total.minus(gastos).toFixed(2) },
     vendido: dec(v.total).toFixed(2),
   };
 }
@@ -145,13 +163,13 @@ export interface Cierre {
 const claveDe = (cuentaId: string | null, medio: string) => cuentaId ?? `SIN:${medio}`;
 
 /**
- * Lo que debería haber en cada cuenta al final del día según los cobros registrados.
+ * Lo que debería haber en cada cuenta al final del día: cobros menos gastos registrados.
  * Incluye las cuentas activas sin cobros (ej. el cajón de efectivo con S/ 0), porque
  * también se cuentan: un faltante o sobrante ahí es igual de importante.
  */
 export async function lineasParaCerrar(db: Db, empresaId: string, fecha: string): Promise<LineaCierre[]> {
   const c = await caja(db, empresaId, fecha, fecha);
-  const lineas: LineaCierre[] = c.cuentas.map((x) => ({ clave: claveDe(x.cuentaId, x.medio), cuentaId: x.cuentaId, medio: x.medio, nombre: x.nombre, esperado: x.monto }));
+  const lineas: LineaCierre[] = c.cuentas.map((x) => ({ clave: claveDe(x.cuentaId, x.medio), cuentaId: x.cuentaId, medio: x.medio, nombre: x.nombre, esperado: x.neto }));
   for (const k of await listarCuentas(db, empresaId)) {
     if (k.activa && !lineas.some((l) => l.cuentaId === k.id)) lineas.push({ clave: k.id, cuentaId: k.id, medio: k.medio, nombre: k.nombre, esperado: '0.00' });
   }

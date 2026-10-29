@@ -5,6 +5,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { caja, cerrarCaja, cierresDeCaja, guardarCuenta, lineasParaCerrar, listarCuentas } from '../../src/cobros/caja.js';
+import { anularGasto, gastosDelPeriodo, registrarGasto } from '../../src/cobros/gastos.js';
 import { registrarPago } from '../../src/cobros/pagos.js';
 import { emitirComprobante } from '../../src/comprobantes/emitir.js';
 import type { Db } from '../../src/db/conexion.js';
@@ -52,11 +53,11 @@ describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
 
     const c = await caja(db, f.empresaId, hoy, hoy);
     expect(c.cuentas).toEqual([
-      { cuentaId: yapeEmpresa, nombre: 'Yape de la empresa', medio: 'YAPE', titular: null, deLaEmpresa: true, cobros: 2, monto: '150.00' },
-      { cuentaId: yapeMaria, nombre: 'Yape de María', medio: 'YAPE', titular: 'María Quispe', deLaEmpresa: false, cobros: 1, monto: '40.00' },
-      { cuentaId: null, nombre: 'Sin cuenta: Efectivo', medio: 'EFECTIVO', titular: null, deLaEmpresa: true, cobros: 1, monto: '25.50' },
+      { cuentaId: yapeEmpresa, nombre: 'Yape de la empresa', medio: 'YAPE', titular: null, deLaEmpresa: true, cobros: 2, monto: '150.00', gastos: '0.00', neto: '150.00' },
+      { cuentaId: yapeMaria, nombre: 'Yape de María', medio: 'YAPE', titular: 'María Quispe', deLaEmpresa: false, cobros: 1, monto: '40.00', gastos: '0.00', neto: '40.00' },
+      { cuentaId: null, nombre: 'Sin cuenta: Efectivo', medio: 'EFECTIVO', titular: null, deLaEmpresa: true, cobros: 1, monto: '25.50', gastos: '0.00', neto: '25.50' },
     ]);
-    expect(c.totales).toEqual({ empresa: '175.50', terceros: '40.00', total: '215.50', cobros: 4 });
+    expect(c.totales).toEqual({ empresa: '175.50', terceros: '40.00', total: '215.50', cobros: 4, gastos: '0.00', neto: '215.50' });
     expect(c.vendido).toBe('375.50');
     // Otro día: vacío.
     expect((await caja(db, f.empresaId, '2020-01-01', '2020-01-31')).totales.total).toBe('0.00');
@@ -95,5 +96,37 @@ describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
     // Un cierre no se cambia ni se borra.
     await expect(db.query(`UPDATE cierre_caja_lineas SET contado = 25.50 WHERE cierre_id = $1`, [primero.id])).rejects.toThrow();
     await expect(db.query(`DELETE FROM cierres_caja WHERE id = $1`, [primero.id])).rejects.toThrow();
+  });
+
+  it('gastos: se restan de la cuenta de donde salió el dinero y el cierre espera cobros − gastos', async () => {
+    const otroDia = '2020-03-02';
+    await expect(registrarGasto(db, f.empresaId, { fecha: hoy, monto: '0', categoria: 'TRANSPORTE', descripcion: 'x', medio: 'EFECTIVO' }, usuarioId, hoy)).rejects.toThrow(/monto/);
+    await expect(registrarGasto(db, f.empresaId, { fecha: '2999-01-01', monto: '5', categoria: 'TRANSPORTE', descripcion: 'x', medio: 'EFECTIVO' }, usuarioId, hoy)).rejects.toThrow(/fecha/);
+    await expect(registrarGasto(db, f.empresaId, { fecha: hoy, monto: '5', categoria: 'CASINO', descripcion: 'x', medio: 'EFECTIVO' }, usuarioId, hoy)).rejects.toThrow(/categoría/);
+    const yape = (await listarCuentas(db, f.empresaId)).find((k) => k.medio === 'YAPE' && k.activa && k.predeterminada)!;
+    await expect(registrarGasto(db, f.empresaId, { fecha: hoy, monto: '5', categoria: 'OTROS', descripcion: 'x', medio: 'EFECTIVO', cuentaId: yape.id }, usuarioId, hoy)).rejects.toThrow(/es de YAPE/);
+
+    // Del efectivo (sin cuenta) salieron 10.50 en pasajes; de un día sin cobros salieron 30.
+    const pasaje = await registrarGasto(db, f.empresaId, { fecha: hoy, monto: '10.50', categoria: 'TRANSPORTE', descripcion: 'Pasaje a Gamarra', medio: 'EFECTIVO' }, usuarioId, hoy);
+    await registrarGasto(db, f.empresaId, { fecha: otroDia, monto: '30', categoria: 'SERVICIOS', descripcion: 'Luz', medio: 'EFECTIVO' }, usuarioId, hoy);
+    const c = await caja(db, f.empresaId, hoy, hoy);
+    expect(c.cuentas.find((x) => x.medio === 'EFECTIVO' && !x.cuentaId)).toMatchObject({ monto: '25.50', gastos: '10.50', neto: '15.00' });
+    expect(c.totales).toMatchObject({ total: '215.50', gastos: '10.50', neto: '205.00' });
+    expect((await lineasParaCerrar(db, f.empresaId, hoy)).find((l) => l.clave === 'SIN:EFECTIVO')?.esperado).toBe('15.00');
+    // Un día solo con gastos también sale en la caja (en negativo: hubo que poner plata).
+    expect((await caja(db, f.empresaId, otroDia, otroDia)).cuentas).toEqual([expect.objectContaining({ monto: '0.00', gastos: '30.00', neto: '-30.00', cobros: 0 })]);
+
+    // Anular: pide motivo, una sola vez, y deja de restar. No se borra ni se cambia.
+    await expect(anularGasto(db, f.empresaId, pasaje, '', usuarioId)).rejects.toThrow(/por qué/);
+    expect(await anularGasto(db, f.empresaId, pasaje, 'Lo pagó el cliente', usuarioId)).toBe(true);
+    expect(await anularGasto(db, f.empresaId, pasaje, 'otra vez', usuarioId)).toBe(false);
+    expect((await caja(db, f.empresaId, hoy, hoy)).totales.gastos).toBe('0.00');
+    await expect(db.query(`DELETE FROM gastos WHERE id = $1`, [pasaje])).rejects.toThrow(/no se borra/);
+    await expect(db.query(`UPDATE gastos SET monto = 1 WHERE id = $1`, [pasaje])).rejects.toThrow(/no se modifica/);
+
+    const p = await gastosDelPeriodo(db, f.empresaId, '2020-01-01', hoy);
+    expect(p.total).toBe('30.00');
+    expect(p.porCategoria).toEqual([{ categoria: 'SERVICIOS', nombre: 'Luz, agua, internet', monto: '30.00', ancho: 100 }]);
+    expect(p.gastos.find((g) => g.id === pasaje)?.anulado).toMatchObject({ motivo: 'Lo pagó el cliente', por: 'Caja' });
   });
 });

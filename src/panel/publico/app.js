@@ -1197,6 +1197,7 @@ async function cargarCuentas() {
   cuentas = (await api('/cuentas')).cuentas;
   llenarMedios($('#form-emitir').medio, 'Aún no pagó');
   llenarMedios($('#form-cobro').medio);
+  llenarMedios($('#form-gasto').medio);
   if (!yo?.puedeAdministrar) return;
   $('#lista-cuentas').replaceChildren(...(cuentas.length ? cuentas.map((c) => {
     const li = linea(`${c.nombre}${c.titular ? ` · ${c.titular}` : ''}`,
@@ -1240,20 +1241,61 @@ function rangoCaja(periodo) {
   return { desde: hoy, hasta: hoy };
 }
 
+let periodoCaja = 'hoy';
 async function cargarCaja(periodo = 'hoy') {
+  periodoCaja = periodo;
   for (const b of document.querySelectorAll('#periodo-caja button')) b.classList.toggle('activa', b.dataset.periodo === periodo);
   const { desde, hasta } = rangoCaja(periodo);
   const c = await api(`/caja?desde=${desde}&hasta=${hasta}`);
   $('#kpis-caja').replaceChildren(
     kpi('verde', 'Total cobrado', soles(c.totales.total), `${c.totales.cobros} cobro(s)`),
+    kpi(c.totales.gastos !== '0.00' ? 'rosa' : 'gris', 'Gastos', soles(c.totales.gastos), `queda ${soles(c.totales.neto)}`),
     kpi('azul', 'Cuentas de la empresa', soles(c.totales.empresa), 'lo que entró a la empresa'),
     kpi(c.totales.terceros !== '0.00' ? 'ambar' : 'gris', 'Cuentas de otras personas', soles(c.totales.terceros), 'por rendir a la empresa'),
     kpi('morado', 'Vendido', soles(c.vendido), 'boletas y facturas del período'),
   );
   $('#lista-caja').replaceChildren(...(c.cuentas.length
-    ? c.cuentas.map((x) => linea(`${x.nombre}${x.titular ? ` · ${x.titular}` : ''}${x.deLaEmpresa ? '' : ' (otra persona)'}`, `${soles(x.monto)} · ${x.cobros} cobro(s)`))
+    ? c.cuentas.map((x) => linea(`${x.nombre}${x.titular ? ` · ${x.titular}` : ''}${x.deLaEmpresa ? '' : ' (otra persona)'}`,
+      x.gastos === '0.00' ? `${soles(x.monto)} · ${x.cobros} cobro(s)` : `entró ${soles(x.monto)} · salió ${soles(x.gastos)} · queda ${soles(x.neto)}`))
     : [linea('Sin cobros en este período.', '')]));
   $('#nota-caja').hidden = c.totales.terceros === '0.00';
+  await cargarGastos(desde, hasta);
+}
+
+// ---------- Gastos ----------
+async function cargarGastos(desde, hasta) {
+  const g = await api(`/gastos?desde=${desde}&hasta=${hasta}`);
+  $('#total-gastos').textContent = g.total === '0.00' ? '' : `· ${soles(g.total)}`;
+  if (g.porCategoria.length) barras('#gastos-categorias', g.porCategoria.map((x) => ({ nombre: x.nombre, detalle: soles(x.monto), ancho: x.ancho })), '#e0457b');
+  else $('#gastos-categorias').replaceChildren();
+  $('#lista-gastos').replaceChildren(...(g.gastos.length ? g.gastos.map((x) => {
+    const li = linea(`${fechaPeru(x.fecha)} · ${x.descripcion} · ${x.cuenta ?? MEDIO_TEXTO[x.medio] ?? x.medio}${x.documento ? ` · ${x.documento}` : ''} · ${x.registradoPor}`,
+      x.anulado ? `anulado: ${x.anulado.motivo}` : soles(x.monto), x.anulado ? 'apagado' : '');
+    if (!x.anulado && yo?.puedeAdministrar) {
+      li.addEventListener('click', async () => {
+        const motivo = prompt(`¿Anular el gasto "${x.descripcion}" de ${soles(x.monto)}? Escribe el motivo:`);
+        if (!motivo) return;
+        try { await api(`/gastos/${x.id}/anular`, { cuerpo: { motivo } }); await cargarCaja(periodoCaja); } catch (err) { alert(err.message); }
+      });
+    }
+    return li;
+  }) : [linea('Sin gastos en este período.', '')]));
+}
+
+async function alRegistrarGasto(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    await api('/gastos', { cuerpo: {
+      ...leerMedio(f.get('medio')), monto: String(f.get('monto')).trim().replace(',', '.'), categoria: f.get('categoria'),
+      descripcion: f.get('descripcion'), fecha: f.get('fecha') || hoyLima(), documento: f.get('documento'),
+    } });
+    e.target.reset();
+    mensaje('#mensaje-gasto', '✔ Gasto registrado.');
+    if (yo?.verCaja) await cargarCaja(periodoCaja);
+  } catch (err) {
+    mensaje('#mensaje-gasto', err.message, true);
+  }
 }
 
 // ---------- Cierre de caja ----------
@@ -1331,6 +1373,7 @@ async function cargarPorCobrar() {
   $('#caja-dinero').hidden = !yo?.verCaja;
   if (yo?.verCaja) cargarCaja().catch(() => { $('#caja-dinero').hidden = true; });
   if (yo?.verCaja) cargarCierre(hoyLima()).catch(() => { $('#caja-cierre').hidden = true; });
+  $('#caja-registrar-gasto').hidden = !yo?.puedeEmitir;
   cargarFrecuentes().catch(() => undefined);
   const { porCobrar } = await api('/por-cobrar');
   $('#lista-cobrar').replaceChildren(...(porCobrar.length ? porCobrar.map((x) => {
@@ -1909,6 +1952,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-cuenta').addEventListener('submit', alGuardarCuenta);
   for (const b of document.querySelectorAll('#periodo-caja button')) b.addEventListener('click', () => cargarCaja(b.dataset.periodo).catch((err) => alert(err.message)));
   $('#form-cierre').addEventListener('submit', alCerrarCaja);
+  $('#form-gasto').addEventListener('submit', alRegistrarGasto);
   $('#boton-cotizar').addEventListener('click', alCotizar);
   $('#cierre-fecha').addEventListener('change', (e) => cargarCierre(e.target.value).catch((err) => mensaje('#mensaje-cierre', err.message, true)));
   $('#form-invitacion').addEventListener('submit', alAceptarInvitacion);

@@ -300,10 +300,15 @@
           <ul id="lista-caja" class="lista"></ul>
           <p class="nota" id="nota-caja" hidden>El dinero que entra a cuentas de otras personas también es venta de la empresa:
             lleva su boleta o factura y se declara igual. Aquí solo se ve dónde quedó.</p>
+          <details class="ajustes" id="caja-gastos">
+            <summary>Gastos del período <small id="total-gastos"></small></summary>
+            <div id="gastos-categorias" class="barras"></div>
+            <ul id="lista-gastos" class="lista"></ul>
+          </details>
           <details class="ajustes" id="caja-cierre">
             <summary>Cerrar la caja del día</summary>
             <p class="nota">Cuenta lo que hay en cada cuenta (el efectivo del cajón, el Yape…) y escríbelo.
-              El facturador lo compara con los cobros registrados y guarda la diferencia con tu nombre.</p>
+              El facturador lo compara con los cobros menos los gastos registrados y guarda la diferencia con tu nombre.</p>
             <label>Día <input type="date" id="cierre-fecha"></label>
             <p id="cierre-estado"></p>
             <form id="form-cierre">
@@ -317,6 +322,32 @@
             <ul id="lista-cierres" class="lista"></ul>
           </details>
         </section>
+        <details class="ajustes" id="caja-registrar-gasto" hidden>
+          <summary>💸 Registrar un gasto (dinero que sale)</summary>
+          <p class="nota">Pasajes, materiales, luz, pago a un ayudante… Así el cierre de caja cuadra.
+            Las compras de mercadería con factura regístralas también en Compras (IGV y stock).</p>
+          <form id="form-gasto">
+            <div class="fila">
+              <label>Monto <input name="monto" inputmode="decimal" required placeholder="25.50"></label>
+              <label>Salió de <select name="medio"></select></label>
+            </div>
+            <label>Categoría
+              <select name="categoria">
+                <option value="TRANSPORTE">Transporte y delivery</option><option value="INSUMOS">Insumos y materiales</option>
+                <option value="MERCADERIA">Mercadería</option><option value="SERVICIOS">Luz, agua, internet</option>
+                <option value="ALQUILER">Alquiler</option><option value="SUELDOS">Sueldos y pagos a personal</option>
+                <option value="MANTENIMIENTO">Mantenimiento y reparaciones</option><option value="PUBLICIDAD">Publicidad</option>
+                <option value="IMPUESTOS">Impuestos y trámites</option><option value="OTROS">Otros</option>
+              </select></label>
+            <label>¿En qué se gastó? <input name="descripcion" maxlength="200" required placeholder="ej. Pasaje a Gamarra"></label>
+            <div class="fila">
+              <label>Fecha <input name="fecha" type="date"></label>
+              <label>Comprobante del proveedor (opcional) <input name="documento" maxlength="60" placeholder="ej. F001-123"></label>
+            </div>
+            <button type="submit">Registrar gasto</button>
+            <p id="mensaje-gasto" role="status"></p>
+          </form>
+        </details>
         <h1>Por cobrar</h1>
         <p class="nota">Toca una venta para registrar lo que te pagaron.</p>
         <ul id="lista-cobrar" class="lista"></ul>

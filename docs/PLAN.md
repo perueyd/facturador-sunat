@@ -641,6 +641,10 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
 - **Cierre de caja diario** (misma pestaña): por cada cuenta, lo que debería haber según los cobros
   (lo calcula el facturador) contra lo contado; guarda la diferencia, quién cerró y una nota. No se
   cambia ni se borra: si se contó mal, se cierra de nuevo y vale el último. Historial de 30 días.
+- **Gastos y caja chica** (pestaña Cobrar): el dinero que sale (categoría, de qué cuenta salió, comprobante
+  del proveedor opcional). La caja muestra por cuenta entró / salió / queda y el cierre espera cobros − gastos.
+  Quien vende puede anotar un gasto; verlos y anularlos (con motivo, sin borrar) es del dueño o administrador.
+  Las compras de mercadería con factura siguen en Compras (IGV y stock).
 - **Cotizaciones / proformas** (pestaña Vender): el mismo formulario se guarda como cotización (COT-000001,
   numeración propia, válida N días, nota). PDF con logo que dice "NO ES COMPROBANTE DE PAGO", enlace firmado
   para mandarlo por WhatsApp (`/q/…`), y "Vender" la carga en el formulario: al emitir la boleta o factura
