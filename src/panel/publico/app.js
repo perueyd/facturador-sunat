@@ -127,6 +127,8 @@ async function cargarPanel() {
   $('#caja-usuarios').hidden = !yo.esDueno;
   $('#caja-certificado').hidden = !yo.esDueno;
   $('#caja-empresa-nueva').hidden = !yo.adminPlataforma;
+  $('#boton-plataforma').hidden = !yo.adminPlataforma;
+  mostrarPlan(yo.plan);
   // Sin códigos de respaldo, perder el celular obliga a usar la llave de la tienda: se avisa.
   $('#estado-respaldo').textContent = yo.codigosRespaldo
     ? `Te quedan ${yo.codigosRespaldo} códigos sin usar.`
@@ -653,6 +655,7 @@ async function abrirPestana(nombre) {
     if (nombre === 'compras') await cargarCompras();
     if (nombre === 'stock') await cargarStock();
     if (nombre === 'mas') await cargarUsuarios();
+    if (nombre === 'plataforma') await cargarPlataforma();
   } catch (err) { alert(err.message); }
 }
 
@@ -665,6 +668,147 @@ function linea(texto, derecha, clase = '') {
   b.textContent = derecha;
   li.append(a, b);
   return li;
+}
+
+// ---------- Plan del cliente ----------
+const ESTADO_PLAN = {
+  PRUEBA: 'En prueba', ACTIVA: 'Activo', POR_VENCER: 'Por vencer', EN_GRACIA: 'Vencido (días de gracia)',
+  VENCIDA: 'Vencido', SUSPENDIDA: 'Suspendido', CANCELADA: 'Cancelado', PROPIA: 'Propia',
+};
+function mostrarPlan(plan) {
+  // Aviso arriba: lo ve cualquiera que no pueda emitir; el "por vencer", el dueño.
+  const aviso = $('#aviso-plan');
+  if (plan && !plan.puedeEmitir) {
+    aviso.textContent = `⚠️ ${plan.motivo}`;
+  } else if (plan?.estado === 'EN_GRACIA') {
+    aviso.textContent = `⚠️ Tu plan venció el ${plan.venceEn}. Aún puedes emitir por unos días: renuévalo para no quedarte sin boletas.`;
+  } else if (plan?.estado === 'POR_VENCER' || (plan?.estado === 'PRUEBA' && plan.dias <= 3)) {
+    aviso.textContent = `Tu ${plan.estado === 'PRUEBA' ? 'prueba' : 'plan'} vence el ${plan.venceEn} (${plan.dias} día(s)).`;
+  } else {
+    aviso.textContent = '';
+  }
+  aviso.hidden = !aviso.textContent;
+  $('#caja-plan').hidden = !plan?.plan;
+  if (!plan?.plan) return;
+  $('#detalle-plan').replaceChildren(
+    linea('Plan', `${plan.nombrePlan} · S/ ${plan.precioMensual} al mes`),
+    linea('Estado', ESTADO_PLAN[plan.estado] || plan.estado),
+    linea('Pagado hasta', plan.venceEn),
+    linea('Comprobantes este mes', plan.limiteMes ? `${plan.usoMes} de ${plan.limiteMes}` : `${plan.usoMes} (sin límite)`),
+    linea('Usuarios', plan.limiteUsuarios ? `${plan.usuarios} de ${plan.limiteUsuarios}` : `${plan.usuarios} (sin límite)`),
+  );
+}
+
+// ---------- Plataforma (solo su administrador) ----------
+function formulario(campos, boton, alEnviar) {
+  const f = document.createElement('form');
+  for (const [etiqueta, nodo] of campos) {
+    const l = document.createElement('label');
+    l.append(etiqueta, nodo);
+    f.append(l);
+  }
+  const b = Object.assign(document.createElement('button'), { type: 'submit', className: 'secundario', textContent: boton });
+  const m = Object.assign(document.createElement('p'), { role: 'status' });
+  f.append(b, m);
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      m.textContent = await alEnviar(Object.fromEntries(new FormData(f)));
+      m.className = '';
+    } catch (err) {
+      m.textContent = err.message;
+      m.className = 'error';
+    }
+  });
+  return f;
+}
+const entrada = (name, atributos = {}) => Object.assign(document.createElement('input'), { name, ...atributos });
+function selector(name, opciones) {
+  const s = document.createElement('select');
+  s.name = name;
+  for (const [valor, texto] of opciones) s.append(new Option(texto, valor));
+  return s;
+}
+
+async function cargarPlataforma() {
+  const [p, salud] = await Promise.all([api('/plataforma'), api('/plataforma/salud')]);
+  const r = p.resumen;
+  $('#resumen-plataforma').replaceChildren(
+    kpi('verde', 'Clientes activos', String(r.activos), `${r.porVencer} por vencer`),
+    kpi('azul', 'En prueba', String(r.prueba), 'prueba de 14 días'),
+    kpi(r.vencidos ? 'rosa' : 'gris', 'Vencidos', String(r.vencidos), 'cobrar o suspender'),
+    kpi('morado', 'Ingreso mensual', soles(r.ingresoMensual), 'estimado (planes activos)'),
+  );
+  const opcionesPlan = p.planes.filter((x) => x.activo).map((x) => [x.codigo, `${x.nombre} (S/ ${x.mensual})`]);
+  $('#lista-clientes').replaceChildren(...p.clientes.map((c) => {
+    const s = c.suscripcion;
+    const li = document.createElement('li');
+    li.className = 'cliente';
+    const d = document.createElement('details');
+    const resumen = document.createElement('summary');
+    const nombre = document.createElement('strong');
+    nombre.textContent = `${c.razonSocial} · ${c.ruc}`;
+    const estado = Object.assign(document.createElement('span'), { className: `estado-plan ${s ? s.estado : 'PROPIA'}`, textContent: s ? ESTADO_PLAN[s.estado] : 'Propia' });
+    const datos = document.createElement('div');
+    datos.className = 'datos';
+    const partes = [
+      s ? `${s.nombrePlan} · hasta ${s.venceEn} · ${s.usoMes}${s.limiteMes ? `/${s.limiteMes}` : ''} comprobantes este mes` : 'sin plan',
+      c.ambiente === 'PRODUCCION' ? 'PRODUCCIÓN' : 'beta',
+      c.certificadoVence ? `certificado hasta ${c.certificadoVence}` : '⚠️ sin certificado',
+      ...(c.pendientes ? [`${c.pendientes} en cola`] : []),
+      ...(c.rechazados7d ? [`⚠️ ${c.rechazados7d} rechazado(s) en 7 días`] : []),
+    ];
+    datos.textContent = partes.join(' · ');
+    resumen.append(nombre, estado, datos);
+    d.append(resumen);
+    if (c.contacto) d.append(Object.assign(document.createElement('p'), { className: 'nota', textContent: `Contacto: ${c.contacto}` }));
+    if (s) {
+      d.append(formulario([
+        ['Registrar pago ', selector('periodo', [['MENSUAL', 'Mensual'], ['ANUAL', 'Anual']])],
+        ['Plan ', selector('plan', opcionesPlan.map(([v, t]) => [v, t]))],
+        ['Cómo pagó ', entrada('medio', { placeholder: 'Yape, transferencia…', required: true, maxLength: 60 })],
+        ['Monto (vacío = precio del plan) ', entrada('monto', { inputMode: 'decimal', maxLength: 12 })],
+        ['N.º de operación ', entrada('referencia', { maxLength: 120 })],
+      ], 'Registrar pago', async (v) => {
+        const res = await api(`/plataforma/${c.empresaId}/pago`, { cuerpo: v });
+        setTimeout(cargarPlataforma, 1200);
+        return `✔ Pagado S/ ${res.monto}: activo hasta el ${res.hasta}.`;
+      }));
+      d.querySelector('[name=plan]').value = s.plan;
+      d.append(formulario([
+        ['Cambiar a ', selector('estado', [['', '(mismo estado)'], ['ACTIVA', 'Activo'], ['SUSPENDIDA', 'Suspendido'], ['CANCELADA', 'Cancelado']])],
+        ['Plan ', selector('plan', [['', '(mismo plan)'], ...opcionesPlan])],
+        ['Motivo (queda en el historial) ', entrada('motivo', { required: true, maxLength: 300 })],
+      ], 'Guardar cambio', async (v) => {
+        await api(`/plataforma/${c.empresaId}/cambio`, { cuerpo: v });
+        setTimeout(cargarPlataforma, 1200);
+        return '✔ Cambio guardado.';
+      }));
+    }
+    li.append(d);
+    return li;
+  }));
+  $('#lista-planes').replaceChildren(...p.planes.map((x) => {
+    const f = formulario([
+      ['Mensual S/ ', entrada('mensual', { value: x.mensual, inputMode: 'decimal', required: true })],
+      ['Anual S/ ', entrada('anual', { value: x.anual, inputMode: 'decimal', required: true })],
+      ['Comprob./mes ', entrada('comprobantesMes', { value: x.comprobantesMes ?? '', inputMode: 'numeric' })],
+      ['Usuarios ', entrada('usuariosMax', { value: x.usuariosMax ?? '', inputMode: 'numeric' })],
+    ], `Guardar ${x.nombre}`, async (v) => {
+      await api(`/plataforma/planes/${x.codigo}`, { cuerpo: v });
+      return '✔ Guardado.';
+    });
+    f.className = 'plan-fila';
+    f.prepend(Object.assign(document.createElement('b'), { textContent: x.nombre }));
+    return f;
+  }));
+  $('#numeros-salud').textContent = `${salud.ultimas24h} comprobante(s) en 24 h · ${salud.enCola} en cola · base de datos ${salud.baseDatosMb} MB de ${salud.limiteBaseDatosMb} MB`;
+  $('#problemas-salud').replaceChildren(...(salud.problemas.length
+    ? salud.problemas.map((x) => linea(`${x.nivel === 'ROJO' ? '🔴' : '🟡'} ${x.mensaje}`, ''))
+    : [linea('✔ Todo en orden', '')]));
+  $('#errores-salud').replaceChildren(...(salud.errores.length
+    ? salud.errores.map((x) => linea(`${x.mensaje}${x.ruta ? ` (${x.ruta})` : ''}`, x.fecha.slice(0, 16).replace('T', ' ')))
+    : [linea('Sin errores registrados', '')]));
 }
 
 // ---------- Cobrar ----------
@@ -928,6 +1072,7 @@ async function alCargarCertificado(e) {
 async function alCrearEmpresa(e) {
   e.preventDefault();
   const datos = Object.fromEntries(new FormData(e.target));
+  datos.propia = datos.propia === 'on';
   try {
     await api('/empresas', { cuerpo: datos });
     e.target.reset();

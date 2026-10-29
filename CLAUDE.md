@@ -105,3 +105,4 @@ emisión manual (WhatsApp, Instagram, en persona) y, a futuro, otros negocios.
 - `docs/API.md` — API para canales.
 - `docs/PUBLICAR.md` — publicar en Supabase + Render + GitHub Actions.
 - `docs/SEGURIDAD.md` — revisión de seguridad: qué está protegido y qué queda pendiente.
+- `docs/PLATAFORMA.md` — el facturador como servicio: planes, cobro, vigilancia y proyectos pendientes.

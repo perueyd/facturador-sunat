@@ -91,3 +91,19 @@ button.peligro { color: var(--rojo); border-color: #fda29b; }
 .boton-enlace { display: block; padding: 12px 16px; text-align: center; font-weight: 600; color: #fff; background: var(--tinta); border-radius: 8px; text-decoration: none; }
 .casilla { display: flex; gap: 8px; align-items: center; color: var(--tinta); }
 .casilla input { width: auto; margin: 0; }
+
+/* Plataforma: un cliente por tarjeta, con su estado en color. */
+.clientes { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
+.cliente { background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+.cliente summary { cursor: pointer; list-style: none; }
+.cliente summary strong { display: block; }
+.cliente .datos { color: var(--gris); font-size: 13px; }
+.cliente form { margin-top: 8px; border-top: 1px solid var(--borde); padding-top: 6px; }
+.estado-plan { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; color: #fff; background: var(--gris); }
+.estado-plan.ACTIVA { background: var(--verde); }
+.estado-plan.PRUEBA { background: #2f80ed; }
+.estado-plan.POR_VENCER, .estado-plan.EN_GRACIA { background: #d98a10; }
+.estado-plan.VENCIDA, .estado-plan.SUSPENDIDA, .estado-plan.CANCELADA { background: var(--rojo); }
+.estado-plan.PROPIA { background: #5b6472; }
+.plan-fila { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; align-items: end; margin: 8px 0; }
+.plan-fila b { grid-column: 1 / -1; }
