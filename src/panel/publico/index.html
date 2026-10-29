@@ -278,6 +278,18 @@
 
       <div data-vista="stock" hidden>
         <h1>Stock</h1>
+        <!-- Reposición (dueño, administrador, contador): qué pedir, cuándo y cuánto -->
+        <div id="caja-reposicion" hidden>
+          <div id="kpis-inventario" class="kpis"></div>
+          <p class="nota">Se calcula con lo vendido en los últimos 30 días. <strong>Colchón</strong> = stock de seguridad
+            (lo mínimo que quieres tener siempre). Toca un producto para ver su Kardex.</p>
+          <ul id="lista-reposicion" class="clientes"></ul>
+          <details class="ajustes">
+            <summary>Proveedores: tiempo de entrega</summary>
+            <p class="nota">Cuántos días tarda en llegar un pedido. Aparecen al registrar su primera compra.</p>
+            <div id="lista-proveedores"></div>
+          </details>
+        </div>
         <ul id="lista-stock" class="lista"></ul>
         <details class="ajustes" id="caja-producto">
           <summary>Nuevo producto o cambiar precio</summary>
@@ -289,7 +301,11 @@
             <label>Nombre <input name="nombre" maxlength="250" required></label>
             <div class="fila">
               <label>¿Controla stock? <select name="controlaStock"><option value="si">Sí</option><option value="no">No (servicio)</option></select></label>
-              <label>Stock mínimo <input name="stockMinimo" inputmode="decimal"></label>
+              <label>Colchón (stock de seguridad) <input name="stockMinimo" inputmode="decimal"></label>
+            </div>
+            <div class="fila">
+              <label>RUC del proveedor habitual <input name="proveedor" inputmode="numeric" maxlength="11"></label>
+              <label>Días de entrega <small>(si tarda distinto)</small> <input name="diasEntrega" inputmode="numeric" maxlength="3"></label>
             </div>
             <button type="submit" class="secundario">Guardar producto</button>
             <p id="mensaje-producto" role="status"></p>

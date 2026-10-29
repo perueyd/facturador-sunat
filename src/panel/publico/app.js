@@ -922,7 +922,83 @@ async function buscarProveedor(e) {
 }
 
 // ---------- Stock ----------
+const ESTADO_STOCK = { AGOTADO: 'Agotado', PEDIR_YA: 'Pedir ya', PRONTO: 'Pedir pronto', OK: 'Bien', SIN_MOVIMIENTO: 'Sin movimiento' };
+const fechaCorta = (iso) => DIA_MES.format(new Date(`${iso}T00:00:00Z`)).replace('.', '');
+
+async function cargarReposicion() {
+  const r = await api('/reposicion');
+  const x = r.resumen;
+  $('#kpis-inventario').replaceChildren(
+    kpi('morado', 'Valor del inventario', soles(x.valorInventario), 'a costo promedio'),
+    kpi(x.aPedir ? 'rosa' : 'verde', 'Por pedir', String(x.aPedir), x.agotados ? `${x.agotados} agotado(s)` : 'ninguno agotado'),
+    kpi('azul', 'Días de inventario', x.diasDeInventario === null ? '—' : String(x.diasDeInventario), 'lo que dura al ritmo de venta'),
+    kpi(x.sinMovimiento ? 'ambar' : 'gris', 'Sin movimiento', String(x.sinMovimiento), 'más de 60 días (dinero parado)'),
+  );
+  $('#lista-reposicion').replaceChildren(...(r.productos.length ? r.productos.map((p) => {
+    const li = document.createElement('li');
+    li.className = 'cliente';
+    const d = document.createElement('details');
+    const resumen = document.createElement('summary');
+    const nombre = Object.assign(document.createElement('strong'), { textContent: `${p.nombre} · ${p.sku}` });
+    const estado = Object.assign(document.createElement('span'), { className: `estado-plan ${p.estado}`, textContent: ESTADO_STOCK[p.estado] });
+    const datos = document.createElement('div');
+    datos.className = 'datos';
+    const partes = [
+      `Stock ${miles(p.stock)} · colchón ${p.colchon}`,
+      p.estado === 'AGOTADO' ? 'sin stock' : p.diasQueAlcanza === null ? 'sin ventas en 30 días' : `alcanza ${p.diasQueAlcanza} día(s) (hasta el ${fechaCorta(p.seAgota)})`,
+      p.sugerido !== '0' ? `👉 pedir ${p.sugerido}${p.proveedor ? ` a ${p.proveedor}` : ''}` : '',
+      p.diasEntrega === null ? '⚠️ falta el tiempo de entrega' : `llega en ${p.diasEntrega} día(s)`,
+    ];
+    datos.textContent = partes.filter(Boolean).join(' · ');
+    resumen.append(nombre, estado, datos);
+    d.append(resumen);
+    d.addEventListener('toggle', () => { if (d.open && !d.querySelector('.kardex')) verKardex(d, p.sku); });
+    li.append(d);
+    return li;
+  }) : [linea('Aún no tienes productos con control de stock.', '')]));
+  $('#lista-proveedores').replaceChildren(...(r.proveedores.length ? r.proveedores.map((v) => {
+    const f = formulario([[`${v.razonSocial} · días `, entrada('dias', { value: v.diasEntrega ?? '', inputMode: 'numeric', required: true, maxLength: 3 })]],
+      'Guardar', async (val) => {
+        await api('/proveedores/dias', { cuerpo: { ruc: v.ruc, dias: val.dias } });
+        setTimeout(cargarReposicion, 800);
+        return '✔ Guardado.';
+      });
+    return f;
+  }) : [Object.assign(document.createElement('p'), { className: 'vacio', textContent: 'Aún no hay proveedores: registra una compra.' })]));
+}
+
+async function verKardex(contenedor, sku) {
+  const caja = document.createElement('div');
+  caja.className = 'kardex';
+  contenedor.append(caja);
+  try {
+    const k = await api(`/kardex?sku=${encodeURIComponent(sku)}`);
+    const tabla = document.createElement('table');
+    const cab = tabla.createTHead().insertRow();
+    for (const t of ['Fecha', 'Movimiento', 'Documento', 'Entra', 'Sale', 'Saldo', 'Costo prom.', 'Valor']) cab.append(Object.assign(document.createElement('th'), { textContent: t }));
+    const cuerpo = tabla.createTBody();
+    for (const m of k.movimientos) {
+      const fila = cuerpo.insertRow();
+      for (const v of [m.fecha, m.tipo, m.documento || m.detalle || '', m.entrada || '', m.salida || '', m.saldo, m.costoPromedio || '', m.valorSaldo]) fila.insertCell().textContent = v;
+    }
+    const descargar = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'Descargar Kardex (Excel)' });
+    descargar.addEventListener('click', async () => {
+      const res = await api(`/kardex?sku=${encodeURIComponent(sku)}&formato=csv`, { crudo: true });
+      const url = URL.createObjectURL(await res.blob());
+      Object.assign(document.createElement('a'), { href: url, download: `kardex-${sku}.csv` }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    });
+    caja.append(k.movimientos.length ? tabla : Object.assign(document.createElement('p'), { className: 'vacio', textContent: 'Sin movimientos todavía.' }), descargar);
+  } catch (err) {
+    caja.textContent = err.message;
+  }
+}
+
 async function cargarStock() {
+  $('#caja-reposicion').hidden = !yo?.verInventario;
+  if (yo?.verInventario) await cargarReposicion();
+  // Con la reposición a la vista, la lista simple sobra (la sigue viendo el vendedor).
+  $('#lista-stock').hidden = Boolean(yo?.verInventario);
   const { stock } = await api('/stock');
   $('#lista-stock').replaceChildren(...(stock.length ? stock.map((p) =>
     linea(`${p.sku} · ${p.nombre}`, `${p.stock} und.${p.minimo ? ` (mín. ${p.minimo})` : ''}`, p.bajoMinimo ? 'bajo' : ''))
@@ -938,6 +1014,10 @@ async function alGuardarProducto(e) {
       sku: f.get('sku'), nombre: f.get('nombre'), precio: String(f.get('precio')).trim().replace(',', '.'),
       controlaStock: f.get('controlaStock') === 'si', ...(f.get('stockMinimo') ? { stockMinimo: f.get('stockMinimo') } : {}),
     } });
+    // Proveedor habitual y su tiempo de entrega (para saber cuándo pedir).
+    if (f.get('proveedor') || f.get('diasEntrega')) {
+      await api('/productos/proveedor', { cuerpo: { sku: f.get('sku'), ruc: f.get('proveedor'), dias: f.get('diasEntrega') } });
+    }
     msg.className = '';
     msg.textContent = '✔ Producto guardado.';
     e.target.reset();

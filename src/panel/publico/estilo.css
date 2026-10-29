@@ -94,7 +94,8 @@ button.peligro { color: var(--rojo); border-color: #fda29b; }
 
 /* Plataforma: un cliente por tarjeta, con su estado en color. */
 .clientes { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
-.cliente { background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+/* min-width: 0 → una tabla ancha (Kardex) se desliza dentro de la tarjeta, sin empujar la página. */
+.cliente { min-width: 0; background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
 .cliente summary { cursor: pointer; list-style: none; }
 .cliente summary strong { display: block; }
 .cliente .datos { color: var(--gris); font-size: 13px; }
@@ -107,3 +108,13 @@ button.peligro { color: var(--rojo); border-color: #fda29b; }
 .estado-plan.PROPIA { background: #5b6472; }
 .plan-fila { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; align-items: end; margin: 8px 0; }
 .plan-fila b { grid-column: 1 / -1; }
+
+/* Reposición: el estado de cada producto en color; el Kardex como tabla que se desliza. */
+.estado-plan.AGOTADO, .estado-plan.PEDIR_YA { background: var(--rojo); }
+.estado-plan.PRONTO { background: #d98a10; }
+.estado-plan.OK { background: var(--verde); }
+.estado-plan.SIN_MOVIMIENTO { background: #5b6472; }
+.kardex { overflow-x: auto; margin-top: 8px; }
+.kardex table { border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.kardex th, .kardex td { padding: 4px 6px; border-bottom: 1px solid var(--borde); text-align: right; }
+.kardex th:nth-child(-n+3), .kardex td:nth-child(-n+3) { text-align: left; }

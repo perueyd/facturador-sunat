@@ -629,6 +629,11 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   hoy y del mes (contra los mismos días del mes anterior), ticket promedio, clientes y nuevos,
   gráficos de 6 meses (con compras) y 30 días, ventas por canal y lo más vendido. Todo calculado en
   el servidor con decimales exactos; el navegador solo dibuja.
+- **Reposición e inventario** (pestaña Stock; dueño, administrador y contador): colchón (stock de
+  seguridad), tiempo de entrega por proveedor o por producto, venta diaria de los últimos 30 días,
+  días que alcanza, punto de pedido, cantidad sugerida, valor del inventario, días de inventario,
+  productos sin movimiento y **Kardex** valorizado a costo promedio ponderado (descargable a Excel;
+  control interno: el formato oficial del registro de inventario lo revisa el contador).
 - **Cada empresa elige qué funciones usa** (`npm run empresa:modulos`): panel, vencimientos,
   resumen, certificado, cobros, notas, productos, exportar, compras, avisos, estadisticas. Sin "panel", la empresa ni aparece
   en el panel y sigue solo por API.

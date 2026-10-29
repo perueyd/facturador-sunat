@@ -57,7 +57,6 @@ Todo se ve también en el panel → **Plataforma → Salud de la plataforma**.
 |---|---|
 | Invitación por enlace (el cliente crea su contraseña y su 2FA solo) | Siguiente paso |
 | Lista de configuración del cliente (certificado, usuario SOL, prueba en beta, producción) | Siguiente paso |
-| Inventario: stock de seguridad, tiempo de entrega por proveedor, punto de reorden, Kardex | Siguiente paso |
 | Guías de remisión electrónicas (GRE) | Usa otra API de SUNAT (REST con token): hay que leer el manual oficial vigente antes de programar |
 | Autocompletar datos por RUC/DNI (padrón SUNAT) | Necesita acceso a sunat.gob.pe |
 | SIRE (registros de ventas y compras) | Necesita el manual oficial |
