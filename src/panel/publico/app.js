@@ -123,7 +123,12 @@ async function cargarPanel() {
   $('#caja-exportar').hidden = !tiene('exportar');
   for (const b of document.querySelectorAll('#pestanas button')) {
     const modulo = b.dataset.modulo;
-    b.hidden = (modulo && !tiene(modulo)) || (b.dataset.pestana === 'compras' && !yo.puedeComprar);
+    b.dataset.texto ??= b.textContent;
+    // Una sección que el plan no trae se ve con candado: al tocarla se ofrece el plan que la incluye.
+    const bloqueada = yo.bloqueadas.find((x) => x.seccion === modulo);
+    b.dataset.bloqueada = bloqueada ? '1' : '';
+    b.textContent = bloqueada ? `🔒 ${b.dataset.texto}` : b.dataset.texto;
+    b.hidden = !bloqueada && ((modulo && !tiene(modulo)) || (b.dataset.pestana === 'compras' && !yo.puedeComprar));
   }
   $('#caja-producto').hidden = !yo.puedeAdministrar;
   $('#caja-logo').hidden = !yo.puedeAdministrar;
@@ -162,7 +167,19 @@ const fechaLarga = (iso) => FECHA.format(new Date(`${iso}T00:00:00Z`));
 
 async function cargarTablero() {
   const sinEstadisticas = () => { $('#kpis').hidden = true; $('#graficos').hidden = true; };
-  if (yo?.verEstadisticas) cargarEstadisticas().catch(sinEstadisticas); else sinEstadisticas();
+  const estadisticasEnOtroPlan = yo?.bloqueadas?.find((x) => x.seccion === 'estadisticas');
+  if (yo?.verEstadisticas) {
+    cargarEstadisticas().catch(sinEstadisticas);
+  } else if (estadisticasEnOtroPlan && yo.puedeAdministrar) {
+    // Se muestra qué tendría con el plan que las trae (con candado).
+    sinEstadisticas();
+    const k = kpi('gris', '🔒 Estadísticas de ventas', `Plan ${estadisticasEnOtroPlan.plan}`, 'Ventas del mes, gráficos y lo más vendido. Toca para pedirlo.');
+    k.addEventListener('click', () => ofrecerPlan('estadisticas'));
+    $('#kpis').replaceChildren(k);
+    $('#kpis').hidden = false;
+  } else {
+    sinEstadisticas();
+  }
   const t = await api('/tablero');
   const tarjetas = [];
   const v = t.vencimiento;
@@ -654,7 +671,30 @@ async function alEmitir(e) {
 }
 
 // ---------- Pestañas ----------
+const NOMBRE_SECCION = { cobros: 'Cobros y caja', productos: 'Stock e inventario', compras: 'Compras', estadisticas: 'Estadísticas de ventas' };
+function ofrecerPlan(seccion) {
+  const b = yo.bloqueadas.find((x) => x.seccion === seccion);
+  for (const v of document.querySelectorAll('[data-vista]')) v.hidden = v.dataset.vista !== 'mejorar';
+  $('#texto-mejorar').textContent = b
+    ? `"${NOMBRE_SECCION[seccion]}" viene en el plan ${b.plan} (S/ ${b.precio} al mes).`
+    : 'Esta sección no está en tu plan.';
+  $('#pedir-plan').onclick = async () => {
+    try {
+      await api('/reportes', { cuerpo: { tipo: 'SUGERENCIA', mensaje: `Quiero activar "${NOMBRE_SECCION[seccion]}"${b ? ` (plan ${b.plan})` : ''}.`, pantalla: seccion } });
+      mensaje('#mensaje-mejorar', '✔ Listo: tu proveedor del facturador te contactará.');
+    } catch (err) {
+      mensaje('#mensaje-mejorar', err.message, true);
+    }
+  };
+}
+
 async function abrirPestana(nombre) {
+  const boton = document.querySelector(`#pestanas button[data-pestana="${nombre}"]`);
+  if (boton?.dataset.bloqueada) {
+    for (const b of document.querySelectorAll('#pestanas button')) b.classList.toggle('activa', b === boton);
+    ofrecerPlan(boton.dataset.modulo);
+    return;
+  }
   for (const b of document.querySelectorAll('#pestanas button')) b.classList.toggle('activa', b.dataset.pestana === nombre);
   for (const v of document.querySelectorAll('[data-vista]')) v.hidden = v.dataset.vista !== nombre;
   try {
@@ -812,8 +852,11 @@ async function cargarPlataforma() {
       ['Anual S/ ', entrada('anual', { value: x.anual, inputMode: 'decimal', required: true })],
       ['Comprob./mes ', entrada('comprobantesMes', { value: x.comprobantesMes ?? '', inputMode: 'numeric' })],
       ['Usuarios ', entrada('usuariosMax', { value: x.usuariosMax ?? '', inputMode: 'numeric' })],
+      // Secciones que trae este plan (las básicas para cumplir con SUNAT van en todos).
+      ...Object.entries(NOMBRE_SECCION).map(([sec, texto]) => [`${texto} `, entrada(`seccion-${sec}`, { type: 'checkbox', checked: x.secciones.includes(sec) })]),
     ], `Guardar ${x.nombre}`, async (v) => {
-      await api(`/plataforma/planes/${x.codigo}`, { cuerpo: v });
+      const secciones = Object.keys(NOMBRE_SECCION).filter((sec) => v[`seccion-${sec}`] === 'on');
+      await api(`/plataforma/planes/${x.codigo}`, { cuerpo: { mensual: v.mensual, anual: v.anual, comprobantesMes: v.comprobantesMes, usuariosMax: v.usuariosMax, secciones } });
       return '✔ Guardado.';
     });
     f.className = 'plan-fila';

@@ -188,6 +188,36 @@ describe.skipIf(!URL_PRUEBAS)('plataforma: planes, cobro y vigilancia', () => {
     expect(await suscripcionDe(db, r2.empresaId)).toBeUndefined();
   });
 
+  it('secciones por plan: Emprendedor no trae stock ni estadísticas (se ofrecen); al cambiar de plan se activan', async () => {
+    // Un plan que ya no se ofrece no aparece como sugerencia (el de prueba "Mini" de otra prueba).
+    await db.query(`UPDATE planes SET activo = false WHERE codigo = 'MINI'`);
+    const f = await empresa();
+    await iniciarPrueba(db, { empresaId: f.empresaId, hoy });
+    const dueno = await usuario(f.empresaId, 'DUENO');
+    const yo = await (await panel('/yo', dueno.cookie)).json();
+    expect(yo.empresa.modulos).toContain('cobros');
+    expect(yo.empresa.modulos).not.toContain('productos');
+    expect(yo.empresa.modulos).toContain('notas');
+    expect(yo.bloqueadas).toEqual(expect.arrayContaining([expect.objectContaining({ seccion: 'productos', plan: 'Negocio' })]));
+    expect((await panel('/stock', dueno.cookie)).status).toBe(403);
+    expect((await panel('/estadisticas', dueno.cookie)).status).toBe(403);
+
+    await cambiarSuscripcion(db, { empresaId: f.empresaId, usuarioId: admin.usuarioId, plan: 'NEGOCIO', motivo: 'Mejora de plan' });
+    const despues = await (await panel('/yo', dueno.cookie)).json();
+    expect(despues.empresa.modulos).toEqual(expect.arrayContaining(['productos', 'compras', 'estadisticas']));
+    expect(despues.bloqueadas).toEqual([]);
+    expect((await panel('/stock', dueno.cookie)).status).toBe(200);
+
+    // El administrador cambia qué trae un plan; una sección inventada no se acepta.
+    const precios = { mensual: '39.00', anual: '390.00', comprobantesMes: '150', usuariosMax: '2' };
+    expect((await panel('/plataforma/planes/EMPRENDEDOR', admin.cookie, { ...precios, secciones: ['facturar'] })).status).toBe(422);
+    expect((await panel('/plataforma/planes/EMPRENDEDOR', admin.cookie, { ...precios, secciones: ['cobros', 'estadisticas'] })).status).toBe(200);
+    const plan = (await (await panel('/plataforma', admin.cookie)).json()).planes.find((x: { codigo: string }) => x.codigo === 'EMPRENDEDOR');
+    expect(plan.secciones).toEqual(['cobros', 'estadisticas']);
+    // La empresa propia (sin plan) tiene todo y nada bloqueado.
+    expect((await (await panel('/yo', admin.cookie)).json()).bloqueadas).toEqual([]);
+  });
+
   it('vigilancia: detecta planes por vencer y errores internos, y avisa UNA vez', async () => {
     const f = await empresa();
     await iniciarPrueba(db, { empresaId: f.empresaId, hoy, contacto: 'cliente@prueba.pe' });

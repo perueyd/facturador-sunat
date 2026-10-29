@@ -13,7 +13,7 @@ import { enTransaccion, type Db, type Tx } from '../db/conexion.js';
 import { cifrar, descifrar } from '../seguridad/cifrado.js';
 import { hashContrasena, verificarContrasena } from '../seguridad/contrasenas.js';
 import { generarSecretoTotp, verificarTotp } from '../seguridad/totp.js';
-import { MODULOS, type Modulo } from '../reportes/tablero.js';
+import { MODULOS, SECCIONES_DE_PLAN, type Modulo } from '../reportes/tablero.js';
 
 export const ROLES = ['DUENO', 'ADMIN', 'VENDEDOR', 'CONTADOR', 'SOLO_LECTURA'] as const;
 export type Rol = (typeof ROLES)[number];
@@ -184,6 +184,8 @@ export interface EmpresaDelUsuario {
   ambiente: 'BETA' | 'PRODUCCION';
   /** Funciones del panel que esta empresa tiene activas. */
   modulos: Modulo[];
+  /** Secciones que su plan no incluye (para ofrecer el plan que las trae). */
+  bloqueadas: Modulo[];
 }
 
 export interface Sesion {
@@ -211,16 +213,24 @@ export async function leerSesion(db: Db, token: string | undefined): Promise<Ses
   const s = r.rows[0];
   if (!s) return undefined;
   const e = await db.query(
-    `SELECT e.id, e.ruc, e.razon_social, ue.rol::text AS rol, e.ambiente_sunat::text AS ambiente, e.modulos_desactivados
+    `SELECT e.id, e.ruc, e.razon_social, ue.rol::text AS rol, e.ambiente_sunat::text AS ambiente, e.modulos_desactivados,
+            p.secciones AS secciones_plan
        FROM usuario_empresa ue JOIN empresas e ON e.id = ue.empresa_id
+       LEFT JOIN suscripciones su ON su.empresa_id = e.id LEFT JOIN planes p ON p.codigo = su.plan_codigo
       WHERE ue.usuario_id = $1 AND NOT ('panel' = ANY(e.modulos_desactivados)) ORDER BY e.razon_social`,
     [s.usuario_id],
   );
   // Una empresa con el panel desactivado ni aparece: se maneja solo por API.
-  const empresas: EmpresaDelUsuario[] = e.rows.map((x) => ({
-    id: x.id, ruc: x.ruc, razonSocial: x.razon_social, rol: x.rol, ambiente: x.ambiente,
-    modulos: MODULOS.filter((m) => !(x.modulos_desactivados as string[]).includes(m)),
-  }));
+  // Activa = no desactivada por la empresa Y (si tiene plan) incluida en su plan.
+  const empresas: EmpresaDelUsuario[] = e.rows.map((x) => {
+    const delPlan = x.secciones_plan as string[] | null;
+    const fueraDelPlan = (m: Modulo) => delPlan !== null && (SECCIONES_DE_PLAN as readonly Modulo[]).includes(m) && !delPlan.includes(m);
+    return {
+      id: x.id, ruc: x.ruc, razonSocial: x.razon_social, rol: x.rol, ambiente: x.ambiente,
+      modulos: MODULOS.filter((m) => !(x.modulos_desactivados as string[]).includes(m) && !fueraDelPlan(m)),
+      bloqueadas: MODULOS.filter(fueraDelPlan),
+    };
+  });
   return {
     sesionId: s.id, usuarioId: s.usuario_id, nombre: s.nombre, email: s.email, adminPlataforma: s.admin_plataforma, empresas,
     // Si le quitaron el acceso a la empresa elegida, no se usa aunque siga en la sesión.

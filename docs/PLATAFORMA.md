@@ -25,6 +25,20 @@ funcione. Al final, la lista de **proyectos pendientes**.
 
 Compara con los precios de otros facturadores del mercado antes de fijarlos.
 
+**Secciones por plan** (Plataforma → Precios y límites de los planes → casilleros):
+
+| Sección | Emprendedor | Negocio | Empresa |
+|---|---|---|---|
+| Vender, notas de crédito, vencimientos, resumen de impuestos, avisos, exportar | ✔ | ✔ | ✔ |
+| Cobros y caja | ✔ | ✔ | ✔ |
+| Stock e inventario (reposición, Kardex) | — | ✔ | ✔ |
+| Compras | — | ✔ | ✔ |
+| Estadísticas de ventas | — | ✔ | ✔ |
+
+La primera fila va en **todos** los planes y no se puede quitar: es lo que el cliente necesita para
+cumplir con SUNAT. Lo que su plan no trae lo ve con 🔒; al tocarlo se le ofrece el plan que lo incluye y,
+si toca **"Me interesa"**, te llega como sugerencia en Plataforma.
+
 ## Dar de alta a un cliente (todo desde el panel, sin la PC)
 
 1. **Más → Dar de alta una empresa nueva**: datos EXACTOS de su Ficha RUC, plan de prueba y su
