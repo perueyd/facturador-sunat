@@ -39,6 +39,7 @@ import { ErrorPdf } from '../pdf/representacion.js';
 import { ErrorSuscripcion, cambiarSuscripcion, clientes, iniciarPrueba, registrarPago as registrarPagoPlan, suscripcionDe } from '../plataforma/suscripciones.js';
 import { saludPlataforma } from '../plataforma/vigilancia.js';
 import { ahoraLima } from '../fechas.js';
+import { clientesFrecuentes, guardarCelular, normalizarCelular } from '../reportes/cliente.js';
 import { estadisticas } from '../reportes/estadisticas.js';
 import { SECCIONES_DE_PLAN, tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
@@ -535,6 +536,25 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     return r.rows[0] ? c.json({ nombre: r.rows[0].nombre }) : d.error(c, 404, 'NO_ENCONTRADO', 'Cliente nuevo.');
   });
 
+  // Clientes frecuentes y su celular (para mandarles un WhatsApp con el mensaje listo).
+  app.get('/panel/api/clientes/frecuentes', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    return c.json({ clientes: await clientesFrecuentes(d.db, s.empresa.id, ahoraLima().fecha) });
+  });
+  app.post('/panel/api/clientes/celular', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no cambia datos de clientes.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const texto = typeof b.celular === 'string' ? b.celular.trim() : '';
+    const celular = texto ? normalizarCelular(texto) : null;
+    if (celular === undefined) return d.error(c, 422, 'DATOS_INVALIDOS', 'Celular inválido: 9 dígitos que empiezan con 9 (ej. 987 654 321), o con + y el código si es de otro país.');
+    const ok = await guardarCelular(d.db, s.empresa.id, { tipoDocumento: typeof b.tipoDocumento === 'string' ? b.tipoDocumento.slice(0, 2) : '', numero: typeof b.numero === 'string' ? b.numero.slice(0, 20) : '' }, celular, s.usuarioId);
+    return ok ? c.json({ ok: true, celular }) : d.error(c, 404, 'NO_ENCONTRADO', 'Cliente no encontrado.');
+  });
+
   // Ventas de un mes en CSV (Excel lo abre directo), para el contador.
   app.get('/panel/api/exportar', async (c) => {
     const s = await conEmpresa(c);
@@ -897,13 +917,15 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
     const r = await d.db.query(
       `SELECT c.id, c.serie, c.numero, c.cliente_nombre, c.fecha_emision::text AS fecha, ${sqlSaldo('c')}::numeric(14,2)::text AS saldo,
-              (SELECT min(q.fecha_vencimiento)::text FROM comprobante_cuotas q WHERE q.comprobante_id = c.id AND NOT q.pagada) AS proxima_cuota
-         FROM comprobantes c
+              (SELECT min(q.fecha_vencimiento)::text FROM comprobante_cuotas q WHERE q.comprobante_id = c.id AND NOT q.pagada) AS proxima_cuota,
+              k.telefono AS celular, c.cliente_tipo_doc, c.cliente_numero_doc
+         FROM comprobantes c LEFT JOIN clientes k ON k.id = c.cliente_id
         WHERE c.empresa_id = $1 AND c.tipo_comprobante <> '07' AND c.estado_pago <> 'PAGADO' AND c.estado NOT IN ('RECHAZADO', 'ANULADO')
         ORDER BY proxima_cuota NULLS LAST, c.fecha_emision LIMIT 50`,
       [s.empresa.id],
     );
-    return c.json({ porCobrar: r.rows.map((x) => ({ id: x.id, numero: idComprobanteLegible(x.serie, Number(x.numero)), cliente: x.cliente_nombre, fecha: x.fecha, saldo: x.saldo, proximaCuota: x.proxima_cuota })) });
+    return c.json({ porCobrar: r.rows.map((x) => ({ id: x.id, numero: idComprobanteLegible(x.serie, Number(x.numero)), cliente: x.cliente_nombre, fecha: x.fecha, saldo: x.saldo, proximaCuota: x.proxima_cuota,
+      celular: x.celular, documento: { tipoDocumento: x.cliente_tipo_doc, numero: x.cliente_numero_doc } })) });
   });
 
   // Logo para el PDF (el navegador lo achica antes de enviarlo).

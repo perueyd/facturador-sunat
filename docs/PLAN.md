@@ -641,6 +641,10 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
 - **Cierre de caja diario** (misma pestaña): por cada cuenta, lo que debería haber según los cobros
   (lo calcula el facturador) contra lo contado; guarda la diferencia, quién cerró y una nota. No se
   cambia ni se borra: si se contó mal, se cierra de nuevo y vale el último. Historial de 30 días.
+- **Clientes frecuentes y WhatsApp** (pestaña Cobrar): los que más compran en el último año (veces,
+  total, última compra, lo que deben). Se guarda su celular (validado, con código de país) y se abre
+  WhatsApp con el mensaje ya escrito: recordar un cobro o saludar. Nunca se envía solo: la persona lo
+  revisa y lo manda. El celular es dato personal (Ley 29733): solo para atender al cliente.
 - **App instalable (PWA)**: manifiesto, íconos y service worker (solo guarda la página, nunca los datos);
   aviso "Hay una versión nueva · Actualizar". **Escáner** de códigos de barras (lector USB/Bluetooth o
   cámara con BarcodeDetector) y código de barras por producto. **Reportes** de los usuarios al

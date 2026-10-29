@@ -448,6 +448,22 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect(despues.historial[0].id).toBe(cierre.id);
   });
 
+  it('clientes frecuentes y celular: valida el número y lo muestra en por cobrar', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const solo = await entrar(await usuario('SOLO_LECTURA'));
+    const doc = String(40000000 + ++n);
+    expect((await pedir('/panel/api/comprobantes', { cookie: dueno, cuerpo: boleta({ cliente: { tipoDocumento: 'DNI', numero: doc, nombre: 'CLIENTA FIEL' } }) })).status).toBe(201);
+    const { clientes } = await (await pedir('/panel/api/clientes/frecuentes', { cookie: dueno })).json();
+    expect(clientes.find((x: { numero: string }) => x.numero === doc)).toMatchObject({ compras: 1, celular: null });
+    const cuerpo = { tipoDocumento: '1', numero: doc, celular: '987 654 321' };
+    expect((await pedir('/panel/api/clientes/celular', { cookie: solo, cuerpo })).status).toBe(403);
+    expect((await pedir('/panel/api/clientes/celular', { cookie: dueno, cuerpo: { ...cuerpo, celular: '12345' } })).status).toBe(422);
+    expect((await pedir('/panel/api/clientes/celular', { cookie: dueno, cuerpo: { ...cuerpo, numero: '99999999' } })).status).toBe(404);
+    expect(await (await pedir('/panel/api/clientes/celular', { cookie: dueno, cuerpo })).json()).toEqual({ ok: true, celular: '51987654321' });
+    const { porCobrar } = await (await pedir('/panel/api/por-cobrar', { cookie: dueno })).json();
+    expect(porCobrar.find((x: { documento: { numero: string } }) => x.documento.numero === doc)).toMatchObject({ celular: '51987654321' });
+  });
+
   it('app instalable: manifiesto, íconos y service worker con versión; CSP lo permite', async () => {
     const m = await app.request('http://localhost/panel/manifest.webmanifest');
     expect(m.status).toBe(200);

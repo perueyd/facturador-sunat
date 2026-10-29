@@ -297,6 +297,7 @@
         <ul id="lista-cobrar" class="lista"></ul>
         <form id="form-cobro" hidden>
           <p id="cobro-titulo"></p>
+          <div id="cobro-whatsapp"></div>
           <div class="fila">
             <label>Medio
               <select name="medio"><option value="YAPE">Yape</option><option value="PLIN">Plin</option><option value="EFECTIVO">Efectivo</option>
@@ -307,6 +308,10 @@
           <button type="submit">Registrar cobro</button>
           <p class="error" id="error-cobro" role="alert"></p>
         </form>
+        <h1>Clientes frecuentes</h1>
+        <p class="nota">Los que más te compran (último año). Toca uno para guardar su celular y mandarle un
+          WhatsApp con el mensaje ya escrito: tú lo revisas y lo envías.</p>
+        <ul id="lista-frecuentes" class="lista"></ul>
       </div>
 
       <div data-vista="compras" hidden>
