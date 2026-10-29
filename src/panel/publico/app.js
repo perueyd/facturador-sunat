@@ -1163,6 +1163,7 @@ async function cargarPorCobrar() {
   $('#caja-dinero').hidden = !yo?.verCaja;
   if (yo?.verCaja) cargarCaja().catch(() => { $('#caja-dinero').hidden = true; });
   if (yo?.verCaja) cargarCierre(hoyLima()).catch(() => { $('#caja-cierre').hidden = true; });
+  cargarFrecuentes().catch(() => undefined);
   const { porCobrar } = await api('/por-cobrar');
   $('#lista-cobrar').replaceChildren(...(porCobrar.length ? porCobrar.map((x) => {
     const li = linea(`${x.numero} · ${x.cliente}`, `S/ ${x.saldo}${x.proximaCuota ? ` · cuota ${x.proximaCuota}` : ''}`);
@@ -1172,10 +1173,88 @@ async function cargarPorCobrar() {
   $('#form-cobro').hidden = true;
 }
 
+// ---------- WhatsApp con el mensaje listo ----------
+// Solo arma el enlace wa.me: el mensaje se abre en WhatsApp del celular y la persona decide si lo envía.
+const enlaceWhatsApp = (celular, texto) => `https://wa.me/${celular}?text=${encodeURIComponent(texto)}`;
+// Sin el punto final ("S.A.C.") para que la frase no quede con dos puntos seguidos.
+const nombreEmpresa = () => (yo?.empresa?.razonSocial ?? '').replace(/\.+$/, '');
+const fechaPeru = (iso) => iso.split('-').reverse().join('/');
+
+/**
+ * Botón de WhatsApp para un cliente; si aún no tiene celular, un campo para guardarlo.
+ * `mensajes` es una lista de [texto del botón, mensaje].
+ */
+function bloqueWhatsApp(cliente, mensajes, alGuardar) {
+  const caja = document.createElement('div');
+  caja.className = 'whatsapp';
+  const pedirCelular = () => {
+    const input = Object.assign(document.createElement('input'), { type: 'tel', placeholder: 'Celular, ej. 987 654 321', value: cliente.celular ? `+${cliente.celular}` : '' });
+    const boton = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'Guardar celular' });
+    const error = Object.assign(document.createElement('p'), { className: 'error' });
+    boton.addEventListener('click', async () => {
+      try {
+        const r = await api('/clientes/celular', { cuerpo: { ...cliente.documento, celular: input.value } });
+        cliente.celular = r.celular;
+        dibujar();
+        alGuardar?.();
+      } catch (err) {
+        error.textContent = err.message;
+      }
+    });
+    caja.replaceChildren(Object.assign(document.createElement('label'), { textContent: `Celular de ${cliente.nombre}` }), input, boton, error);
+    input.focus();
+  };
+  const dibujar = () => {
+    if (!cliente.celular) {
+      const agregar = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: '💬 Agregar celular para WhatsApp' });
+      agregar.addEventListener('click', pedirCelular);
+      caja.replaceChildren(agregar);
+      return;
+    }
+    const cambiar = Object.assign(document.createElement('button'), { type: 'button', className: 'enlace', textContent: `+${cliente.celular} · cambiar` });
+    cambiar.addEventListener('click', pedirCelular);
+    caja.replaceChildren(...mensajes.map(([titulo, texto]) => Object.assign(document.createElement('a'), {
+      className: 'boton-whatsapp', href: enlaceWhatsApp(cliente.celular, texto), target: '_blank', rel: 'noopener', textContent: `💬 ${titulo}`,
+    })), cambiar);
+  };
+  if (!cliente.documento?.numero || cliente.documento.numero === '-') {
+    caja.replaceChildren(Object.assign(document.createElement('small'), { textContent: 'Venta sin DNI ni RUC: no se puede guardar su celular.' }));
+  } else dibujar();
+  return caja;
+}
+
+const mensajeCobro = (nombre, saldo, detalle) =>
+  `Hola ${nombre}, te saluda ${nombreEmpresa()}. Te recordamos que tienes un saldo pendiente de S/ ${saldo}${detalle ? ` (${detalle})` : ''}. ` +
+  'Si ya lo pagaste, avísanos para registrarlo. ¡Gracias!';
+
+async function cargarFrecuentes() {
+  const { clientes } = await api('/clientes/frecuentes');
+  $('#lista-frecuentes').replaceChildren(...(clientes.length ? clientes.map((x) => {
+    const cliente = { nombre: x.nombre, celular: x.celular, documento: { tipoDocumento: x.tipoDocumento, numero: x.numero } };
+    const hace = x.diasSinComprar === 0 ? 'hoy' : x.diasSinComprar === 1 ? 'ayer' : `hace ${x.diasSinComprar} días`;
+    const li = linea(`${x.nombre}${x.celular ? ' 💬' : ''} · ${x.compras} compra(s) · última ${hace}`,
+      x.saldoPendiente !== '0.00' ? `debe ${soles(x.saldoPendiente)}` : soles(x.totalComprado), x.saldoPendiente !== '0.00' ? 'bajo' : '');
+    li.addEventListener('click', (e) => {
+      if (e.target.closest('.whatsapp')) return;
+      const abierto = li.querySelector('.whatsapp');
+      if (abierto) { abierto.remove(); return; }
+      const mensajes = [
+        ...(x.saldoPendiente !== '0.00' ? [['Recordar cobro', mensajeCobro(x.nombre, x.saldoPendiente)]] : []),
+        ['Saludar', `Hola ${x.nombre}, te saluda ${nombreEmpresa()}. ¡Gracias por tu preferencia! Si necesitas algo, escríbenos por aquí.`],
+      ];
+      li.append(bloqueWhatsApp(cliente, mensajes, () => cargarFrecuentes().catch(() => undefined)));
+    });
+    return li;
+  }) : [linea('Aún no hay clientes con DNI o RUC en tus ventas.', '')]));
+}
+
 async function abrirCobro(x) {
   cobroActual = x;
   if ($('[data-vista=cobrar]').hidden) await abrirPestana('cobrar');
   $('#cobro-titulo').textContent = `${x.numero} — saldo S/ ${x.saldo}`;
+  const cliente = { nombre: x.cliente, celular: x.celular, documento: x.documento };
+  $('#cobro-whatsapp').replaceChildren(bloqueWhatsApp(cliente, [['Recordar cobro por WhatsApp', mensajeCobro(x.cliente, x.saldo, `${x.numero} del ${fechaPeru(x.fecha)}`)]],
+    () => { x.celular = cliente.celular; }));
   $('#form-cobro').hidden = false;
   $('#form-cobro').scrollIntoView({ behavior: 'smooth' });
 }
