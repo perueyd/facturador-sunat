@@ -140,3 +140,8 @@ button.peligro { color: var(--rojo); border-color: #fda29b; }
 #escaner { width: min(92vw, 420px); border: 1px solid var(--borde); border-radius: 14px; }
 #escaner video { width: 100%; border-radius: 10px; background: #000; }
 textarea { display: block; width: 100%; margin-top: 4px; padding: 10px; font: inherit; border: 1px solid var(--borde); border-radius: 8px; }
+
+/* Casilleros de secciones en el formulario de cada plan. */
+.plan-fila label:has(> input[type=checkbox]) { grid-column: span 2; display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: center; gap: 6px; }
+.plan-fila input[type=checkbox] { display: inline; width: auto; margin: 0; }
+.kpi { cursor: default; }

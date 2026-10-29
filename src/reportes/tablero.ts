@@ -15,6 +15,8 @@ import { ahoraLima } from '../fechas.js';
 
 export const MODULOS = ['panel', 'vencimientos', 'resumen', 'certificado', 'cobros', 'notas', 'productos', 'exportar', 'compras', 'avisos', 'estadisticas'] as const;
 export type Modulo = (typeof MODULOS)[number];
+/** Secciones que se reparten por plan. Las demás van siempre (son para cumplir con SUNAT). */
+export const SECCIONES_DE_PLAN = ['cobros', 'productos', 'compras', 'estadisticas'] as const satisfies readonly Modulo[];
 
 /** Columna del cronograma según el último dígito del RUC (o la de Buenos Contribuyentes). */
 export function grupoCronograma(ruc: string, buenContribuyente: boolean): string {

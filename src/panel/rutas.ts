@@ -40,7 +40,7 @@ import { ErrorSuscripcion, cambiarSuscripcion, clientes, iniciarPrueba, registra
 import { saludPlataforma } from '../plataforma/vigilancia.js';
 import { ahoraLima } from '../fechas.js';
 import { estadisticas } from '../reportes/estadisticas.js';
-import { tablero, type Modulo } from '../reportes/tablero.js';
+import { SECCIONES_DE_PLAN, tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
 import type { Regimen } from '../tipos.js';
@@ -397,8 +397,16 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     // Plan del cliente: el dueño y el administrador ven todo; los demás, solo si pueden emitir.
     const sus = s.empresa ? await suscripcionDe(d.db, s.empresa.id) : undefined;
     const plan = !sus ? null : ROLES_CORRIGEN.includes(s.empresa!.rol) ? sus : { puedeEmitir: sus.puedeEmitir, ...(sus.motivo ? { motivo: sus.motivo } : {}) };
+    // Secciones que su plan no trae: el plan más barato que las incluye (para ofrecérselo).
+    const bloqueadas = s.empresa?.bloqueadas.length
+      ? (await d.db.query(
+        `SELECT DISTINCT ON (sec) sec, p.nombre, p.precio_mensual::text AS precio
+           FROM planes p, unnest(p.secciones) sec WHERE p.activo AND sec = ANY($1) ORDER BY sec, p.precio_mensual`,
+        [s.empresa.bloqueadas],
+      )).rows.map((x) => ({ seccion: x.sec, plan: x.nombre, precio: x.precio }))
+      : [];
     return c.json({
-      plan,
+      plan, bloqueadas,
       nombre: s.nombre, email: s.email, codigosRespaldo: await codigosRespaldoRestantes(d.db, s.usuarioId), empresas: s.empresas, empresa: s.empresa ?? null, canales, igvTasa: igv ?? null,
       puedeEmitir: Boolean(s.empresa && ROLES_EMISORES.includes(s.empresa.rol)),
       puedeCorregir: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol) && s.empresa.modulos.includes('notas')),
@@ -889,8 +897,10 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const s = await conPlataforma(c);
     if (s instanceof Response) return s;
     const planes = (await d.db.query(
-      `SELECT codigo, nombre, precio_mensual::text AS mensual, precio_anual::text AS anual, comprobantes_mes, usuarios_max, activo FROM planes ORDER BY precio_mensual`,
-    )).rows.map((p) => ({ codigo: p.codigo, nombre: p.nombre, mensual: p.mensual, anual: p.anual, comprobantesMes: p.comprobantes_mes, usuariosMax: p.usuarios_max, activo: p.activo }));
+      `SELECT codigo, nombre, precio_mensual::text AS mensual, precio_anual::text AS anual, comprobantes_mes, usuarios_max, activo, secciones FROM planes ORDER BY precio_mensual`,
+    )).rows.map((p) => ({
+      codigo: p.codigo, nombre: p.nombre, mensual: p.mensual, anual: p.anual, comprobantesMes: p.comprobantes_mes, usuariosMax: p.usuarios_max, activo: p.activo, secciones: p.secciones,
+    }));
     return c.json({ ...(await clientes(d.db)), planes });
   });
 
@@ -972,13 +982,18 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (!mensual || !anual || comprobantes === undefined || usuarios === undefined) {
       return d.error(c, 422, 'DATOS_INVALIDOS', 'Precios como 39.00; límites como números enteros (vacío = sin límite).');
     }
+    // Secciones del plan (opcional): solo las que se reparten por plan.
+    const secciones = Array.isArray(b.secciones) ? b.secciones.filter((x): x is string => typeof x === 'string') : undefined;
+    if (secciones && secciones.some((x) => !(SECCIONES_DE_PLAN as readonly string[]).includes(x))) {
+      return d.error(c, 422, 'DATOS_INVALIDOS', `Secciones válidas: ${SECCIONES_DE_PLAN.join(', ')}.`);
+    }
     const r = await d.db.query(
-      `UPDATE planes SET precio_mensual = $2, precio_anual = $3, comprobantes_mes = $4, usuarios_max = $5 WHERE codigo = $1 RETURNING 1`,
-      [c.req.param('codigo'), mensual, anual, comprobantes, usuarios],
+      `UPDATE planes SET precio_mensual = $2, precio_anual = $3, comprobantes_mes = $4, usuarios_max = $5, secciones = coalesce($6, secciones) WHERE codigo = $1 RETURNING 1`,
+      [c.req.param('codigo'), mensual, anual, comprobantes, usuarios, secciones ?? null],
     );
     if (!r.rowCount) return d.error(c, 404, 'NO_ENCONTRADO', 'Plan no encontrado.');
     await d.db.query(`INSERT INTO auditoria (usuario_id, accion, entidad, despues) VALUES ($1, 'CAMBIO_PLAN_PRECIOS', 'planes', $2)`, [
-      s.usuarioId, JSON.stringify({ codigo: c.req.param('codigo'), mensual, anual, comprobantes, usuarios }),
+      s.usuarioId, JSON.stringify({ codigo: c.req.param('codigo'), mensual, anual, comprobantes, usuarios, secciones: secciones ?? null }),
     ]);
     return c.json({ ok: true });
   });
