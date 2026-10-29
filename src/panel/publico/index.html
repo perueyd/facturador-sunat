@@ -183,6 +183,7 @@
       </div>
 
       <nav class="pestanas" id="pestanas">
+        <button type="button" data-pestana="inicio" id="boton-inicio" hidden>Inicio</button>
         <button type="button" data-pestana="vender" class="activa">Vender</button>
         <button type="button" data-pestana="cobrar" data-modulo="cobros">Cobrar</button>
         <button type="button" data-pestana="compras" data-modulo="compras">Compras</button>
@@ -190,6 +191,12 @@
         <button type="button" data-pestana="mas">Más</button>
         <button type="button" data-pestana="plataforma" id="boton-plataforma" hidden>Plataforma</button>
       </nav>
+
+      <div data-vista="inicio" hidden>
+        <h1>Panel de control</h1>
+        <p class="nota">Todo lo de tu negocio en un toque.</p>
+        <div id="accesos" class="accesos"></div>
+      </div>
 
       <div data-vista="vender">
       <h1>Nuevo comprobante</h1>
