@@ -12,6 +12,7 @@ import { crearApp } from '../../src/api/app.js';
 import { crearLlaveApi } from '../../src/api/llaves.js';
 import type { Correo } from '../../src/avisos/avisos.js';
 import type { Db } from '../../src/db/conexion.js';
+import { dec } from '../../src/dinero.js';
 import { ahoraLima } from '../../src/fechas.js';
 import { asignarEmpresa, crearUsuario } from '../../src/panel/usuarios.js';
 import { cambiarSuscripcion, clientes, iniciarPrueba, registrarPago, suscripcionDe } from '../../src/plataforma/suscripciones.js';
@@ -163,6 +164,9 @@ describe.skipIf(!URL_PRUEBAS)('plataforma: planes, cobro y vigilancia', () => {
     const fila = p.clientes.find((c: { empresaId: string }) => c.empresaId === f.empresaId);
     expect(fila.suscripcion).toMatchObject({ estado: 'ACTIVA', plan: 'EMPRENDEDOR' });
     expect(p.planes.map((x: { codigo: string }) => x.codigo)).toContain('NEGOCIO');
+    // Actividad de toda la plataforma: el pago anual de recién (S/ 390) cuenta como cobrado este mes.
+    expect(p.actividad).toMatchObject({ empresas: expect.any(Number), comprobantesHoy: expect.any(Number), reportesPendientes: expect.any(Number) });
+    expect(dec(p.actividad.cobradoMes).gte(390)).toBe(true);
     // Quien paga anual cuenta como la doceava parte (390 / 12 = 32.50).
     const { resumen } = await clientes(db, hoy);
     expect(resumen.activos).toBeGreaterThanOrEqual(1);

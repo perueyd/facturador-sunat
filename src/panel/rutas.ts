@@ -37,7 +37,7 @@ import { registrarCompra } from '../inventario/compras.js';
 import { ErrorInventario, ajustarStock, guardarProducto, listarStock } from '../inventario/productos.js';
 import { asignarProveedor, guardarDiasEntrega, kardex, reposicion } from '../inventario/reposicion.js';
 import { ErrorPdf } from '../pdf/representacion.js';
-import { ErrorSuscripcion, cambiarSuscripcion, clientes, iniciarPrueba, registrarPago as registrarPagoPlan, suscripcionDe } from '../plataforma/suscripciones.js';
+import { ErrorSuscripcion, actividadPlataforma, cambiarSuscripcion, clientes, iniciarPrueba, registrarPago as registrarPagoPlan, suscripcionDe } from '../plataforma/suscripciones.js';
 import { saludPlataforma } from '../plataforma/vigilancia.js';
 import { ahoraLima, esFecha, sumarDias } from '../fechas.js';
 import { clientesFrecuentes, guardarCelular, normalizarCelular } from '../reportes/cliente.js';
@@ -1084,7 +1084,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     )).rows.map((p) => ({
       codigo: p.codigo, nombre: p.nombre, mensual: p.mensual, anual: p.anual, comprobantesMes: p.comprobantes_mes, usuariosMax: p.usuarios_max, activo: p.activo, secciones: p.secciones,
     }));
-    return c.json({ ...(await clientes(d.db)), planes });
+    return c.json({ ...(await clientes(d.db)), planes, actividad: await actividadPlataforma(d.db) });
   });
 
   app.get('/panel/api/plataforma/salud', async (c) => {

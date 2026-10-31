@@ -189,7 +189,7 @@
         <button type="button" data-pestana="compras" data-modulo="compras">Compras</button>
         <button type="button" data-pestana="stock" data-modulo="productos">Stock</button>
         <button type="button" data-pestana="mas">Más</button>
-        <button type="button" data-pestana="plataforma" id="boton-plataforma" hidden>Plataforma</button>
+        <button type="button" data-pestana="plataforma" id="boton-plataforma" hidden>Administrador</button>
       </nav>
 
       <div data-vista="inicio" hidden>
@@ -465,17 +465,28 @@
 
       <!-- Solo el administrador de la plataforma: sus clientes, cobros, precios y salud del sistema -->
       <div data-vista="plataforma" hidden>
-        <h1>Tus clientes</h1>
+        <h1>Panel del administrador</h1>
+        <p class="nota">Tu negocio del facturador: clientes, cobros, uso y salud del sistema.</p>
+        <p class="aviso" id="alerta-plataforma" hidden></p>
+        <div class="botones">
+          <button type="button" class="secundario" id="admin-alta">➕ Dar de alta un cliente</button>
+          <button type="button" class="secundario" id="admin-reportes">📨 Lo que reportan</button>
+          <button type="button" class="secundario" id="admin-salud">🩺 Salud del sistema</button>
+        </div>
+        <h2>Clientes y cobros</h2>
         <div id="resumen-plataforma" class="kpis"></div>
+        <h2>Uso de la plataforma</h2>
+        <div id="actividad-plataforma" class="kpis"></div>
+        <h2>Tus clientes</h2>
         <ul id="lista-clientes" class="clientes"></ul>
         <details class="ajustes">
           <summary>Precios y límites de los planes</summary>
           <p class="nota">Límite vacío = sin límite. Los cambios aplican a todos los clientes de ese plan.</p>
           <div id="lista-planes"></div>
         </details>
-        <h2>Lo que reportan tus clientes</h2>
+        <h2 id="titulo-reportes">Lo que reportan tus clientes</h2>
         <ul id="lista-reportes" class="lista"></ul>
-        <h2>Salud de la plataforma</h2>
+        <h2 id="titulo-salud">Salud de la plataforma</h2>
         <p class="nota" id="numeros-salud"></p>
         <ul id="problemas-salud" class="lista"></ul>
         <details class="ajustes">

@@ -39,6 +39,25 @@ La primera fila va en **todos** los planes y no se puede quitar: es lo que el cl
 cumplir con SUNAT. Lo que su plan no trae lo ve con 🔒; al tocarlo se le ofrece el plan que lo incluye y,
 si toca **"Me interesa"**, te llega como sugerencia en Plataforma.
 
+## Panel del administrador
+
+Pestaña **Administrador** (o el primer botón de Inicio). Solo la ve el usuario marcado como administrador
+de la plataforma (el primer usuario creado con la llave de la tienda lo es). Muestra:
+
+- **Clientes y cobros:** activos, en prueba, vencidos, ingreso mensual estimado y lo cobrado este mes.
+- **Uso:** empresas y usuarios, comprobantes de hoy y del mes, en cola para SUNAT, reportes sin atender,
+  errores en 24 h y espacio de la base de datos.
+- Arriba, en amarillo o rojo, el primer aviso de la salud del sistema; botones para dar de alta un
+  cliente, ver lo que reportan y la salud.
+
+Si no ves la pestaña Administrador, en Supabase → SQL Editor (cambia el correo por el tuyo):
+
+```sql
+UPDATE usuarios SET admin_plataforma = true WHERE lower(email) = lower('tu-correo@ejemplo.com');
+```
+
+Luego sal del panel y vuelve a entrar.
+
 ## Dar de alta a un cliente (todo desde el panel, sin la PC)
 
 1. **Más → Dar de alta una empresa nueva**: datos EXACTOS de su Ficha RUC, plan de prueba y su
