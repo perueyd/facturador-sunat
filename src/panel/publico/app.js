@@ -254,11 +254,11 @@ async function cargarCotizaciones() {
 // Cada acceso lleva a una pestaña o a una sección de "Más". Solo se muestran los que el rol
 // y el plan permiten (si la pestaña o la sección están ocultas, el acceso tampoco sale).
 const ACCESOS = [
+  ['🏢', 'Panel del administrador', 'Tus clientes, cobros, uso y salud del sistema', 'plataforma'],
   ['🧾', 'Vender', 'Boletas y facturas', 'vender'],
   ['💰', 'Cobros y caja', 'Por cobrar, caja y cierre del día', 'cobrar'],
   ['📦', 'Stock', 'Productos, reposición y Kardex', 'stock'],
   ['🛒', 'Compras', 'Registrar compras a proveedores', 'compras'],
-  ['🏢', 'Plataforma', 'Tus clientes, planes y salud del sistema', 'plataforma'],
   ['⚙️', 'Configuración', 'Lo que le falta a tu empresa', 'mas', '#caja-configuracion'],
   ['👥', 'Usuarios', 'Invitar vendedores o a tu contador', 'mas', '#caja-usuarios'],
   ['🏦', 'Cuentas de cobro', 'Yape, efectivo, banco…', 'mas', '#caja-cuentas'],
@@ -931,7 +931,21 @@ async function cargarPlataforma() {
     kpi('azul', 'En prueba', String(r.prueba), 'prueba de 14 días'),
     kpi(r.vencidos ? 'rosa' : 'gris', 'Vencidos', String(r.vencidos), 'cobrar o suspender'),
     kpi('morado', 'Ingreso mensual', soles(r.ingresoMensual), 'estimado (planes activos)'),
+    kpi('verde', 'Cobrado este mes', soles(p.actividad.cobradoMes), 'pagos registrados'),
   );
+  const a = p.actividad;
+  $('#actividad-plataforma').replaceChildren(
+    kpi('azul', 'Empresas', String(a.empresas), `${a.usuarios} usuario(s) activos`),
+    kpi('verde', 'Comprobantes hoy', String(a.comprobantesHoy), `${a.comprobantesMes} este mes`),
+    kpi(salud.enCola ? 'ambar' : 'gris', 'En cola para SUNAT', String(salud.enCola), salud.enCola ? 'se reintentan solos' : 'todo enviado'),
+    kpi(a.reportesPendientes ? 'rosa' : 'gris', 'Reportes sin atender', String(a.reportesPendientes), 'de tus clientes'),
+    kpi(a.errores24h ? 'rosa' : 'gris', 'Errores en 24 h', String(a.errores24h), 'internos del servidor'),
+    kpi(salud.baseDatosMb * 100 >= salud.limiteBaseDatosMb * 80 ? 'rosa' : 'gris', 'Base de datos', `${salud.baseDatosMb} MB`, `de ${salud.limiteBaseDatosMb} MB del plan`),
+  );
+  // Lo urgente arriba, para no tener que bajar a buscarlo.
+  const rojos = salud.problemas.filter((x) => x.nivel === 'ROJO').length;
+  $('#alerta-plataforma').hidden = !salud.problemas.length;
+  $('#alerta-plataforma').textContent = `${rojos ? '🔴' : '🟡'} ${salud.problemas.length} aviso(s) en la salud del sistema: ${salud.problemas[0]?.mensaje ?? ''}`;
   const opcionesPlan = p.planes.filter((x) => x.activo).map((x) => [x.codigo, `${x.nombre} (S/ ${x.mensual})`]);
   $('#lista-clientes').replaceChildren(...p.clientes.map((c) => {
     const s = c.suscripcion;
@@ -1952,6 +1966,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-cuenta').addEventListener('submit', alGuardarCuenta);
   for (const b of document.querySelectorAll('#periodo-caja button')) b.addEventListener('click', () => cargarCaja(b.dataset.periodo).catch((err) => alert(err.message)));
   $('#form-cierre').addEventListener('submit', alCerrarCaja);
+  $('#admin-alta').addEventListener('click', async () => { await abrirPestana('mas'); $('#caja-empresa-nueva').open = true; $('#caja-empresa-nueva').scrollIntoView({ behavior: 'smooth' }); });
+  $('#admin-reportes').addEventListener('click', () => $('#titulo-reportes').scrollIntoView({ behavior: 'smooth' }));
+  $('#admin-salud').addEventListener('click', () => $('#titulo-salud').scrollIntoView({ behavior: 'smooth' }));
+  $('#alerta-plataforma').addEventListener('click', () => $('#titulo-salud').scrollIntoView({ behavior: 'smooth' }));
   $('#form-gasto').addEventListener('submit', alRegistrarGasto);
   $('#boton-cotizar').addEventListener('click', alCotizar);
   $('#cierre-fecha').addEventListener('change', (e) => cargarCierre(e.target.value).catch((err) => mensaje('#mensaje-cierre', err.message, true)));

@@ -199,3 +199,25 @@ export async function clientes(db: Db, hoy = ahoraLima().fecha): Promise<{ clien
   resumen.ingresoMensual = ingreso.toFixed(2);
   return { clientes: filas, resumen };
 }
+
+/**
+ * Actividad de toda la plataforma para el panel del administrador: lo cobrado a los clientes
+ * este mes (pagos registrados), cuántos comprobantes se emitieron, y lo que espera atención.
+ */
+export async function actividadPlataforma(db: Db, hoy = ahoraLima().fecha) {
+  const r = (await db.query(
+    `SELECT (SELECT coalesce(sum(monto), 0) FROM pagos_suscripcion
+              WHERE (creado_en AT TIME ZONE 'America/Lima')::date >= date_trunc('month', $1::date))::text AS cobrado_mes,
+            (SELECT count(*) FROM comprobantes WHERE tipo_comprobante IN ('01', '03') AND fecha_emision = $1::date)::int AS hoy,
+            (SELECT count(*) FROM comprobantes WHERE tipo_comprobante IN ('01', '03') AND fecha_emision >= date_trunc('month', $1::date))::int AS mes,
+            (SELECT count(*) FROM empresas)::int AS empresas,
+            (SELECT count(*) FROM usuarios WHERE activo)::int AS usuarios,
+            (SELECT count(*) FROM reportes WHERE atendido_en IS NULL)::int AS reportes,
+            (SELECT count(*) FROM errores_plataforma WHERE creado_en > now() - interval '24 hours')::int AS errores`,
+    [hoy],
+  )).rows[0];
+  return {
+    cobradoMes: dec(r.cobrado_mes).toFixed(2), comprobantesHoy: r.hoy, comprobantesMes: r.mes,
+    empresas: r.empresas, usuarios: r.usuarios, reportesPendientes: r.reportes, errores24h: r.errores,
+  };
+}
