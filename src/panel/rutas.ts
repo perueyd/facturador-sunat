@@ -58,13 +58,19 @@ const leer = (archivo: string) => readFileSync(new URL(`./publico/${archivo}`, i
 const PAGINA = { contenido: leer('index.html'), tipo: 'text/html; charset=utf-8' };
 const BASE = {
   'app.js': { contenido: leer('app.js'), tipo: 'text/javascript; charset=utf-8' },
+  'ventas.js': { contenido: leer('ventas.js'), tipo: 'text/javascript; charset=utf-8' },
+  'acceso.js': { contenido: leer('acceso.js'), tipo: 'text/javascript; charset=utf-8' },
+  'plataforma.js': { contenido: leer('plataforma.js'), tipo: 'text/javascript; charset=utf-8' },
+  'cobros.js': { contenido: leer('cobros.js'), tipo: 'text/javascript; charset=utf-8' },
+  'compras.js': { contenido: leer('compras.js'), tipo: 'text/javascript; charset=utf-8' },
+  'ajustes.js': { contenido: leer('ajustes.js'), tipo: 'text/javascript; charset=utf-8' },
   'estilo.css': { contenido: leer('estilo.css'), tipo: 'text/css; charset=utf-8' },
   'manifest.webmanifest': { contenido: leer('manifest.webmanifest'), tipo: 'application/manifest+json; charset=utf-8' },
   'icono-192.png': { contenido: leer('icono-192.png'), tipo: 'image/png' },
   'icono-512.png': { contenido: leer('icono-512.png'), tipo: 'image/png' },
 };
-// Versión del panel = huella de sus archivos: si se publica un cambio, la app instalada lo nota.
-const VERSION_PANEL = createHash('sha256').update(PAGINA.contenido).update(BASE['app.js'].contenido).update(BASE['estilo.css'].contenido).digest('hex').slice(0, 12);
+// Versión del panel = huella de todos sus archivos: si se publica un cambio, la app instalada lo nota.
+const VERSION_PANEL = Object.values(BASE).reduce((h, a) => h.update(a.contenido), createHash('sha256').update(PAGINA.contenido)).digest('hex').slice(0, 12);
 const ARCHIVOS = {
   ...BASE,
   'sw.js': { contenido: Buffer.from(leer('sw.js').toString('utf8').replace("'__VERSION__'", `'${VERSION_PANEL}'`)), tipo: 'text/javascript; charset=utf-8' },

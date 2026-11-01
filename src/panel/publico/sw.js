@@ -5,7 +5,7 @@
 'use strict';
 const VERSION = '__VERSION__';
 const CACHE = `panel-${VERSION}`;
-const CASCARA = ['/panel', '/panel/app.js', '/panel/estilo.css', '/panel/icono-192.png', '/panel/manifest.webmanifest'];
+const CASCARA = ['/panel', '/panel/app.js', '/panel/ventas.js', '/panel/acceso.js', '/panel/plataforma.js', '/panel/cobros.js', '/panel/compras.js', '/panel/ajustes.js', '/panel/estilo.css', '/panel/icono-192.png', '/panel/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CASCARA)));
