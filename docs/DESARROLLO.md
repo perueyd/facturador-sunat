@@ -40,10 +40,13 @@ pdfDeComprobante()           src/comprobantes/pdf-comprobante.ts → src/pdf/rep
 | `src/cola/` | Envíos a SUNAT con reintentos | Sí |
 | `src/api/` | HTTP: llaves, lectura del JSON, rutas | Sí |
 | `src/empresas/` | Alta y configuración de empresas | Sí |
-| `src/cobros/` | Pagos, saldo y cuotas | Sí |
+| `src/cobros/` | Pagos, saldo, cuotas, cuentas de cobro, caja, cierre y gastos | Sí |
 | `src/inventario/` | Productos, movimientos de stock, compras y costo promedio | Sí |
 | `src/devoluciones/` | Devolución = nota de crédito + stock + reembolso | Sí |
-| `src/reportes/` | Resumen del día, margen semanal, historial de cliente (solo lectura) | Sí |
+| `src/reportes/` | Resumen del día, tablero, estadísticas, clientes frecuentes, venta rápida (solo lectura) | Sí |
+| `src/cotizaciones/` | Cotizaciones (proformas) y su PDF | Sí |
+| `src/plataforma/` | Planes, suscripciones y vigilancia de la plataforma | Sí |
+| `src/panel/` | Panel web: `rutas.ts` (acceso, sesión, comprobantes, empresa, usuarios) y `rutas-*.ts` por tema (ventas, inventario, cobros, plataforma); `comun-rutas.ts` con roles y ayudantes; `publico/` la página | Sí |
 | `src/config.ts` | Única lectura de variables de entorno | No |
 | `db/migraciones/` | Estructura de la BD, en orden y sin editar las ya aplicadas | — |
 | `scripts/` | Comandos de consola (delgados: llaman a `src/`) | — |
@@ -83,6 +86,10 @@ cierra la anterior con `vigente_hasta`.
 
 **Un endpoint:** en `src/api/app.ts`, con su permiso (`requiere(c, 'permiso')`), y verifica
 que el recurso sea de la empresa de la llave (404 si no). Prueba en `tests/db/api.test.ts`.
+
+**Una ruta del panel:** en el `rutas-*.ts` de su tema (o uno nuevo, registrado desde `rutas.ts`).
+Usa `conEmpresa(c)` para la sesión, revisa el módulo (`sinModulo`) y el rol (`ROLES_*` de
+`comun-rutas.ts`), y prueba en `tests/db/panel.test.ts`.
 
 **Un comando de consola:** archivo en `scripts/` que solo lea argumentos y llame a una
 función de `src/`. Regístralo en `package.json`.

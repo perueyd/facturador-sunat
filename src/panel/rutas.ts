@@ -21,31 +21,17 @@ import { autenticarLlave } from '../api/llaves.js';
 import { ErrorInvitacion, aceptarInvitacion, activarInvitacion, invitar, nuevoEnlace, verInvitacion } from './invitaciones.js';
 import { ErrorConfiguracionSunat, guardarCredencialesSol } from '../sunat/configuracion.js';
 import type { EnviarCorreo } from '../avisos/avisos.js';
-import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { esFormatoPdf, pdfDeComprobante } from '../comprobantes/pdf-comprobante.js';
 import { enTransaccion, type Db } from '../db/conexion.js';
-import { CATEGORIAS_GASTO, ErrorGasto, anularGasto, gastosDelPeriodo, registrarGasto } from '../cobros/gastos.js';
-import { ErrorCuenta, caja, cerrarCaja, cierresDeCaja, guardarCuenta, lineasParaCerrar, listarCuentas } from '../cobros/caja.js';
-import { MEDIOS_PAGO, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
-import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
 import { ErrorEmpresa, configurarEmpresa } from '../empresas/configurar.js';
 import { ErrorLogo, guardarLogo } from '../empresas/logo.js';
 import { ErrorCertificado } from '../firma/certificado.js';
 import { guardarCertificado } from '../firma/repositorio-certificados.js';
 import { base32, urlOtpauth } from '../seguridad/totp.js';
-import { registrarCompra } from '../inventario/compras.js';
-import { ErrorInventario, ajustarStock, guardarProducto, listarStock } from '../inventario/productos.js';
-import { asignarProveedor, guardarDiasEntrega, kardex, reposicion } from '../inventario/reposicion.js';
 import { ErrorPdf } from '../pdf/representacion.js';
-import { ErrorSuscripcion, actividadPlataforma, cambiarSuscripcion, clientes, iniciarPrueba, registrarPago as registrarPagoPlan, suscripcionDe } from '../plataforma/suscripciones.js';
-import { saludPlataforma } from '../plataforma/vigilancia.js';
-import { ahoraLima, esFecha, sumarDias } from '../fechas.js';
-import { clientesFrecuentes, guardarCelular, normalizarCelular } from '../reportes/cliente.js';
+import { iniciarPrueba, suscripcionDe } from '../plataforma/suscripciones.js';
 import { estadisticas } from '../reportes/estadisticas.js';
-import { masVendidos } from '../reportes/venta-rapida.js';
-import { ErrorCotizacion, anularCotizacion, cargarCotizacion, crearCotizacion, listarCotizaciones, marcarConvertida, pdfCotizacion, type Cotizacion } from '../cotizaciones/cotizaciones.js';
-import { tokenCotizacion } from '../api/enlaces.js';
-import { SECCIONES_DE_PLAN, tablero, type Modulo } from '../reportes/tablero.js';
+import { tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
 import type { Regimen } from '../tipos.js';
@@ -54,16 +40,15 @@ import {
   crearUsuario, elegirEmpresa, entrar, leerSesion, nuevosCodigosRespaldo, recuperarConEnlace, regenerarCodigosRespaldo, restablecerAcceso, salir,
   type Rol, type Sesion,
 } from './usuarios.js';
-
-/** Notas de crédito, anulaciones, productos y stock: solo quienes responden por la empresa. */
-const ROLES_CORRIGEN: readonly Rol[] = ['DUENO', 'ADMIN'];
-/** Compras de proveedores: también el contador. */
-const ROLES_COMPRAS: readonly Rol[] = ['DUENO', 'ADMIN', 'CONTADOR'];
+import { ROLES_CORRIGEN, ROLES_COMPRAS, UUID, origenPropio } from './comun-rutas.js';
+import { registrarCobros } from './rutas-cobros.js';
+import { registrarInventario } from './rutas-inventario.js';
+import { registrarPlataforma } from './rutas-plataforma.js';
+import { registrarVentas } from './rutas-ventas.js';
 
 const COOKIE = '__Host-panel';
 /** Texto tal como llegó (sin recortar espacios: una contraseña puede tenerlos), con tope de largo. */
 const crudo = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** El panel genera el número de pedido al abrir el formulario: pulsar dos veces no emite dos. */
 const PEDIDO_PANEL = /^PANEL-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -101,25 +86,6 @@ export interface DependenciasPanel {
   instalacionMuyCorta: boolean;
   /** Correo (Resend) para los enlaces de recuperación. Sin esto, esa opción no aparece. */
   correo?: EnviarCorreo;
-}
-
-/**
- * CSV que Excel en español abre bien (BOM + punto y coma). Una celda que empieza con = + - @
- * sería una fórmula: se neutraliza.
- */
-function csvParaExcel(lineas: unknown[][]): string {
-  const celda = (v: unknown) => {
-    const t = String(v ?? '');
-    const seguro = /^[=+\-@\t\r]/.test(t) ? `'${t}` : t;
-    return /[;"\n]/.test(seguro) ? `"${seguro.replaceAll('"', '""')}"` : seguro;
-  };
-  return '\uFEFF' + lineas.map((l) => l.map(celda).join(';')).join('\r\n') + '\r\n';
-}
-
-/** Origen público de esta petición (detrás de Render llega por https aunque el servidor vea http). */
-function origenPropio(c: Context): string {
-  const url = new URL(c.req.url);
-  return `${c.req.header('x-forwarded-proto')?.split(',')[0]?.trim() || url.protocol.slice(0, -1)}://${url.host}`;
 }
 
 export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
@@ -500,6 +466,15 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
 
   const sinModulo = (c: Context, m: Modulo) => d.error(c, 403, 'MODULO_DESACTIVADO', `La función "${m}" está desactivada para esta empresa.`);
   const texto = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  // Invitar a una persona: si es nueva, recibe un ENLACE y ella misma pone su contraseña y su app.
+  const enlaceInvitacion = (c: Context, token: string) => `${origenPropio(c)}/panel#invitacion=${token}`;
+  const avisarInvitacion = (para: string, enlace: string, empresa: string) => {
+    void d.correo?.({
+      para: [para], asunto: `Te invitaron al facturador de ${empresa}`,
+      texto: `Para entrar, abre este enlace (vale 72 horas) y crea tu contraseña:\n\n${enlace}\n\nTen a mano Google Authenticator en tu celular.`,
+    }).catch((e: unknown) => console.error('[invitacion] no se pudo enviar:', e instanceof Error ? e.message : e));
+  };
+  const comun = { d, conSesion, conEmpresa, deLaEmpresa, sinModulo, texto, frenado, enlaceInvitacion, avisarInvitacion };
 
   app.get('/panel/api/tablero', async (c) => {
     const s = await conEmpresa(c);
@@ -530,172 +505,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     return c.json({ productos: r.rows.map((p) => ({ sku: p.sku, nombre: p.nombre, precio: p.precio, codigoBarras: p.codigo_barras })) });
   });
 
-  // ---------- Cotizaciones (proformas): no son comprobantes; al pagar se emite la boleta o factura ----------
-  const sesionCotizar = async (c: Context) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no permite hacer cotizaciones.');
-    return s;
-  };
-  const conEnlace = (c: Context, k: Cotizacion) => ({ ...k, enlace: `${origenPropio(c)}/q/${tokenCotizacion(d.llaveMaestra, k.id)}` });
-  app.get('/panel/api/cotizaciones', async (c) => {
-    const s = await sesionCotizar(c);
-    if (s instanceof Response) return s;
-    return c.json({ cotizaciones: (await listarCotizaciones(d.db, s.empresa.id)).map((k) => conEnlace(c, k)) });
-  });
-  app.post('/panel/api/cotizaciones', async (c) => {
-    const s = await sesionCotizar(c);
-    if (s instanceof Response) return s;
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const cli = (b.cliente && typeof b.cliente === 'object' ? b.cliente : {}) as Record<string, unknown>;
-    const items = Array.isArray(b.items) ? b.items.slice(0, 101) : [];
-    try {
-      const k = await crearCotizacion(d.db, s.empresa.id, {
-        cliente: { tipoDocumento: texto(cli.tipoDocumento, 10) || 'NINGUNO', numero: texto(cli.numero, 15), nombre: texto(cli.nombre, 200) },
-        items: items.map((x) => {
-          const i = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
-          return { codigo: texto(i.codigo, 40), descripcion: texto(i.descripcion, 250), cantidad: texto(String(i.cantidad ?? ''), 30).replace(',', '.'), precio: texto(String(i.precio ?? ''), 30).replace(',', '.') };
-        }),
-        diasValidez: typeof b.diasValidez === 'number' ? b.diasValidez : 7,
-        ...(typeof b.nota === 'string' ? { nota: b.nota } : {}),
-      }, s.usuarioId, ahoraLima().fecha);
-      return c.json(conEnlace(c, k), 201);
-    } catch (e) {
-      if (e instanceof ErrorCotizacion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-      throw e;
-    }
-  });
-  app.get('/panel/api/cotizaciones/:id/pdf', async (c) => {
-    const s = await sesionCotizar(c);
-    if (s instanceof Response) return s;
-    const id = c.req.param('id');
-    const k = UUID.test(id) ? await cargarCotizacion(d.db, s.empresa.id, id) : undefined;
-    if (!k) return d.error(c, 404, 'NO_ENCONTRADO', 'Cotización no encontrada.');
-    return c.body(new Uint8Array(await pdfCotizacion(d.db, s.empresa.id, k, d.almacen)), 200, {
-      'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${k.numero}.pdf"`, 'Cache-Control': 'private, no-store',
-    });
-  });
-  app.post('/panel/api/cotizaciones/:id/anular', async (c) => {
-    const s = await sesionCotizar(c);
-    if (s instanceof Response) return s;
-    const id = c.req.param('id');
-    return UUID.test(id) && (await anularCotizacion(d.db, s.empresa.id, id, s.usuarioId))
-      ? c.json({ ok: true }) : d.error(c, 409, 'NO_SE_PUEDE', 'Solo se anula una cotización vigente.');
-  });
-  app.post('/panel/api/cotizaciones/:id/convertida', async (c) => {
-    const s = await sesionCotizar(c);
-    if (s instanceof Response) return s;
-    const id = c.req.param('id');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const comprobante = typeof b.comprobanteId === 'string' ? b.comprobanteId : '';
-    return UUID.test(id) && UUID.test(comprobante) && (await marcarConvertida(d.db, s.empresa.id, id, comprobante, s.usuarioId))
-      ? c.json({ ok: true }) : d.error(c, 409, 'NO_SE_PUEDE', 'La cotización ya no está vigente o el comprobante no es de esta empresa.');
-  });
-
-  app.get('/panel/api/venta-rapida', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    return c.json({ productos: await masVendidos(d.db, s.empresa.id, ahoraLima().fecha) });
-  });
-
-  // Cliente ya conocido: con el DNI o RUC se completa el nombre.
-  app.get('/panel/api/clientes', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    const doc = c.req.query('doc') ?? '';
-    if (!/^[0-9A-Za-z]{4,15}$/.test(doc)) return d.error(c, 400, 'DOCUMENTO_INVALIDO', 'Documento inválido.');
-    const r = await d.db.query(`SELECT nombre_razon_social AS nombre FROM clientes WHERE empresa_id = $1 AND numero_doc = $2 LIMIT 1`, [s.empresa.id, doc]);
-    return r.rows[0] ? c.json({ nombre: r.rows[0].nombre }) : d.error(c, 404, 'NO_ENCONTRADO', 'Cliente nuevo.');
-  });
-
-  // Clientes frecuentes y su celular (para mandarles un WhatsApp con el mensaje listo).
-  app.get('/panel/api/clientes/frecuentes', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
-    return c.json({ clientes: await clientesFrecuentes(d.db, s.empresa.id, ahoraLima().fecha) });
-  });
-  app.post('/panel/api/clientes/celular', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no cambia datos de clientes.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const texto = typeof b.celular === 'string' ? b.celular.trim() : '';
-    const celular = texto ? normalizarCelular(texto) : null;
-    if (celular === undefined) return d.error(c, 422, 'DATOS_INVALIDOS', 'Celular inválido: 9 dígitos que empiezan con 9 (ej. 987 654 321), o con + y el código si es de otro país.');
-    const ok = await guardarCelular(d.db, s.empresa.id, { tipoDocumento: typeof b.tipoDocumento === 'string' ? b.tipoDocumento.slice(0, 2) : '', numero: typeof b.numero === 'string' ? b.numero.slice(0, 20) : '' }, celular, s.usuarioId);
-    return ok ? c.json({ ok: true, celular }) : d.error(c, 404, 'NO_ENCONTRADO', 'Cliente no encontrado.');
-  });
-
-  // Ventas de un mes en CSV (Excel lo abre directo), para el contador.
-  app.get('/panel/api/exportar', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('exportar')) return sinModulo(c, 'exportar');
-    const mes = c.req.query('mes') ?? '';
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return d.error(c, 400, 'MES_INVALIDO', 'Indica el mes como AAAA-MM.');
-    const r = await d.db.query(
-      `SELECT co.fecha_emision::text AS fecha, co.tipo_comprobante, co.serie, co.numero, co.cliente_numero_doc, co.cliente_nombre,
-              (co.total_gravado + co.total_exonerado + co.total_inafecto)::text AS base, co.total_igv::text AS igv, co.importe_total::text AS total,
-              co.estado::text AS estado, co.estado_pago::text AS pago, ca.nombre AS canal
-         FROM comprobantes co JOIN canales ca ON ca.id = co.canal_id
-        WHERE co.empresa_id = $1 AND to_char(co.fecha_emision, 'YYYY-MM') = $2 ORDER BY co.fecha_emision, co.serie, co.numero`,
-      [s.empresa.id, mes],
-    );
-    const TIPOS: Record<string, string> = { '01': 'Factura', '03': 'Boleta', '07': 'Nota de crédito' };
-    const lineas = [
-      ['Fecha', 'Tipo', 'Número', 'Doc. cliente', 'Cliente', 'Base imponible', 'IGV', 'Total', 'Estado SUNAT', 'Pago', 'Canal'],
-      ...r.rows.map((x) => [
-        x.fecha, TIPOS[x.tipo_comprobante] ?? x.tipo_comprobante, idComprobanteLegible(x.serie, Number(x.numero)), x.cliente_numero_doc,
-        x.cliente_nombre, x.base, x.igv, x.total, x.estado, x.pago, x.canal,
-      ]),
-    ];
-    return c.body(csvParaExcel(lineas), 200, {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="ventas-${s.empresa.ruc}-${mes}.csv"`,
-    });
-  });
-
-  // Devolución total: nota de crédito por todo lo que quede por devolver; el stock vuelve.
-  app.post('/panel/api/comprobantes/:id/devolucion', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('notas')) return sinModulo(c, 'notas');
-    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador emite notas de crédito.');
-    const id = await deLaEmpresa(s.empresa.id, c.req.param('id'));
-    if (!id) return d.error(c, 404, 'NO_ENCONTRADO', 'Comprobante no encontrado.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const lineas = await d.db.query(
-      `SELECT i.orden, (i.cantidad - coalesce((SELECT sum(di.cantidad) FROM devolucion_items di JOIN devoluciones dv ON dv.id = di.devolucion_id
-                JOIN comprobantes nc ON nc.id = dv.nota_credito_id WHERE dv.comprobante_origen_id = i.comprobante_id AND di.item_orden = i.orden
-                AND nc.estado NOT IN ('RECHAZADO', 'ANULADO')), 0))::text AS queda
-         FROM comprobante_items i WHERE i.comprobante_id = $1 ORDER BY i.orden`,
-      [id],
-    );
-    const items = lineas.rows.filter((x) => Number.parseFloat(x.queda) > 0).map((x) => ({ orden: Number(x.orden), cantidad: x.queda as string }));
-    if (!items.length) return d.error(c, 409, 'YA_DEVUELTO', 'Este comprobante ya fue devuelto por completo.');
-    try {
-      const r = await registrarDevolucion(d.db, { empresaId: s.empresa.id, comprobanteId: id, motivo: texto(b.motivo, 200), items, usuarioId: s.usuarioId });
-      return c.json(await d.respuestaComprobante(c, r.notaCreditoId), 201);
-    } catch (e) {
-      if (e instanceof ErrorDevolucion) return d.error(c, 422, 'NO_SE_PUEDE_DEVOLVER', e.message);
-      throw e;
-    }
-  });
-
-  // Anular (error al emitir): comunicación de baja o resumen diario, dentro del plazo.
-  app.post('/panel/api/comprobantes/:id/anular', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('notas')) return sinModulo(c, 'notas');
-    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador anula comprobantes.');
-    const id = await deLaEmpresa(s.empresa.id, c.req.param('id'));
-    if (!id) return d.error(c, 404, 'NO_ENCONTRADO', 'Comprobante no encontrado.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const r = await solicitarAnulacion(d.db, { comprobanteId: id, motivo: texto(b.motivo, 200), usuarioId: s.usuarioId });
-    if (r.resultado === 'ERROR') return d.error(c, 422, 'NO_SE_PUEDE_ANULAR', r.errores.join(' '));
-    return c.json({ ok: true, via: r.via, documento: r.identificador });
-  });
+  registrarVentas(app, comun);
 
   app.post('/panel/api/contrasena', async (c) => {
     const s = await conSesion(c);
@@ -711,344 +521,8 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     return c.json({ ok: true });
   });
 
-  // ---------- Compras, stock y cobros ----------
-
-  /** Errores de negocio (datos que no cuadran) se explican; lo demás es error interno. */
-  const negocio = (c: Context, e: unknown) => {
-    if (e instanceof ErrorInventario) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-    throw e;
-  };
-
-  app.get('/panel/api/stock', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
-    return c.json({ stock: await listarStock(d.db, s.empresa.id) });
-  });
-
-  app.post('/panel/api/productos', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
-    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador crea productos.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    try {
-      await guardarProducto(d.db, s.empresa.id, {
-        sku: texto(b.sku, 40), nombre: texto(b.nombre, 250), precio: texto(b.precio, 20) || '0',
-        controlaStock: b.controlaStock !== false, ...(texto(b.stockMinimo, 20) ? { stockMinimo: texto(b.stockMinimo, 20) } : {}),
-        ...(typeof b.codigoBarras === 'string' && b.codigoBarras.trim() ? { codigoBarras: texto(b.codigoBarras, 40) } : {}),
-      });
-    } catch (e) {
-      return negocio(c, e);
-    }
-    return c.json({ ok: true }, 201);
-  });
-
-  // Ajuste de stock (conteo físico, merma): motivo obligatorio; queda en el historial.
-  app.post('/panel/api/stock/ajuste', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
-    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador ajusta el stock.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const cantidad = texto(b.cantidad, 20);
-    if (!/^-?\d+(\.\d+)?$/.test(cantidad)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Cantidad inválida: usa + para entrada y - para salida, por ejemplo -1.');
-    try {
-      const stock = await ajustarStock(d.db, s.empresa.id, texto(b.sku, 40), cantidad, texto(b.motivo, 200), s.usuarioId);
-      return c.json({ ok: true, stock });
-    } catch (e) {
-      return negocio(c, e);
-    }
-  });
-
-  // Proveedor ya conocido: con su RUC se completa la razón social.
-  app.get('/panel/api/proveedores', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    const ruc = c.req.query('ruc') ?? '';
-    if (!/^\d{11}$/.test(ruc)) return d.error(c, 400, 'DOCUMENTO_INVALIDO', 'RUC inválido.');
-    const r = await d.db.query(`SELECT razon_social FROM proveedores WHERE empresa_id = $1 AND ruc = $2`, [s.empresa.id, ruc]);
-    return r.rows[0] ? c.json({ razonSocial: r.rows[0].razon_social }) : d.error(c, 404, 'NO_ENCONTRADO', 'Proveedor nuevo.');
-  });
-
-  // ---------- Reposición y Kardex (costos: dueño, administrador y contador) ----------
-  const conInventario = async (c: Context) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
-    return ROLES_COMPRAS.includes(s.empresa.rol) ? s : d.error(c, 403, 'SIN_PERMISO', 'Tu rol no ve costos ni reposición.');
-  };
-
-  app.get('/panel/api/reposicion', async (c) => {
-    const s = await conInventario(c);
-    if (s instanceof Response) return s;
-    const proveedores = (await d.db.query(
-      `SELECT ruc, razon_social, dias_entrega FROM proveedores WHERE empresa_id = $1 ORDER BY razon_social`, [s.empresa.id],
-    )).rows.map((p) => ({ ruc: p.ruc, razonSocial: p.razon_social, diasEntrega: p.dias_entrega }));
-    return c.json({ ...(await reposicion(d.db, s.empresa.id)), proveedores });
-  });
-
-  app.get('/panel/api/kardex', async (c) => {
-    const s = await conInventario(c);
-    if (s instanceof Response) return s;
-    const k = await kardex(d.db, s.empresa.id, (c.req.query('sku') ?? '').slice(0, 40));
-    if (!k) return d.error(c, 404, 'NO_ENCONTRADO', 'Producto no encontrado.');
-    if (c.req.query('formato') !== 'csv') return c.json(k);
-    const lineas = [
-      ['Fecha', 'Movimiento', 'Documento', 'Detalle', 'Entrada', 'Salida', 'Saldo', 'Costo unitario', 'Costo promedio', 'Valor del saldo'],
-      ...k.movimientos.map((m) => [m.fecha, m.tipo, m.documento, m.detalle, m.entrada, m.salida, m.saldo, m.costoUnitario, m.costoPromedio, m.valorSaldo]),
-    ];
-    return c.body(csvParaExcel(lineas), 200, {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="kardex-${k.producto.sku}.csv"`,
-    });
-  });
-
-  const dias = (v: unknown) => (typeof v === 'string' && /^\d{1,3}$/.test(v) && Number(v) <= 365 ? Number(v) : undefined);
-
-  app.post('/panel/api/proveedores/dias', async (c) => {
-    const s = await conInventario(c);
-    if (s instanceof Response) return s;
-    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const n = dias(b.dias);
-    if (n === undefined) return d.error(c, 422, 'DATOS_INVALIDOS', 'Días de entrega: un número de 0 a 365.');
-    return (await guardarDiasEntrega(d.db, s.empresa.id, texto(b.ruc, 11), n))
-      ? c.json({ ok: true })
-      : d.error(c, 404, 'NO_ENCONTRADO', 'Ese proveedor no está registrado: aparece al registrar su primera compra.');
-  });
-
-  app.post('/panel/api/productos/proveedor', async (c) => {
-    const s = await conInventario(c);
-    if (s instanceof Response) return s;
-    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const ruc = texto(b.ruc, 11) || null;
-    const n = texto(b.dias, 3) ? dias(b.dias) : null;
-    if (n === undefined) return d.error(c, 422, 'DATOS_INVALIDOS', 'Días de entrega: un número de 0 a 365 (o vacío).');
-    return (await asignarProveedor(d.db, s.empresa.id, texto(b.sku, 40), ruc, n))
-      ? c.json({ ok: true })
-      : d.error(c, 404, 'NO_ENCONTRADO', 'Revisa el código del producto y el RUC del proveedor (debe tener al menos una compra registrada).');
-  });
-
-  // Factura o boleta de un proveedor: suma al IGV de compras del mes (y al stock si es un producto).
-  app.post('/panel/api/compras', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('compras')) return sinModulo(c, 'compras');
-    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no registra compras.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const prov = (typeof b.proveedor === 'object' && b.proveedor ? b.proveedor : {}) as Record<string, unknown>;
-    const items = (Array.isArray(b.items) ? b.items : []).slice(0, 100).map((x: Record<string, unknown>) => ({
-      ...(texto(x?.sku, 40) ? { sku: texto(x.sku, 40) } : {}),
-      descripcion: texto(x?.descripcion, 250), cantidad: texto(x?.cantidad, 20) || '1', costoUnitario: texto(x?.costoUnitario, 20),
-    }));
-    const numero = Number(texto(b.numero, 10));
-    const montos = [texto(b.igv, 20), texto(b.total, 20), ...items.flatMap((i) => [i.cantidad, i.costoUnitario])];
-    if (montos.some((m) => !/^\d+(\.\d+)?$/.test(m))) return d.error(c, 422, 'DATOS_INVALIDOS', 'Revisa los montos: usa números con punto decimal, por ejemplo 118.00.');
-    try {
-      const r = await registrarCompra(d.db, s.empresa.id, {
-        proveedor: { ruc: texto(prov.ruc, 11), razonSocial: texto(prov.razonSocial, 200) },
-        tipoComprobante: b.tipo === '03' ? '03' : '01',
-        serie: texto(b.serie, 4), numero, fecha: texto(b.fecha, 10),
-        igv: texto(b.igv, 20), total: texto(b.total, 20), items,
-      }, s.usuarioId);
-      return c.json({ ok: true, ...r }, 201);
-    } catch (e) {
-      return negocio(c, e);
-    }
-  });
-
-  app.get('/panel/api/compras', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('compras')) return sinModulo(c, 'compras');
-    const r = await d.db.query(
-      `SELECT c.fecha_emision::text AS fecha, c.serie, c.numero, p.razon_social AS proveedor, c.igv::text AS igv, c.total::text AS total
-         FROM compras c JOIN proveedores p ON p.id = c.proveedor_id
-        WHERE c.empresa_id = $1 AND c.anulada_en IS NULL ORDER BY c.creado_en DESC LIMIT 20`,
-      [s.empresa.id],
-    );
-    return c.json({ compras: r.rows.map((x) => ({ ...x, numero: `${x.serie}-${x.numero}` })) });
-  });
-
-  // Cobro de una venta al crédito o de un saldo (ej. el 50% al entregar).
-  app.post('/panel/api/comprobantes/:id/pagos', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
-    if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no registra cobros.');
-    const id = await deLaEmpresa(s.empresa.id, c.req.param('id'));
-    if (!id) return d.error(c, 404, 'NO_ENCONTRADO', 'Comprobante no encontrado.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const medio = texto(b.medio, 20).toUpperCase() as MedioPago;
-    if (!MEDIOS_PAGO.includes(medio)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Elige el medio de pago.');
-    const monto = texto(b.monto, 20);
-    if (monto && !/^\d+(\.\d{1,2})?$/.test(monto)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Monto inválido, por ejemplo 150.00.');
-    const referencia = texto(b.referencia, 60);
-    const cuenta = texto(b.cuenta, 36);
-    if (cuenta && !UUID.test(cuenta)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Cuenta inválida.');
-    const r = await registrarPago(d.db, {
-      empresaId: s.empresa.id, comprobanteId: id, medio, usuarioId: s.usuarioId,
-      ...(monto ? { monto } : {}), ...(referencia ? { referencia } : {}), ...(cuenta ? { cuentaId: cuenta } : {}),
-    });
-    if (r.resultado === 'ERROR') return d.error(c, 422, 'PAGO_INVALIDO', r.errores.join(' '));
-    return c.json(await d.respuestaComprobante(c, id), r.resultado === 'REGISTRADO' ? 201 : 200);
-  });
-
-  // ---------- Cuentas donde entra el dinero y caja ----------
-  app.get('/panel/api/cuentas', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
-    const cuentas = await listarCuentas(d.db, s.empresa.id);
-    // Quien solo vende ve las activas (para elegir dónde entró el dinero).
-    return c.json({ cuentas: ROLES_CORRIGEN.includes(s.empresa.rol) ? cuentas : cuentas.filter((x) => x.activa) });
-  });
-
-  const guardarCuentaRuta = async (c: Context, id?: string) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
-    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador cambia las cuentas.');
-    if (id !== undefined && !UUID.test(id)) return d.error(c, 404, 'NO_ENCONTRADO', 'Cuenta no encontrada.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    try {
-      const cuentaId = await guardarCuenta(d.db, s.empresa.id, {
-        ...(id ? { id } : {}), nombre: texto(b.nombre, 60), medio: texto(b.medio, 20).toUpperCase(),
-        ...(typeof b.titular === 'string' || b.titular === null ? { titular: texto(b.titular, 120) } : {}),
-        deLaEmpresa: b.deLaEmpresa !== false, predeterminada: b.predeterminada === true, ...(typeof b.activa === 'boolean' ? { activa: b.activa } : {}),
-      }, s.usuarioId);
-      return c.json({ ok: true, id: cuentaId }, id ? 200 : 201);
-    } catch (e) {
-      if (e instanceof ErrorCuenta) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-      throw e;
-    }
-  };
-  app.post('/panel/api/cuentas', (c) => guardarCuentaRuta(c));
-  app.post('/panel/api/cuentas/:id', (c) => guardarCuentaRuta(c, c.req.param('id')));
-
-  app.get('/panel/api/caja', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
-    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no ve la caja.');
-    const hoy = ahoraLima().fecha;
-    const desde = c.req.query('desde') ?? hoy;
-    const hasta = c.req.query('hasta') ?? hoy;
-    if (!esFecha(desde) || !esFecha(hasta) || desde > hasta) return d.error(c, 400, 'FECHAS_INVALIDAS', 'Fechas como AAAA-MM-DD, "desde" antes de "hasta".');
-    return c.json(await caja(d.db, s.empresa.id, desde, hasta));
-  });
-
-  // Gastos y caja chica: el dinero que sale. Quien vende puede anotarlo (pagó el pasaje con el
-  // efectivo del cajón); verlos y anularlos es de quien ve la caja.
-  app.get('/panel/api/gastos', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
-    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no ve los gastos.');
-    const hoy = ahoraLima().fecha;
-    const desde = c.req.query('desde') ?? hoy;
-    const hasta = c.req.query('hasta') ?? hoy;
-    if (!esFecha(desde) || !esFecha(hasta) || desde > hasta) return d.error(c, 400, 'FECHAS_INVALIDAS', 'Fechas como AAAA-MM-DD, "desde" antes de "hasta".');
-    return c.json({ ...(await gastosDelPeriodo(d.db, s.empresa.id, desde, hasta)), categorias: CATEGORIAS_GASTO });
-  });
-  app.post('/panel/api/gastos', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
-    if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no registra gastos.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const hoy = ahoraLima().fecha;
-    try {
-      const id = await registrarGasto(d.db, s.empresa.id, {
-        fecha: texto(b.fecha, 10) || hoy, monto: texto(b.monto, 20).replace(',', '.'), categoria: texto(b.categoria, 20).toUpperCase(),
-        descripcion: texto(b.descripcion, 200), medio: texto(b.medio, 20).toUpperCase(),
-        ...(typeof b.cuenta === 'string' && UUID.test(b.cuenta) ? { cuentaId: b.cuenta } : {}),
-        ...(typeof b.documento === 'string' ? { documento: b.documento } : {}),
-      }, s.usuarioId, hoy);
-      return c.json({ ok: true, id }, 201);
-    } catch (e) {
-      if (e instanceof ErrorGasto) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-      throw e;
-    }
-  });
-  app.post('/panel/api/gastos/:id/anular', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador anula gastos.');
-    const id = c.req.param('id');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    try {
-      return UUID.test(id) && (await anularGasto(d.db, s.empresa.id, id, texto(b.motivo, 200), s.usuarioId))
-        ? c.json({ ok: true }) : d.error(c, 409, 'NO_SE_PUEDE', 'Ese gasto no existe o ya estaba anulado.');
-    } catch (e) {
-      if (e instanceof ErrorGasto) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-      throw e;
-    }
-  });
-
-  // Cierre de caja diario: lo esperado lo calcula el servidor; el usuario solo pone lo contado.
-  const sesionCaja = async (c: Context) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
-    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no cierra la caja.');
-    return s;
-  };
-  app.get('/panel/api/caja/cierre', async (c) => {
-    const s = await sesionCaja(c);
-    if (s instanceof Response) return s;
-    const hoy = ahoraLima().fecha;
-    const fecha = c.req.query('fecha') ?? hoy;
-    if (!esFecha(fecha) || fecha > hoy) return d.error(c, 400, 'FECHA_INVALIDA', 'Elige un día de hoy hacia atrás (AAAA-MM-DD).');
-    const hace30 = sumarDias(hoy, -30);
-    // Del historial, solo el último cierre de cada día (los anteriores quedaron reemplazados).
-    const historial = (await cierresDeCaja(d.db, s.empresa.id, hace30, hoy)).filter((x, i, todos) => todos.findIndex((y) => y.fecha === x.fecha) === i);
-    return c.json({
-      fecha,
-      lineas: await lineasParaCerrar(d.db, s.empresa.id, fecha),
-      cierres: await cierresDeCaja(d.db, s.empresa.id, fecha, fecha),
-      historial,
-    });
-  });
-  app.post('/panel/api/caja/cierre', async (c) => {
-    const s = await sesionCaja(c);
-    if (s instanceof Response) return s;
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const fecha = texto(b.fecha, 10);
-    if (!esFecha(fecha)) return d.error(c, 400, 'FECHA_INVALIDA', 'Fecha como AAAA-MM-DD.');
-    const mapa = (v: unknown) => {
-      const m: Record<string, string> = {};
-      if (v && typeof v === 'object') for (const [k, x] of Object.entries(v as Record<string, unknown>).slice(0, 100)) if (typeof x === 'string') m[k.slice(0, 60)] = x.trim();
-      return m;
-    };
-    const contados = mapa(b.contados);
-    try {
-      return c.json(await cerrarCaja(d.db, s.empresa.id, fecha, contados, texto(b.nota, 300) || null, s.usuarioId, ahoraLima().fecha, mapa(b.fondos)), 201);
-    } catch (e) {
-      if (e instanceof ErrorCuenta) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-      throw e;
-    }
-  });
-
-  app.get('/panel/api/por-cobrar', async (c) => {
-    const s = await conEmpresa(c);
-    if (s instanceof Response) return s;
-    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
-    const r = await d.db.query(
-      `SELECT c.id, c.serie, c.numero, c.cliente_nombre, c.fecha_emision::text AS fecha, ${sqlSaldo('c')}::numeric(14,2)::text AS saldo,
-              (SELECT min(q.fecha_vencimiento)::text FROM comprobante_cuotas q WHERE q.comprobante_id = c.id AND NOT q.pagada) AS proxima_cuota,
-              k.telefono AS celular, c.cliente_tipo_doc, c.cliente_numero_doc
-         FROM comprobantes c LEFT JOIN clientes k ON k.id = c.cliente_id
-        WHERE c.empresa_id = $1 AND c.tipo_comprobante <> '07' AND c.estado_pago <> 'PAGADO' AND c.estado NOT IN ('RECHAZADO', 'ANULADO')
-        ORDER BY proxima_cuota NULLS LAST, c.fecha_emision LIMIT 50`,
-      [s.empresa.id],
-    );
-    return c.json({ porCobrar: r.rows.map((x) => ({ id: x.id, numero: idComprobanteLegible(x.serie, Number(x.numero)), cliente: x.cliente_nombre, fecha: x.fecha, saldo: x.saldo, proximaCuota: x.proxima_cuota,
-      celular: x.celular, documento: { tipoDocumento: x.cliente_tipo_doc, numero: x.cliente_numero_doc } })) });
-  });
-
+  registrarInventario(app, comun);
+  registrarCobros(app, comun);
   // Logo para el PDF (el navegador lo achica antes de enviarlo).
   app.post('/panel/api/logo', async (c) => {
     const s = await conEmpresa(c);
@@ -1066,170 +540,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     return c.json({ ok: true });
   });
 
-  // ---------- Plataforma: tus clientes, sus planes y la salud del sistema ----------
-  // Solo para administradores de la plataforma (npm run usuario -- plataforma --email …).
-  const conPlataforma = async (c: Context) => {
-    const s = await conSesion(c);
-    if (s instanceof Response) return s;
-    return s.adminPlataforma ? s : d.error(c, 403, 'SIN_PERMISO', 'Solo el administrador de la plataforma.');
-  };
-  const empresaDeRuta = async (c: Context) => {
-    const id = c.req.param('empresaId') ?? '';
-    return UUID.test(id) && (await d.db.query(`SELECT 1 FROM empresas WHERE id = $1`, [id])).rowCount ? id : undefined;
-  };
-
-  app.get('/panel/api/plataforma', async (c) => {
-    const s = await conPlataforma(c);
-    if (s instanceof Response) return s;
-    const planes = (await d.db.query(
-      `SELECT codigo, nombre, precio_mensual::text AS mensual, precio_anual::text AS anual, comprobantes_mes, usuarios_max, activo, secciones FROM planes ORDER BY precio_mensual`,
-    )).rows.map((p) => ({
-      codigo: p.codigo, nombre: p.nombre, mensual: p.mensual, anual: p.anual, comprobantesMes: p.comprobantes_mes, usuariosMax: p.usuarios_max, activo: p.activo, secciones: p.secciones,
-    }));
-    return c.json({ ...(await clientes(d.db)), planes, actividad: await actividadPlataforma(d.db) });
-  });
-
-  app.get('/panel/api/plataforma/salud', async (c) => {
-    const s = await conPlataforma(c);
-    if (s instanceof Response) return s;
-    return c.json(await saludPlataforma(d.db));
-  });
-
-  app.post('/panel/api/plataforma/:empresaId/pago', async (c) => {
-    const s = await conPlataforma(c);
-    if (s instanceof Response) return s;
-    const empresaId = await empresaDeRuta(c);
-    if (!empresaId) return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    try {
-      const r = await registrarPagoPlan(d.db, {
-        empresaId, usuarioId: s.usuarioId, periodo: texto(b.periodo, 10) as 'MENSUAL' | 'ANUAL', medio: texto(b.medio, 60),
-        ...(texto(b.monto, 12) ? { monto: texto(b.monto, 12) } : {}), ...(texto(b.referencia, 120) ? { referencia: texto(b.referencia, 120) } : {}),
-        ...(texto(b.plan, 20) ? { plan: texto(b.plan, 20) } : {}),
-      });
-      return c.json({ ok: true, ...r });
-    } catch (e) {
-      if (e instanceof ErrorSuscripcion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-      throw e;
-    }
-  });
-
-  app.post('/panel/api/plataforma/:empresaId/cambio', async (c) => {
-    const s = await conPlataforma(c);
-    if (s instanceof Response) return s;
-    const empresaId = await empresaDeRuta(c);
-    if (!empresaId) return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    try {
-      await cambiarSuscripcion(d.db, {
-        empresaId, usuarioId: s.usuarioId, motivo: texto(b.motivo, 300),
-        ...(texto(b.plan, 20) ? { plan: texto(b.plan, 20) } : {}),
-        ...(texto(b.estado, 20) ? { estado: texto(b.estado, 20) as 'ACTIVA' | 'SUSPENDIDA' | 'CANCELADA' } : {}),
-      });
-      return c.json({ ok: true });
-    } catch (e) {
-      if (e instanceof ErrorSuscripcion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-      throw e;
-    }
-  });
-
-  // Invitar al DUEÑO de la empresa de un cliente: recibe su enlace y configura todo él mismo.
-  app.post('/panel/api/plataforma/:empresaId/invitar', async (c) => {
-    const s = await conPlataforma(c);
-    if (s instanceof Response) return s;
-    const empresaId = await empresaDeRuta(c);
-    if (!empresaId) return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    try {
-      const r = await invitar(d.db, { email: texto(b.email, 200), nombre: texto(b.nombre, 120), empresaId, rol: 'DUENO', creadaPor: s.usuarioId });
-      if (r.existente) return c.json({ ok: true, existente: true });
-      const razon = (await d.db.query(`SELECT razon_social FROM empresas WHERE id = $1`, [empresaId])).rows[0].razon_social as string;
-      const enlace = enlaceInvitacion(c, r.token);
-      avisarInvitacion(texto(b.email, 200).toLowerCase(), enlace, razon);
-      return c.json({ ok: true, existente: false, enlace, expira: r.expira, porCorreo: Boolean(d.correo) }, 201);
-    } catch (e) {
-      if (e instanceof ErrorInvitacion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-      throw e;
-    }
-  });
-
-  // Precios de los planes: los decide el dueño de la plataforma (los de fábrica son una propuesta).
-  app.post('/panel/api/plataforma/planes/:codigo', async (c) => {
-    const s = await conPlataforma(c);
-    if (s instanceof Response) return s;
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const monto = (v: unknown) => (typeof v === 'string' && /^\d{1,8}(\.\d{1,2})?$/.test(v) ? v : undefined);
-    const entero = (v: unknown) => (v === null || v === '' ? null : typeof v === 'string' && /^[1-9]\d{0,6}$/.test(v) ? Number(v) : undefined);
-    const mensual = monto(b.mensual);
-    const anual = monto(b.anual);
-    const comprobantes = entero(b.comprobantesMes);
-    const usuarios = entero(b.usuariosMax);
-    if (!mensual || !anual || comprobantes === undefined || usuarios === undefined) {
-      return d.error(c, 422, 'DATOS_INVALIDOS', 'Precios como 39.00; límites como números enteros (vacío = sin límite).');
-    }
-    // Secciones del plan (opcional): solo las que se reparten por plan.
-    const secciones = Array.isArray(b.secciones) ? b.secciones.filter((x): x is string => typeof x === 'string') : undefined;
-    if (secciones && secciones.some((x) => !(SECCIONES_DE_PLAN as readonly string[]).includes(x))) {
-      return d.error(c, 422, 'DATOS_INVALIDOS', `Secciones válidas: ${SECCIONES_DE_PLAN.join(', ')}.`);
-    }
-    const r = await d.db.query(
-      `UPDATE planes SET precio_mensual = $2, precio_anual = $3, comprobantes_mes = $4, usuarios_max = $5, secciones = coalesce($6, secciones) WHERE codigo = $1 RETURNING 1`,
-      [c.req.param('codigo'), mensual, anual, comprobantes, usuarios, secciones ?? null],
-    );
-    if (!r.rowCount) return d.error(c, 404, 'NO_ENCONTRADO', 'Plan no encontrado.');
-    await d.db.query(`INSERT INTO auditoria (usuario_id, accion, entidad, despues) VALUES ($1, 'CAMBIO_PLAN_PRECIOS', 'planes', $2)`, [
-      s.usuarioId, JSON.stringify({ codigo: c.req.param('codigo'), mensual, anual, comprobantes, usuarios, secciones: secciones ?? null }),
-    ]);
-    return c.json({ ok: true });
-  });
-
-  // ---------- Reportes: "algo no funciona" o "me falta esto" ----------
-  app.post('/panel/api/reportes', async (c) => {
-    const s = await conSesion(c);
-    if (s instanceof Response) return s;
-    const ip = d.ipCliente(c);
-    // Cada reporte cuenta: frena a quien quiera llenar el correo del administrador.
-    if (d.fallos.excedido(ip) || !d.fallos.contar(ip)) return frenado(c);
-    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const tipo = texto(b.tipo, 20) === 'SUGERENCIA' ? 'SUGERENCIA' : 'PROBLEMA';
-    const mensaje = texto(b.mensaje, 2000).trim();
-    if (mensaje.length < 5) return d.error(c, 422, 'DATOS_INVALIDOS', 'Cuéntanos un poco más (mínimo 5 letras).');
-    const pantalla = texto(b.pantalla, 40) || null;
-    await d.db.query(`INSERT INTO reportes (empresa_id, usuario_id, tipo, mensaje, pantalla) VALUES ($1, $2, $3, $4, $5)`, [
-      s.empresa?.id ?? null, s.usuarioId, tipo, mensaje, pantalla,
-    ]);
-    const para = (await d.db.query(`SELECT lower(email) AS email FROM usuarios WHERE admin_plataforma AND activo`)).rows.map((x) => x.email as string);
-    if (para.length) {
-      void d.correo?.({
-        para, asunto: `Facturador: ${tipo === 'PROBLEMA' ? '⚠️ problema reportado' : 'sugerencia'} de ${s.empresa?.razonSocial ?? s.nombre}`,
-        texto: `${s.nombre} (${s.email})${s.empresa ? ` · ${s.empresa.razonSocial} (${s.empresa.ruc})` : ''}${pantalla ? ` · pantalla: ${pantalla}` : ''}\n\n${mensaje}\n\nMárcalo como atendido en el panel → Plataforma.`,
-      }).catch((e: unknown) => console.error('[reportes] no se pudo enviar:', e instanceof Error ? e.message : e));
-    }
-    return c.json({ ok: true }, 201);
-  });
-
-  app.get('/panel/api/plataforma/reportes', async (c) => {
-    const s = await conPlataforma(c);
-    if (s instanceof Response) return s;
-    const r = await d.db.query(
-      `SELECT r.id, r.tipo, r.mensaje, r.pantalla, r.creado_en, u.nombre, u.email, e.razon_social
-         FROM reportes r JOIN usuarios u ON u.id = r.usuario_id LEFT JOIN empresas e ON e.id = r.empresa_id
-        WHERE r.atendido_en IS NULL ORDER BY r.id DESC LIMIT 100`,
-    );
-    return c.json({ reportes: r.rows.map((x) => ({
-      id: String(x.id), tipo: x.tipo, mensaje: x.mensaje, pantalla: x.pantalla, fecha: new Date(x.creado_en).toISOString(),
-      usuario: `${x.nombre} (${x.email})`, empresa: x.razon_social,
-    })) });
-  });
-
-  app.post('/panel/api/plataforma/reportes/:id/atendido', async (c) => {
-    const s = await conPlataforma(c);
-    if (s instanceof Response) return s;
-    const id = c.req.param('id');
-    if (!/^\d{1,15}$/.test(id)) return d.error(c, 404, 'NO_ENCONTRADO', 'Reporte no encontrado.');
-    const r = await d.db.query(`UPDATE reportes SET atendido_en = now(), atendido_por = $2 WHERE id = $1 AND atendido_en IS NULL RETURNING id`, [id, s.usuarioId]);
-    return r.rowCount ? c.json({ ok: true }) : d.error(c, 404, 'NO_ENCONTRADO', 'Reporte no encontrado o ya atendido.');
-  });
+  registrarPlataforma(app, comun);
 
   // ---------- Empresas, certificado y usuarios ----------
 
@@ -1302,14 +613,6 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
 
   // Dar acceso a otra persona (vendedor, contador…). Si el correo es nuevo, se crea el usuario
   // y se devuelve el QR para que lo escanee en SU celular; queda activo al confirmar el código.
-  // Invitar a una persona: si es nueva, recibe un ENLACE y ella misma pone su contraseña y su app.
-  const enlaceInvitacion = (c: Context, token: string) => `${origenPropio(c)}/panel#invitacion=${token}`;
-  const avisarInvitacion = (para: string, enlace: string, empresa: string) => {
-    void d.correo?.({
-      para: [para], asunto: `Te invitaron al facturador de ${empresa}`,
-      texto: `Para entrar, abre este enlace (vale 72 horas) y crea tu contraseña:\n\n${enlace}\n\nTen a mano Google Authenticator en tu celular.`,
-    }).catch((e: unknown) => console.error('[invitacion] no se pudo enviar:', e instanceof Error ? e.message : e));
-  };
 
   app.post('/panel/api/usuarios', async (c) => {
     const s = await conEmpresa(c);
