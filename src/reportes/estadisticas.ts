@@ -9,7 +9,7 @@
  * cuentas de dinero.
  */
 import type { Db } from '../db/conexion.js';
-import { dec } from '../dinero.js';
+import { dec, redondear } from '../dinero.js';
 import { ahoraLima } from '../fechas.js';
 import { listarStock } from '../inventario/productos.js';
 
@@ -41,7 +41,14 @@ export interface Estadisticas {
   canales: { canal: string; ventas: string; porcentaje: number }[];
   productos: { descripcion: string; cantidad: string; ventas: string; alto: number }[];
   /** Ventas del mes por quien las emitió (la tienda web y la API aparecen como "Tienda / API"). */
-  vendedores: { vendedor: string; comprobantes: number; ventas: string; alto: number }[];
+  vendedores: {
+    vendedor: string;
+    comprobantes: number;
+    ventas: string;
+    alto: number;
+    /** Comisión ESTIMADA: % del vendedor × sus ventas sin IGV (solo si el dueño le puso un %). */
+    comision?: { porcentaje: string; monto: string };
+  }[];
   stockBajo?: number;
 }
 
@@ -133,13 +140,17 @@ export async function estadisticas(
     `WITH v AS (
        SELECT coalesce(coalesce(o.emitido_por_usuario, c.emitido_por_usuario)::text, 'API') AS clave,
               count(*) FILTER (WHERE c.tipo_comprobante <> '07')::int AS n,
-              sum(CASE WHEN c.tipo_comprobante = '07' THEN -c.importe_total ELSE c.importe_total END) AS monto
+              sum(CASE WHEN c.tipo_comprobante = '07' THEN -c.importe_total ELSE c.importe_total END) AS monto,
+              sum(CASE WHEN c.tipo_comprobante = '07' THEN -1 ELSE 1 END * (c.total_gravado + c.total_exonerado + c.total_inafecto)) AS base
          FROM comprobantes c LEFT JOIN comprobantes o ON o.id = c.comprobante_referencia_id
         WHERE c.empresa_id = $1 AND c.${VALIDO} AND c.fecha_emision >= date_trunc('month', $2::date) AND c.fecha_emision <= $2::date
         GROUP BY 1)
-     SELECT coalesce(u.nombre, u.email, 'Tienda / API') AS vendedor, v.n, v.monto::text AS ventas,
+     SELECT coalesce(u.nombre, u.email, 'Tienda / API') AS vendedor, v.n, v.monto::text AS ventas, v.base::text AS base,
+            ue.comision::text AS comision,
             coalesce(round(greatest(v.monto, 0) * 100 / nullif(max(v.monto) OVER (), 0)), 0)::int AS alto
-       FROM v LEFT JOIN usuarios u ON u.id::text = v.clave ORDER BY v.monto DESC`,
+       FROM v LEFT JOIN usuarios u ON u.id::text = v.clave
+       LEFT JOIN usuario_empresa ue ON ue.usuario_id = u.id AND ue.empresa_id = $1
+      ORDER BY v.monto DESC`,
     p,
   )).rows;
 
@@ -174,7 +185,13 @@ export async function estadisticas(
     dias: dias.map((d) => ({ fecha: d.fecha, ventas: soles(d.ventas), alto: d.alto })),
     canales: canales.map((c) => ({ canal: c.canal, ventas: soles(c.ventas), porcentaje: c.porcentaje })),
     productos: productos.map((x) => ({ descripcion: x.descripcion, cantidad: dec(x.cantidad).toString(), ventas: soles(x.ventas), alto: x.alto })),
-    vendedores: vendedores.map((x) => ({ vendedor: x.vendedor, comprobantes: x.n, ventas: soles(x.ventas), alto: x.alto })),
+    vendedores: vendedores.map((x) => ({
+      vendedor: x.vendedor, comprobantes: x.n, ventas: soles(x.ventas), alto: x.alto,
+      ...(x.comision === null ? {} : {
+        // Con más devoluciones que ventas en el mes, la comisión es 0 (no negativa).
+        comision: { porcentaje: dec(x.comision).toString(), monto: (dec(x.base).gt(0) ? redondear(dec(x.base).times(dec(x.comision)).div(100)) : dec('0')).toFixed(2) },
+      }),
+    })),
     ...(opciones.productos ? { stockBajo: (await listarStock(db, empresaId)).filter((s) => s.bajoMinimo).length } : {}),
   };
 }

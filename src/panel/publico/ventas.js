@@ -345,7 +345,11 @@ async function cargarEstadisticas() {
   barras('#graf-productos', e.productos.map((p) => ({ nombre: p.descripcion, detalle: `${miles(p.cantidad)} und · ${soles(p.ventas)}`, ancho: p.alto })), '#d98a10');
   // Solo tiene sentido si vende más de una persona (o la tienda además del dueño).
   $('#caja-vendedores').hidden = e.vendedores.length < 2;
-  barras('#graf-vendedores', e.vendedores.map((v) => ({ nombre: v.vendedor, detalle: `${v.comprobantes} venta(s) · ${soles(v.ventas)}`, ancho: v.alto })), '#7c4dde');
+  barras('#graf-vendedores', e.vendedores.map((v) => ({
+    nombre: v.vendedor,
+    detalle: `${v.comprobantes} venta(s) · ${soles(v.ventas)}${v.comision ? ` · comisión ${soles(v.comision.monto)} (${v.comision.porcentaje}%, estimada)` : ''}`,
+    ancho: v.alto,
+  })), '#7c4dde');
   $('#kpis').hidden = false;
   $('#graficos').hidden = false;
 }
