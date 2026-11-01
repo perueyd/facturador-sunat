@@ -40,6 +40,8 @@ export interface Estadisticas {
   dias: { fecha: string; ventas: string; alto: number }[];
   canales: { canal: string; ventas: string; porcentaje: number }[];
   productos: { descripcion: string; cantidad: string; ventas: string; alto: number }[];
+  /** Ventas del mes por quien las emitió (la tienda web y la API aparecen como "Tienda / API"). */
+  vendedores: { vendedor: string; comprobantes: number; ventas: string; alto: number }[];
   stockBajo?: number;
 }
 
@@ -125,6 +127,22 @@ export async function estadisticas(
     p,
   )).rows;
 
+  // Vendedores: quién emitió cada venta. Una nota de crédito resta al vendedor de la venta
+  // original (no a quien hizo la devolución), para no castigar a quien corrige.
+  const vendedores = (await db.query(
+    `WITH v AS (
+       SELECT coalesce(coalesce(o.emitido_por_usuario, c.emitido_por_usuario)::text, 'API') AS clave,
+              count(*) FILTER (WHERE c.tipo_comprobante <> '07')::int AS n,
+              sum(CASE WHEN c.tipo_comprobante = '07' THEN -c.importe_total ELSE c.importe_total END) AS monto
+         FROM comprobantes c LEFT JOIN comprobantes o ON o.id = c.comprobante_referencia_id
+        WHERE c.empresa_id = $1 AND c.${VALIDO} AND c.fecha_emision >= date_trunc('month', $2::date) AND c.fecha_emision <= $2::date
+        GROUP BY 1)
+     SELECT coalesce(u.nombre, u.email, 'Tienda / API') AS vendedor, v.n, v.monto::text AS ventas,
+            coalesce(round(greatest(v.monto, 0) * 100 / nullif(max(v.monto) OVER (), 0)), 0)::int AS alto
+       FROM v LEFT JOIN usuarios u ON u.id::text = v.clave ORDER BY v.monto DESC`,
+    p,
+  )).rows;
+
   // Productos: solo boletas y facturas (una nota de crédito no dice qué producto se devolvió
   // con la misma descripción siempre).
   const productos = (await db.query(
@@ -156,6 +174,7 @@ export async function estadisticas(
     dias: dias.map((d) => ({ fecha: d.fecha, ventas: soles(d.ventas), alto: d.alto })),
     canales: canales.map((c) => ({ canal: c.canal, ventas: soles(c.ventas), porcentaje: c.porcentaje })),
     productos: productos.map((x) => ({ descripcion: x.descripcion, cantidad: dec(x.cantidad).toString(), ventas: soles(x.ventas), alto: x.alto })),
+    vendedores: vendedores.map((x) => ({ vendedor: x.vendedor, comprobantes: x.n, ventas: soles(x.ventas), alto: x.alto })),
     ...(opciones.productos ? { stockBajo: (await listarStock(db, empresaId)).filter((s) => s.bajoMinimo).length } : {}),
   };
 }

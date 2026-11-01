@@ -343,6 +343,9 @@ async function cargarEstadisticas() {
   graficoDias(e.dias);
   barras('#graf-canales', e.canales.map((c) => ({ nombre: c.canal, detalle: `${soles(c.ventas)} · ${c.porcentaje}%`, ancho: c.porcentaje })), '#2f80ed');
   barras('#graf-productos', e.productos.map((p) => ({ nombre: p.descripcion, detalle: `${miles(p.cantidad)} und · ${soles(p.ventas)}`, ancho: p.alto })), '#d98a10');
+  // Solo tiene sentido si vende más de una persona (o la tienda además del dueño).
+  $('#caja-vendedores').hidden = e.vendedores.length < 2;
+  barras('#graf-vendedores', e.vendedores.map((v) => ({ nombre: v.vendedor, detalle: `${v.comprobantes} venta(s) · ${soles(v.ventas)}`, ancho: v.alto })), '#7c4dde');
   $('#kpis').hidden = false;
   $('#graficos').hidden = false;
 }
