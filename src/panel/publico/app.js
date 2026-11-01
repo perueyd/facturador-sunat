@@ -122,6 +122,8 @@ async function cargarPanel() {
   $('#sin-permiso').hidden = yo.puedeEmitir;
   if (!yo.puedeEmitir) $('#venta-rapida').hidden = true;
   $('#caja-exportar').hidden = !tiene('exportar');
+  // Compras y gastos: solo para quien los ve (dueño, administrador, contador) y si la empresa usa esas funciones.
+  for (const o of $('#que-exportar').options) o.hidden = o.value === 'compras' ? !yo.puedeComprar : o.value === 'gastos' ? !yo.verCaja : false;
   for (const b of document.querySelectorAll('#pestanas button')) {
     const modulo = b.dataset.modulo;
     b.dataset.texto ??= b.textContent;
@@ -487,6 +489,11 @@ async function cargarEstadisticas() {
   if (e.stockBajo !== undefined) {
     tarjetas.push(kpi(e.stockBajo ? 'rosa' : 'gris', 'Stock bajo', String(e.stockBajo), e.stockBajo ? 'producto(s) por reponer' : 'todo en orden'));
   }
+  // Ventas − compras − gastos del mes: una guía, no el resultado contable (por eso dice "estimado").
+  const r = e.resultado;
+  const perdida = r.resultado.startsWith('-');
+  tarjetas.push(kpi(perdida ? 'rosa' : 'verde', 'Resultado del mes (estimado)', perdida ? `−${soles(r.resultado.slice(1))}` : soles(r.resultado),
+    `ventas ${soles(r.ventas)} − compras ${soles(r.compras)} − gastos ${soles(r.gastos)} (sin IGV en ventas y compras)`));
   $('#kpis').replaceChildren(...tarjetas);
   graficoMeses(e.meses);
   graficoDias(e.dias);
@@ -2024,11 +2031,12 @@ async function alCrearEmpresa(e) {
 
 async function exportar() {
   const mes = $('#mes-exportar').value;
-  const res = await api(`/exportar?mes=${encodeURIComponent(mes)}`, { crudo: true });
+  const que = $('#que-exportar').value;
+  const res = await api(`/exportar?que=${que}&mes=${encodeURIComponent(mes)}`, { crudo: true });
   if (!res.ok) { alert((await res.json().catch(() => ({}))).error?.mensaje || 'No se pudo exportar.'); return; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(await res.blob());
-  a.download = `ventas-${mes}.csv`;
+  a.download = `${que}-${mes}.csv`;
   a.click();
 }
 

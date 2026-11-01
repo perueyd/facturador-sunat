@@ -471,6 +471,14 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect((await pedir(`/panel/api/gastos/${otro}/foto`, { cookie: vendedor })).status).toBe(403);
     const foto = await pedir(`/panel/api/gastos/${otro}/foto`, { cookie: dueno });
     expect(foto.headers.get('content-type')).toBe('image/png');
+    // Exportar gastos para el contador: el vendedor no; el dueño sí, con la columna de la foto.
+    const mes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date()).slice(0, 7);
+    expect((await pedir(`/panel/api/exportar?que=gastos&mes=${mes}`, { cookie: vendedor })).status).toBe(403);
+    const csv = await (await pedir(`/panel/api/exportar?que=gastos&mes=${mes}`, { cookie: dueno })).text();
+    expect(csv).toContain('Pasaje;12.50;EFECTIVO');
+    expect(csv).toMatch(/Foto del recibo/);
+    expect((await pedir(`/panel/api/exportar?que=compras&mes=${mes}`, { cookie: dueno })).headers.get('content-disposition')).toMatch(/compras-/);
+    expect((await pedir(`/panel/api/exportar?que=otra&mes=${mes}`, { cookie: dueno })).status).toBe(400);
   });
 
   it('venta rápida: lo más vendido, con su precio, para venderlo con un toque', async () => {

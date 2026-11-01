@@ -649,6 +649,10 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   Las compras de mercadería con factura siguen en Compras (IGV y stock).
   **Foto del recibo** (opcional, desde la cámara del celular): se achica en el navegador, se guarda como
   sustento (5 años o más) y se ve con "📎 Ver recibo". Una por gasto.
+- **Resultado del mes (estimado)** en las estadísticas: ventas sin IGV − compras sin IGV − gastos, con su
+  margen. Es una guía para el dueño, no el resultado contable (no considera stock sin vender ni impuestos).
+- **Para tu contador** (pestaña Más): exportar a Excel las ventas, las compras o los gastos de un mes
+  (compras y gastos solo para dueño, administrador y contador).
 - **Cuentas por pagar** (pestaña Compras): una compra puede ser al crédito con fecha de vencimiento. La
   lista "Por pagar" muestra el saldo por proveedor, lo vencido y lo que vence en 7 días (también en el
   tablero). Cada pago (total o parcial) dice de qué cuenta salió y se resta en la caja y el cierre; no
