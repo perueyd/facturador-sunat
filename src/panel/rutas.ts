@@ -1018,12 +1018,14 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const fecha = texto(b.fecha, 10);
     if (!esFecha(fecha)) return d.error(c, 400, 'FECHA_INVALIDA', 'Fecha como AAAA-MM-DD.');
-    const contados: Record<string, string> = {};
-    if (b.contados && typeof b.contados === 'object') {
-      for (const [k, v] of Object.entries(b.contados as Record<string, unknown>).slice(0, 100)) if (typeof v === 'string') contados[k.slice(0, 60)] = v.trim();
-    }
+    const mapa = (v: unknown) => {
+      const m: Record<string, string> = {};
+      if (v && typeof v === 'object') for (const [k, x] of Object.entries(v as Record<string, unknown>).slice(0, 100)) if (typeof x === 'string') m[k.slice(0, 60)] = x.trim();
+      return m;
+    };
+    const contados = mapa(b.contados);
     try {
-      return c.json(await cerrarCaja(d.db, s.empresa.id, fecha, contados, texto(b.nota, 300) || null, s.usuarioId, ahoraLima().fecha), 201);
+      return c.json(await cerrarCaja(d.db, s.empresa.id, fecha, contados, texto(b.nota, 300) || null, s.usuarioId, ahoraLima().fecha, mapa(b.fondos)), 201);
     } catch (e) {
       if (e instanceof ErrorCuenta) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
       throw e;

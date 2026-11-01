@@ -146,6 +146,7 @@ textarea { display: block; width: 100%; margin-top: 4px; padding: 10px; font: in
 .plan-fila input[type=checkbox] { display: inline; width: auto; margin: 0; }
 .kpi { cursor: default; }
 /* Cierre de caja: la diferencia junto a cada cuenta. */
+#cierre-lineas .linea-cierre { border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: #fff; }
 #cierre-lineas .dif { display: block; font-size: 13px; }
 #cierre-lineas .dif.ok { color: var(--verde); }
 #cierre-lineas .dif.mal { color: var(--rojo); font-weight: 600; }

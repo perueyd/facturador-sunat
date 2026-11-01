@@ -1320,24 +1320,31 @@ const conSigno = (c) => (c < 0n ? `− ${textoSoles(-c)}` : c > 0n ? `+ ${textoS
 const textoDiferencia = (d) => (d.startsWith('-') ? `falta ${soles(d.slice(1))}` : d === '0.00' ? 'cuadra ✔' : `sobra ${soles(d)}`);
 let lineasCierre = [];
 
+// Montos del servidor que pueden ser negativos (un día con más gastos que cobros).
+const centimosConSigno = (t) => (t.startsWith('-') ? -aCentimos(t.slice(1)) : aCentimos(t));
+/** Monto en céntimos con signo solo si es negativo ("S/ 30.00", "− S/ 20.00"). */
+const sinMas = (c) => conSigno(c).replace('+ ', '');
+const valorDe = (l, campo) => document.querySelector(`#cierre-lineas input[data-clave="${CSS.escape(l.clave)}"][data-campo="${campo}"]`);
+
 function recalcularCierre() {
-  let esperado = 0n;
+  let deberia = 0n;
   let contado = 0n;
   let completo = true;
   for (const l of lineasCierre) {
-    const e = aCentimos(l.esperado);
-    const input = document.querySelector(`#cierre-lineas input[data-clave="${CSS.escape(l.clave)}"]`);
-    const k = aCentimos(input.value);
-    const salida = input.closest('label').querySelector('.dif');
-    esperado += e;
-    if (k === null) { completo = false; salida.textContent = ''; continue; }
+    const fondo = aCentimos(valorDe(l, 'fondo').value) ?? 0n;
+    const e = fondo + centimosConSigno(l.esperado);
+    const k = aCentimos(valorDe(l, 'contado').value);
+    const salida = valorDe(l, 'contado').closest('.linea-cierre').querySelector('.dif');
+    deberia += e;
+    const debe = `debería haber ${sinMas(e)}`;
+    if (k === null) { completo = false; salida.textContent = debe; salida.className = 'dif'; continue; }
     contado += k;
-    salida.textContent = k === e ? 'cuadra ✔' : `diferencia ${conSigno(k - e)}`;
+    salida.textContent = k === e ? `${debe} · cuadra ✔` : `${debe} · diferencia ${conSigno(k - e)}`;
     salida.className = `dif ${k === e ? 'ok' : 'mal'}`;
   }
   $('#cierre-total').textContent = completo
-    ? `Esperado ${textoSoles(esperado)} · contado ${textoSoles(contado)} · diferencia ${conSigno(contado - esperado)}`
-    : `Esperado ${textoSoles(esperado)}. Escribe lo contado en cada cuenta (0 si no hay nada).`;
+    ? `Debería haber ${sinMas(deberia)} · contado ${textoSoles(contado)} · diferencia ${conSigno(contado - deberia)}`
+    : `Debería haber ${sinMas(deberia)}. Escribe lo contado en cada cuenta (0 si no hay nada).`;
 }
 
 async function cargarCierre(fecha = $('#cierre-fecha').value || hoyLima()) {
@@ -1346,14 +1353,23 @@ async function cargarCierre(fecha = $('#cierre-fecha').value || hoyLima()) {
   $('#cierre-fecha').max = hoyLima();
   lineasCierre = r.lineas;
   $('#cierre-lineas').replaceChildren(...r.lineas.map((l) => {
-    const label = document.createElement('label');
-    label.append(`${l.nombre} — debería haber ${soles(l.esperado)}`);
-    const input = Object.assign(document.createElement('input'), { placeholder: 'lo que contaste', required: true });
-    input.dataset.clave = l.clave;
-    input.setAttribute('inputmode', 'decimal');
-    input.addEventListener('input', recalcularCierre);
-    label.append(input, Object.assign(document.createElement('small'), { className: 'dif' }));
-    return label;
+    const caja = Object.assign(document.createElement('div'), { className: 'linea-cierre' });
+    const titulo = Object.assign(document.createElement('strong'), { textContent: l.nombre });
+    const mov = Object.assign(document.createElement('small'), { textContent: ` · movimiento del día ${l.esperado.startsWith('-') ? `−${soles(l.esperado.slice(1))}` : `+${soles(l.esperado)}`}` });
+    const campo = (texto, nombre, valor, ayuda) => {
+      const label = Object.assign(document.createElement('label'), { textContent: texto });
+      const input = Object.assign(document.createElement('input'), { value: valor, placeholder: ayuda, required: nombre === 'contado' });
+      input.dataset.clave = l.clave;
+      input.dataset.campo = nombre;
+      input.setAttribute('inputmode', 'decimal');
+      input.addEventListener('input', recalcularCierre);
+      label.append(input);
+      return label;
+    };
+    const fila = Object.assign(document.createElement('div'), { className: 'fila' });
+    fila.append(campo('Empezó con', 'fondo', l.fondoSugerido, '0.00'), campo('Contaste', 'contado', '', 'lo que hay ahora'));
+    caja.append(titulo, mov, fila, Object.assign(document.createElement('small'), { className: 'dif' }));
+    return caja;
   }));
   $('#form-cierre').hidden = !r.lineas.length;
   const ultimo = r.cierres[0];
@@ -1372,9 +1388,12 @@ async function cargarCierre(fecha = $('#cierre-fecha').value || hoyLima()) {
 async function alCerrarCaja(e) {
   e.preventDefault();
   const contados = {};
-  for (const input of document.querySelectorAll('#cierre-lineas input')) contados[input.dataset.clave] = input.value.trim().replace(',', '.');
+  const fondos = {};
+  for (const input of document.querySelectorAll('#cierre-lineas input')) {
+    (input.dataset.campo === 'fondo' ? fondos : contados)[input.dataset.clave] = input.value.trim().replace(',', '.') || (input.dataset.campo === 'fondo' ? '0' : '');
+  }
   try {
-    const c = await api('/caja/cierre', { cuerpo: { fecha: $('#cierre-fecha').value, contados, nota: e.target.nota.value } });
+    const c = await api('/caja/cierre', { cuerpo: { fecha: $('#cierre-fecha').value, contados, fondos, nota: e.target.nota.value } });
     e.target.nota.value = '';
     await cargarCierre(c.fecha);
     mensaje('#mensaje-cierre', `Caja cerrada: ${textoDiferencia(c.totales.diferencia)}.`);

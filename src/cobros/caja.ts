@@ -147,7 +147,13 @@ export interface LineaCierre {
   cuentaId: string | null;
   medio: string;
   nombre: string;
+  /** Movimiento del día: cobros − gastos. */
   esperado: string;
+  /**
+   * Con cuánto empezó: en efectivo, lo contado en el último cierre anterior (el sencillo que
+   * quedó en el cajón); en las demás cuentas, 0 (se cuenta el movimiento del día).
+   */
+  fondoSugerido: string;
 }
 
 export interface Cierre {
@@ -156,29 +162,42 @@ export interface Cierre {
   cerradoPor: string;
   cerradoEn: string;
   nota: string | null;
-  lineas: (LineaCierre & { contado: string; diferencia: string })[];
-  totales: { esperado: string; contado: string; diferencia: string };
+  lineas: (Omit<LineaCierre, 'fondoSugerido'> & { fondo: string; deberiaHaber: string; contado: string; diferencia: string })[];
+  totales: { fondo: string; esperado: string; deberiaHaber: string; contado: string; diferencia: string };
 }
 
 const claveDe = (cuentaId: string | null, medio: string) => cuentaId ?? `SIN:${medio}`;
+const MONTO = /^\d{1,11}(\.\d{1,2})?$/;
 
 /**
- * Lo que debería haber en cada cuenta al final del día: cobros menos gastos registrados.
- * Incluye las cuentas activas sin cobros (ej. el cajón de efectivo con S/ 0), porque
- * también se cuentan: un faltante o sobrante ahí es igual de importante.
+ * Lo que se movió en cada cuenta en el día (cobros − gastos) y con cuánto empezó.
+ * Incluye las cuentas activas sin movimiento (ej. el cajón de efectivo), porque también se
+ * cuentan: un faltante o sobrante ahí es igual de importante.
  */
 export async function lineasParaCerrar(db: Db, empresaId: string, fecha: string): Promise<LineaCierre[]> {
   const c = await caja(db, empresaId, fecha, fecha);
-  const lineas: LineaCierre[] = c.cuentas.map((x) => ({ clave: claveDe(x.cuentaId, x.medio), cuentaId: x.cuentaId, medio: x.medio, nombre: x.nombre, esperado: x.neto }));
+  const lineas = c.cuentas.map((x) => ({ clave: claveDe(x.cuentaId, x.medio), cuentaId: x.cuentaId, medio: x.medio, nombre: x.nombre, esperado: x.neto }));
   for (const k of await listarCuentas(db, empresaId)) {
     if (k.activa && !lineas.some((l) => l.cuentaId === k.id)) lineas.push({ clave: k.id, cuentaId: k.id, medio: k.medio, nombre: k.nombre, esperado: '0.00' });
   }
-  return lineas;
+  // Último contado de cada cuenta en efectivo, del cierre más reciente ANTES de este día.
+  const anteriores = (await db.query(
+    `SELECT DISTINCT ON (l.cuenta_id, l.medio) l.cuenta_id, l.medio::text AS medio, l.contado::text AS contado
+       FROM cierres_caja k JOIN cierre_caja_lineas l ON l.cierre_id = k.id
+      WHERE k.empresa_id = $1 AND k.fecha < $2::date AND l.medio = 'EFECTIVO'
+      ORDER BY l.cuenta_id, l.medio, k.fecha DESC, k.creado_en DESC`,
+    [empresaId, fecha],
+  )).rows;
+  return lineas.map((l) => {
+    const previo = l.medio === 'EFECTIVO' ? anteriores.find((a) => claveDe(a.cuenta_id, a.medio) === l.clave) : undefined;
+    return { ...l, fondoSugerido: previo ? dec(previo.contado).toFixed(2) : '0.00' };
+  });
 }
 
 /**
- * Cierra la caja de un día con lo contado en cada cuenta. Lo esperado lo calcula el servidor
- * (nunca lo manda el navegador). Se puede cerrar otra vez el mismo día: vale el último cierre.
+ * Cierra la caja de un día con lo contado en cada cuenta. El movimiento lo calcula el servidor
+ * (nunca lo manda el navegador); el fondo inicial, si no se envía, es el sugerido. Se puede
+ * cerrar otra vez el mismo día: vale el último cierre.
  */
 export async function cerrarCaja(
   db: Db,
@@ -188,6 +207,7 @@ export async function cerrarCaja(
   nota: string | null,
   usuarioId: string,
   hoy: string,
+  fondos: Record<string, string> = {},
 ): Promise<Cierre> {
   if (fecha > hoy) throw new ErrorCuenta('No se puede cerrar la caja de un día que aún no llega.');
   const lineas = await lineasParaCerrar(db, empresaId, fecha);
@@ -195,8 +215,10 @@ export async function cerrarCaja(
   const faltan = lineas.filter((l) => contados[l.clave] === undefined).map((l) => l.nombre);
   if (faltan.length) throw new ErrorCuenta(`Falta poner cuánto contaste en: ${faltan.join(', ')}.`);
   for (const l of lineas) {
-    if (!/^\d{1,11}(\.\d{1,2})?$/.test(contados[l.clave] ?? '')) throw new ErrorCuenta(`"${l.nombre}": escribe el monto contado, por ejemplo 150.00.`);
+    if (!MONTO.test(contados[l.clave] ?? '')) throw new ErrorCuenta(`"${l.nombre}": escribe el monto contado, por ejemplo 150.00.`);
+    if (fondos[l.clave] !== undefined && !MONTO.test(fondos[l.clave]!)) throw new ErrorCuenta(`"${l.nombre}": el fondo inicial debe ser un monto, por ejemplo 50.00.`);
   }
+  const fondo = (l: LineaCierre) => fondos[l.clave] ?? l.fondoSugerido;
   const id = await enTransaccion(db, async (tx) => {
     const nuevo = (await tx.query(
       `INSERT INTO cierres_caja (empresa_id, fecha, usuario_id, nota) VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -204,12 +226,12 @@ export async function cerrarCaja(
     )).rows[0].id as string;
     for (const [i, l] of lineas.entries()) {
       await tx.query(
-        `INSERT INTO cierre_caja_lineas (cierre_id, linea, cuenta_id, medio, nombre, esperado, contado) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [nuevo, i + 1, l.cuentaId, l.medio, l.nombre, l.esperado, contados[l.clave]],
+        `INSERT INTO cierre_caja_lineas (cierre_id, linea, cuenta_id, medio, nombre, esperado, contado, fondo) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [nuevo, i + 1, l.cuentaId, l.medio, l.nombre, l.esperado, contados[l.clave], fondo(l)],
       );
     }
     await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'CERRAR_CAJA', 'cierres_caja', $3, $4)`, [
-      empresaId, usuarioId, nuevo, JSON.stringify({ fecha, contados }),
+      empresaId, usuarioId, nuevo, JSON.stringify({ fecha, contados, fondos: Object.fromEntries(lineas.map((l) => [l.clave, fondo(l)])) }),
     ]);
     return nuevo;
   });
@@ -222,25 +244,30 @@ export async function cerrarCaja(
 export async function cierresDeCaja(db: Db, empresaId: string, desde: string, hasta: string): Promise<Cierre[]> {
   const r = await db.query(
     `SELECT k.id, k.fecha::text AS fecha, coalesce(u.nombre, u.email) AS cerrado_por, k.creado_en, k.nota,
-            json_agg(json_build_object('cuentaId', l.cuenta_id, 'medio', l.medio, 'nombre', l.nombre, 'esperado', l.esperado::text, 'contado', l.contado::text) ORDER BY l.linea) AS lineas
+            json_agg(json_build_object('cuentaId', l.cuenta_id, 'medio', l.medio, 'nombre', l.nombre, 'esperado', l.esperado::text,
+                                       'contado', l.contado::text, 'fondo', l.fondo::text) ORDER BY l.linea) AS lineas
        FROM cierres_caja k JOIN usuarios u ON u.id = k.usuario_id JOIN cierre_caja_lineas l ON l.cierre_id = k.id
       WHERE k.empresa_id = $1 AND k.fecha BETWEEN $2::date AND $3::date
       GROUP BY k.id, u.id ORDER BY k.fecha DESC, k.creado_en DESC`,
     [empresaId, desde, hasta],
   );
   return r.rows.map((f): Cierre => {
-    let esperado = dec('0');
-    let contado = dec('0');
-    const lineas = (f.lineas as { cuentaId: string | null; medio: string; nombre: string; esperado: string; contado: string }[]).map((l) => {
-      const e = dec(l.esperado);
-      const k = dec(l.contado);
-      esperado = esperado.plus(e);
-      contado = contado.plus(k);
-      return { clave: claveDe(l.cuentaId, l.medio), cuentaId: l.cuentaId, medio: l.medio, nombre: l.nombre, esperado: e.toFixed(2), contado: k.toFixed(2), diferencia: k.minus(e).toFixed(2) };
+    const t = { fondo: dec('0'), esperado: dec('0'), contado: dec('0') };
+    const lineas = (f.lineas as { cuentaId: string | null; medio: string; nombre: string; esperado: string; contado: string; fondo: string }[]).map((l) => {
+      const [fondo, esperado, contado] = [dec(l.fondo), dec(l.esperado), dec(l.contado)];
+      t.fondo = t.fondo.plus(fondo);
+      t.esperado = t.esperado.plus(esperado);
+      t.contado = t.contado.plus(contado);
+      const deberia = fondo.plus(esperado);
+      return {
+        clave: claveDe(l.cuentaId, l.medio), cuentaId: l.cuentaId, medio: l.medio, nombre: l.nombre, fondo: fondo.toFixed(2), esperado: esperado.toFixed(2),
+        deberiaHaber: deberia.toFixed(2), contado: contado.toFixed(2), diferencia: contado.minus(deberia).toFixed(2),
+      };
     });
+    const deberia = t.fondo.plus(t.esperado);
     return {
       id: f.id, fecha: f.fecha, cerradoPor: f.cerrado_por, cerradoEn: new Date(f.creado_en).toISOString(), nota: f.nota, lineas,
-      totales: { esperado: esperado.toFixed(2), contado: contado.toFixed(2), diferencia: contado.minus(esperado).toFixed(2) },
+      totales: { fondo: t.fondo.toFixed(2), esperado: t.esperado.toFixed(2), deberiaHaber: deberia.toFixed(2), contado: t.contado.toFixed(2), diferencia: t.contado.minus(deberia).toFixed(2) },
     };
   });
 }
