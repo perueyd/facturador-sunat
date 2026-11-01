@@ -462,6 +462,15 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect((await pedir(`/panel/api/gastos/${id}/anular`, { cookie: vendedor, cuerpo: { motivo: 'error' } })).status).toBe(403);
     expect((await pedir(`/panel/api/gastos/${id}/anular`, { cookie: dueno, cuerpo: { motivo: 'error' } })).status).toBe(200);
     expect((await pedir('/panel/api/gastos', { cookie: dueno, cuerpo: { ...gasto, monto: 'mucho' } })).status).toBe(422);
+    // Foto del recibo: hasta 512 KB por pedido (el resto del panel, 100 KB); la ve quien ve la caja.
+    const otro = (await (await pedir('/panel/api/gastos', { cookie: vendedor, cuerpo: gasto })).json()).id;
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(150 * 1024, 1)]);
+    expect((await pedir(`/panel/api/gastos/${otro}/foto`, { cookie: vendedor, cuerpo: { imagen: `data:image/png;base64,${png.toString('base64')}` } })).status).toBe(201);
+    expect((await pedir(`/panel/api/gastos/${otro}/foto`, { cookie: vendedor, cuerpo: { imagen: 'x'.repeat(600 * 1024) } })).status).toBe(413);
+    expect((await pedir('/panel/api/gastos', { cookie: dueno, cuerpo: { ...gasto, descripcion: 'y'.repeat(120 * 1024) } })).status).toBe(413);
+    expect((await pedir(`/panel/api/gastos/${otro}/foto`, { cookie: vendedor })).status).toBe(403);
+    const foto = await pedir(`/panel/api/gastos/${otro}/foto`, { cookie: dueno });
+    expect(foto.headers.get('content-type')).toBe('image/png');
   });
 
   it('venta rápida: lo más vendido, con su precio, para venderlo con un toque', async () => {

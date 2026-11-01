@@ -3,7 +3,7 @@
  * Se registran desde rutas.ts, que arma la sesión y los ayudantes comunes (ver comun-rutas.ts).
  */
 import type { Context, Hono } from 'hono';
-import { CATEGORIAS_GASTO, ErrorGasto, anularGasto, gastosDelPeriodo, registrarGasto } from '../cobros/gastos.js';
+import { CATEGORIAS_GASTO, ErrorGasto, anularGasto, fotoDeGasto, gastosDelPeriodo, guardarFotoGasto, registrarGasto } from '../cobros/gastos.js';
 import { ErrorCuenta, caja, cerrarCaja, cierresDeCaja, guardarCuenta, lineasParaCerrar, listarCuentas } from '../cobros/caja.js';
 import { MEDIOS_PAGO, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
 import { ahoraLima, esFecha, sumarDias } from '../fechas.js';
@@ -127,6 +127,35 @@ export function registrarCobros(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
       if (e instanceof ErrorGasto) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
       throw e;
     }
+  });
+
+  // Foto del recibo: la sube quien registró el gasto (o cualquiera que venda); la ve quien ve la caja.
+  app.post('/panel/api/gastos/:id/foto', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+    if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no registra gastos.');
+    const id = c.req.param('id');
+    if (!UUID.test(id)) return d.error(c, 404, 'NO_ENCONTRADO', 'Gasto no encontrado.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const base64 = typeof b.imagen === 'string' ? b.imagen.replace(/^data:image\/(png|jpeg);base64,/, '') : '';
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Imagen inválida.');
+    try {
+      await guardarFotoGasto(d.db, d.almacen, s.empresa.id, id, Buffer.from(base64, 'base64'), s.usuarioId);
+      return c.json({ ok: true }, 201);
+    } catch (e) {
+      if (e instanceof ErrorGasto) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+  app.get('/panel/api/gastos/:id/foto', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no ve los gastos.');
+    const id = c.req.param('id');
+    const f = UUID.test(id) ? await fotoDeGasto(d.db, d.almacen, s.empresa.id, id) : undefined;
+    if (!f) return d.error(c, 404, 'NO_ENCONTRADO', 'Ese gasto no tiene foto.');
+    return c.body(new Uint8Array(f.datos), 200, { 'Content-Type': f.tipo, 'Cache-Control': 'private, no-store' });
   });
 
   // Cierre de caja diario: lo esperado lo calcula el servidor; el usuario solo pone lo contado.

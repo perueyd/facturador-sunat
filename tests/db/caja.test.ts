@@ -5,7 +5,11 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { caja, cerrarCaja, cierresDeCaja, guardarCuenta, lineasParaCerrar, listarCuentas } from '../../src/cobros/caja.js';
-import { anularGasto, gastosDelPeriodo, registrarGasto } from '../../src/cobros/gastos.js';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { AlmacenLocal } from '../../src/almacen/almacen.js';
+import { FOTO_MAXIMO_BYTES, anularGasto, fotoDeGasto, gastosDelPeriodo, guardarFotoGasto, registrarGasto } from '../../src/cobros/gastos.js';
 import { registrarPago } from '../../src/cobros/pagos.js';
 import { emitirComprobante } from '../../src/comprobantes/emitir.js';
 import type { Db } from '../../src/db/conexion.js';
@@ -147,5 +151,20 @@ describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
     const corregido = await cerrarCaja(db, g.empresaId, '2020-05-02', { [cajon]: '30' }, null, usuarioId, hoy, { [cajon]: '40' });
     expect(corregido.lineas[0]).toMatchObject({ fondo: '40.00', deberiaHaber: '20.00', diferencia: '10.00' });
     await expect(cerrarCaja(db, g.empresaId, '2020-05-02', { [cajon]: '30' }, null, usuarioId, hoy, { [cajon]: '4,0' })).rejects.toThrow(/fondo inicial/);
+  });
+
+  it('foto del recibo: una por gasto, solo JPG o PNG, y queda guardada como sustento', async () => {
+    const almacen = new AlmacenLocal(await mkdtemp(join(tmpdir(), 'fotos-')));
+    const gasto = await registrarGasto(db, f.empresaId, { fecha: hoy, monto: '15', categoria: 'INSUMOS', descripcion: 'Tornillos', medio: 'EFECTIVO' }, usuarioId, hoy);
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(100, 7)]);
+    await expect(guardarFotoGasto(db, almacen, f.empresaId, gasto, Buffer.from('no es imagen'), usuarioId)).rejects.toThrow(/JPG o PNG/);
+    await expect(guardarFotoGasto(db, almacen, f.empresaId, gasto, Buffer.concat([png, Buffer.alloc(FOTO_MAXIMO_BYTES)]), usuarioId)).rejects.toThrow(/pesada/);
+    expect(await fotoDeGasto(db, almacen, f.empresaId, gasto)).toBeUndefined();
+    await guardarFotoGasto(db, almacen, f.empresaId, gasto, png, usuarioId);
+    expect(await fotoDeGasto(db, almacen, f.empresaId, gasto)).toEqual({ datos: png, tipo: 'image/png' });
+    await expect(guardarFotoGasto(db, almacen, f.empresaId, gasto, png, usuarioId)).rejects.toThrow(/ya tiene su foto/);
+    expect((await gastosDelPeriodo(db, f.empresaId, hoy, hoy)).gastos.find((g) => g.id === gasto)?.foto).toBe(true);
+    // Se conserva al menos 5 años, como todo sustento.
+    expect((await db.query(`SELECT tipo, conservar_hasta >= current_date + interval '5 years' AS cinco FROM archivos WHERE entidad = 'gastos' AND entidad_id = $1`, [gasto])).rows[0]).toEqual({ tipo: 'SUSTENTO', cinco: true });
   });
 });
