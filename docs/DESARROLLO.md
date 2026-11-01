@@ -46,7 +46,7 @@ pdfDeComprobante()           src/comprobantes/pdf-comprobante.ts → src/pdf/rep
 | `src/reportes/` | Resumen del día, tablero, estadísticas, clientes frecuentes, venta rápida (solo lectura) | Sí |
 | `src/cotizaciones/` | Cotizaciones (proformas) y su PDF | Sí |
 | `src/plataforma/` | Planes, suscripciones y vigilancia de la plataforma | Sí |
-| `src/panel/` | Panel web: `rutas.ts` (acceso, sesión, comprobantes, empresa, usuarios) y `rutas-*.ts` por tema (ventas, inventario, cobros, plataforma); `comun-rutas.ts` con roles y ayudantes; `publico/` la página | Sí |
+| `src/panel/` | Panel web: `rutas.ts` (acceso, sesión, comprobantes, empresa, usuarios) y `rutas-*.ts` por tema (ventas, inventario, cobros, plataforma); `comun-rutas.ts` con roles y ayudantes; `publico/` la página (`index.html`, `estilo.css` y el JavaScript partido por tema: `app.js` base, `ventas.js`, `acceso.js`, `plataforma.js`, `cobros.js`, `compras.js`, `ajustes.js`, que se cargan en ese orden y comparten sus funciones) | Sí |
 | `src/config.ts` | Única lectura de variables de entorno | No |
 | `db/migraciones/` | Estructura de la BD, en orden y sin editar las ya aplicadas | — |
 | `scripts/` | Comandos de consola (delgados: llaman a `src/`) | — |
@@ -90,6 +90,9 @@ que el recurso sea de la empresa de la llave (404 si no). Prueba en `tests/db/ap
 **Una ruta del panel:** en el `rutas-*.ts` de su tema (o uno nuevo, registrado desde `rutas.ts`).
 Usa `conEmpresa(c)` para la sesión, revisa el módulo (`sinModulo`) y el rol (`ROLES_*` de
 `comun-rutas.ts`), y prueba en `tests/db/panel.test.ts`.
+
+**Un archivo nuevo del panel** (`src/panel/publico/`): agrégalo en `BASE` de `rutas.ts` (así entra en la
+versión de la app), en `CASCARA` de `sw.js` (para abrir sin señal) y como `<script defer>` en `index.html`.
 
 **Un comando de consola:** archivo en `scripts/` que solo lea argumentos y llame a una
 función de `src/`. Regístralo en `package.json`.
