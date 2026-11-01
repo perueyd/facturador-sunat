@@ -1290,6 +1290,9 @@ async function cargarGastos(desde, hasta) {
   $('#lista-gastos').replaceChildren(...(g.gastos.length ? g.gastos.map((x) => {
     const li = linea(`${fechaPeru(x.fecha)} · ${x.descripcion} · ${x.cuenta ?? MEDIO_TEXTO[x.medio] ?? x.medio}${x.documento ? ` · ${x.documento}` : ''} · ${x.registradoPor}`,
       x.anulado ? `anulado: ${x.anulado.motivo}` : soles(x.monto), x.anulado ? 'apagado' : '');
+    if (x.foto) {
+      li.append(boton('📎 Ver recibo', (e) => { e.stopPropagation(); abrirArchivo(`/gastos/${x.id}/foto`); }));
+    }
     if (!x.anulado && yo?.puedeAdministrar) {
       li.addEventListener('click', async () => {
         const motivo = prompt(`¿Anular el gasto "${x.descripcion}" de ${soles(x.monto)}? Escribe el motivo:`);
@@ -1304,13 +1307,22 @@ async function cargarGastos(desde, hasta) {
 async function alRegistrarGasto(e) {
   e.preventDefault();
   const f = new FormData(e.target);
+  const foto = f.get('foto');
   try {
-    await api('/gastos', { cuerpo: {
+    const { id } = await api('/gastos', { cuerpo: {
       ...leerMedio(f.get('medio')), monto: String(f.get('monto')).trim().replace(',', '.'), categoria: f.get('categoria'),
       descripcion: f.get('descripcion'), fecha: f.get('fecha') || hoyLima(), documento: f.get('documento'),
     } });
     e.target.reset();
     mensaje('#mensaje-gasto', '✔ Gasto registrado.');
+    if (foto && foto.size) {
+      try {
+        await api(`/gastos/${id}/foto`, { cuerpo: { imagen: await fotoRecibo(foto) } });
+        mensaje('#mensaje-gasto', '✔ Gasto registrado con la foto del recibo.');
+      } catch (err) {
+        mensaje('#mensaje-gasto', `El gasto se registró, pero la foto no se pudo subir: ${err.message}`, true);
+      }
+    }
     if (yo?.verCaja) await cargarCaja(periodoCaja);
   } catch (err) {
     mensaje('#mensaje-gasto', err.message, true);
@@ -1801,18 +1813,34 @@ function agregarCuota() {
   $('#cuotas').appendChild(nodo);
 }
 
+/** Dibuja la imagen achicada (sin agrandar) para no subir la foto entera del celular. */
+async function dibujarAchicada(archivo, anchoMax, altoMax) {
+  const img = await createImageBitmap(archivo);
+  const escala = Math.min(1, anchoMax / img.width, altoMax / img.height);
+  const lienzo = document.createElement('canvas');
+  lienzo.width = Math.round(img.width * escala);
+  lienzo.height = Math.round(img.height * escala);
+  lienzo.getContext('2d').drawImage(img, 0, 0, lienzo.width, lienzo.height);
+  return lienzo;
+}
+
+/** Foto de un recibo: JPG de hasta 1400 px; baja la calidad hasta que pese menos de ~330 KB. */
+async function fotoRecibo(archivo) {
+  const lienzo = await dibujarAchicada(archivo, 1400, 1400);
+  for (const calidad of [0.75, 0.6, 0.45, 0.3]) {
+    const datos = lienzo.toDataURL('image/jpeg', calidad);
+    if (datos.length < 450_000) return datos;
+  }
+  throw new Error('La foto es muy pesada aun achicada. Prueba con otra.');
+}
+
 // Logo: se achica en el navegador (máx. 600×300) para que pese poco y cargue rápido en el PDF.
 async function subirLogo(e) {
   const archivo = e.target.files?.[0];
   const msg = $('#mensaje-logo');
   if (!archivo) return;
   try {
-    const img = await createImageBitmap(archivo);
-    const escala = Math.min(1, 600 / img.width, 300 / img.height);
-    const lienzo = document.createElement('canvas');
-    lienzo.width = Math.round(img.width * escala);
-    lienzo.height = Math.round(img.height * escala);
-    lienzo.getContext('2d').drawImage(img, 0, 0, lienzo.width, lienzo.height);
+    const lienzo = await dibujarAchicada(archivo, 600, 300);
     let datos = lienzo.toDataURL('image/png');
     if (datos.length > 90_000) datos = lienzo.toDataURL('image/jpeg', 0.85);
     await api('/logo', { cuerpo: { imagen: datos } });

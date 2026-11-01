@@ -647,6 +647,8 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   del proveedor opcional). La caja muestra por cuenta entró / salió / queda y el cierre espera cobros − gastos.
   Quien vende puede anotar un gasto; verlos y anularlos (con motivo, sin borrar) es del dueño o administrador.
   Las compras de mercadería con factura siguen en Compras (IGV y stock).
+  **Foto del recibo** (opcional, desde la cámara del celular): se achica en el navegador, se guarda como
+  sustento (5 años o más) y se ve con "📎 Ver recibo". Una por gasto.
 - **Cuentas por pagar** (pestaña Compras): una compra puede ser al crédito con fecha de vencimiento. La
   lista "Por pagar" muestra el saldo por proveedor, lo vencido y lo que vence en 7 días (también en el
   tablero). Cada pago (total o parcial) dice de qué cuenta salió y se resta en la caja y el cierre; no

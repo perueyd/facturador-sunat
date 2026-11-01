@@ -106,7 +106,10 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   }
 
   // Contra órdenes enviadas desde otro sitio (CSRF): cabecera propia + mismo origen.
-  app.use('/panel/api/*', bodyLimit({ maxSize: 100 * 1024, onError: (c) => d.error(c, 413, 'DEMASIADO_GRANDE', 'Los datos superan los 100 KB.') }));
+  // Tope de datos por pedido: 100 KB; la foto de un recibo (ya achicada en el navegador), 512 KB.
+  const limite = bodyLimit({ maxSize: 100 * 1024, onError: (c) => d.error(c, 413, 'DEMASIADO_GRANDE', 'Los datos superan los 100 KB.') });
+  const limiteFoto = bodyLimit({ maxSize: 512 * 1024, onError: (c) => d.error(c, 413, 'DEMASIADO_GRANDE', 'La foto es muy pesada.') });
+  app.use('/panel/api/*', (c, next) => (/^\/panel\/api\/gastos\/[^/]+\/foto$/.test(c.req.path) ? limiteFoto : limite)(c, next));
   app.use('/panel/api/*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     if (c.req.method !== 'GET') {

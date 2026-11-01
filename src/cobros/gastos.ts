@@ -5,9 +5,12 @@
  * compras de mercadería con factura van además en Compras (IGV y stock); aquí solo se controla
  * el dinero. Un gasto no se cambia ni se borra: se anula con motivo. Montos exactos (NUMERIC).
  */
-import type { Db } from '../db/conexion.js';
+import { createHash } from 'node:crypto';
+import type { Almacen } from '../almacen/almacen.js';
+import { enTransaccion, type Db } from '../db/conexion.js';
 import { dec } from '../dinero.js';
 import { esFecha } from '../fechas.js';
+import { tipoImagen } from '../empresas/logo.js';
 import { MEDIOS_PAGO, type MedioPago } from './pagos.js';
 
 export class ErrorGasto extends Error {}
@@ -35,6 +38,8 @@ export interface Gasto {
   medio: string;
   cuenta: string | null;
   documento: string | null;
+  /** Tiene foto del recibo. */
+  foto: boolean;
   registradoPor: string;
   anulado: { motivo: string; por: string } | null;
 }
@@ -81,7 +86,7 @@ export async function anularGasto(db: Db, empresaId: string, id: string, motivo:
 /** Gastos de un período (incluye los anulados, marcados) y el total por categoría. */
 export async function gastosDelPeriodo(db: Db, empresaId: string, desde: string, hasta: string): Promise<{ gastos: Gasto[]; total: string; porCategoria: { categoria: CategoriaGasto; nombre: string; monto: string; ancho: number }[] }> {
   const r = await db.query(
-    `SELECT g.id, g.fecha::text AS fecha, g.monto::text AS monto, g.categoria, g.descripcion, g.medio::text AS medio, k.nombre AS cuenta, g.documento,
+    `SELECT g.id, g.fecha::text AS fecha, g.monto::text AS monto, g.categoria, g.descripcion, g.medio::text AS medio, k.nombre AS cuenta, g.documento, g.foto_archivo_id IS NOT NULL AS foto,
             coalesce(u.nombre, u.email) AS registrado_por, g.motivo_anulacion, coalesce(a.nombre, a.email) AS anulado_por
        FROM gastos g JOIN usuarios u ON u.id = g.registrado_por
        LEFT JOIN cuentas_cobro k ON k.id = g.cuenta_id LEFT JOIN usuarios a ON a.id = g.anulado_por
@@ -91,7 +96,7 @@ export async function gastosDelPeriodo(db: Db, empresaId: string, desde: string,
   );
   const gastos = r.rows.map((f): Gasto => ({
     id: f.id, fecha: f.fecha, monto: dec(f.monto).toFixed(2), categoria: f.categoria, descripcion: f.descripcion, medio: f.medio,
-    cuenta: f.cuenta, documento: f.documento, registradoPor: f.registrado_por,
+    cuenta: f.cuenta, documento: f.documento, foto: f.foto, registradoPor: f.registrado_por,
     anulado: f.motivo_anulacion ? { motivo: f.motivo_anulacion, por: f.anulado_por } : null,
   }));
   const sumas = new Map<CategoriaGasto, ReturnType<typeof dec>>();
@@ -101,4 +106,50 @@ export async function gastosDelPeriodo(db: Db, empresaId: string, desde: string,
   // Ancho de la barra (0 a 100) respecto de la categoría más grande; lo calcula el facturador.
   const porCategoria = orden.map(([categoria, m]) => ({ categoria, nombre: CATEGORIAS_GASTO[categoria], monto: m.toFixed(2), ancho: mayor ? m.div(mayor).times(100).round().toNumber() : 0 }));
   return { gastos, total: [...sumas.values()].reduce((t, m) => t.plus(m), dec('0')).toFixed(2), porCategoria };
+}
+
+// ---------- Foto del recibo ----------
+
+/** La foto ya llega achicada desde el navegador; este tope evita subir fotos enteras del celular. */
+export const FOTO_MAXIMO_BYTES = 350 * 1024;
+
+/** Guarda la foto del recibo de un gasto. Una sola por gasto: no se reemplaza. */
+export async function guardarFotoGasto(db: Db, almacen: Almacen, empresaId: string, gastoId: string, imagen: Buffer, usuarioId: string): Promise<void> {
+  const tipo = tipoImagen(imagen);
+  if (!tipo) throw new ErrorGasto('La foto debe ser una imagen JPG o PNG.');
+  if (imagen.length > FOTO_MAXIMO_BYTES) throw new ErrorGasto('La foto es muy pesada (máximo 350 KB).');
+  const g = (await db.query(
+    `SELECT g.foto_archivo_id, g.anulado_en, e.ruc FROM gastos g JOIN empresas e ON e.id = g.empresa_id WHERE g.id = $1 AND g.empresa_id = $2`,
+    [gastoId, empresaId],
+  )).rows[0];
+  if (!g) throw new ErrorGasto('Gasto no encontrado.');
+  if (g.anulado_en) throw new ErrorGasto('Ese gasto está anulado.');
+  if (g.foto_archivo_id) throw new ErrorGasto('Ese gasto ya tiene su foto.');
+  const sha256 = createHash('sha256').update(imagen).digest('hex');
+  const ruta = `${g.ruc}/gastos/${gastoId}-${sha256.slice(0, 16)}.${tipo}`;
+  await almacen.guardar(ruta, imagen);
+  await enTransaccion(db, async (tx) => {
+    const a = await tx.query(
+      `INSERT INTO archivos (empresa_id, entidad, entidad_id, tipo, ruta_almacenamiento, sha256, tamano, conservar_hasta)
+       VALUES ($1, 'gastos', $2, 'SUSTENTO', $3, $4, $5, (current_date + interval '6 years')::date) RETURNING id`,
+      [empresaId, gastoId, ruta, sha256, imagen.length],
+    );
+    // Solo si sigue sin foto (dos subidas a la vez: gana la primera).
+    const r = await tx.query(`UPDATE gastos SET foto_archivo_id = $3 WHERE id = $1 AND empresa_id = $2 AND foto_archivo_id IS NULL RETURNING id`, [gastoId, empresaId, a.rows[0].id]);
+    if (!r.rowCount) throw new ErrorGasto('Ese gasto ya tiene su foto.');
+    await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'FOTO_GASTO', 'gastos', $3, $4)`, [
+      empresaId, usuarioId, gastoId, JSON.stringify({ archivo: a.rows[0].id, sha256 }),
+    ]);
+  });
+}
+
+/** La foto del recibo (o undefined si el gasto no tiene, o no es de la empresa). */
+export async function fotoDeGasto(db: Db, almacen: Almacen, empresaId: string, gastoId: string): Promise<{ datos: Buffer; tipo: string } | undefined> {
+  const f = (await db.query(
+    `SELECT a.ruta_almacenamiento AS ruta FROM gastos g JOIN archivos a ON a.id = g.foto_archivo_id WHERE g.id = $1 AND g.empresa_id = $2`,
+    [gastoId, empresaId],
+  )).rows[0];
+  if (!f) return undefined;
+  const datos = await almacen.leer(f.ruta);
+  return { datos, tipo: tipoImagen(datos) === 'png' ? 'image/png' : 'image/jpeg' };
 }
