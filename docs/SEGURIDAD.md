@@ -64,6 +64,7 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 | Errores del servidor, cola atascada, rechazos, certificados o planes por vencer, base llena | La vigilancia avisa por correo una vez (`docs/PLATAFORMA.md`). |
 | Librerías con fallas de seguridad | Dependabot abre un PR cada semana con el arreglo; las pruebas lo validan antes de unirlo. `npm audit` frena cualquier cambio con una falla grave conocida. |
 | Algo que se rompe sin tocar el código | Las pruebas completas corren solas cada lunes, además de en cada cambio. |
+| Una empresa viendo datos de otra | Prueba de "espía" (`tests/db/aislamiento.test.ts`): el dueño de una empresa intenta leer y cambiar, ruta por ruta, comprobantes, cotizaciones, gastos y fotos, compras, pagos, cuentas y usuarios de otra; todo debe rechazarse y los datos quedar intactos. Corre en cada cambio. |
 | Fechas imposibles (ej. 30 de febrero) | Se rechazan con un mensaje claro antes de llegar a la base (`esFecha`). |
 | Pérdida de datos | Respaldo diario cifrado (`respaldo.yml`); los comprobantes, pagos, cierres y la auditoría no se pueden borrar ni cambiar. |
 
@@ -73,6 +74,6 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 
 | Pendiente | Por qué todavía no | Cuándo |
 |---|---|---|
-| *Row Level Security* en PostgreSQL | Hoy el aislamiento lo hace la aplicación (probado). RLS sería una segunda barrera. | Antes de vender el servicio a otros negocios. |
+| *Row Level Security* en PostgreSQL | Hoy el aislamiento lo hace la aplicación y lo vigila la prueba de "espía". RLS sería una segunda barrera en la base, pero exige: un usuario de base sin permiso de saltarse RLS, que cada pedido corra en una transacción con la empresa fijada (`SET LOCAL`), y un camino aparte para la cola de SUNAT, que trabaja con todas las empresas. Es un cambio grande que hay que probar contra Supabase real. | Antes de vender el servicio a otros negocios, junto con el usuario de base de permisos mínimos. |
 | Usuario de base con permisos mínimos | Supabase entrega un usuario con todos los permisos; un usuario sin `TRUNCATE` ni permiso para quitar disparadores reduce el daño si se filtra la conexión. | Al pasar a producción. |
 | Repositorio público | No contiene secretos y los respaldos van cifrados. Se mantiene público porque así GitHub Actions (cola cada 5 min) es gratis. | Hacerlo privado si se pasa a un servidor que no se duerma y la cola se mueve fuera de GitHub. |
