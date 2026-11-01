@@ -394,10 +394,19 @@
             <label>Total <input name="total" inputmode="decimal" required></label>
           </div>
           <small>Copia el IGV y el total tal como dicen en la factura del proveedor.</small>
+          <div class="fila">
+            <label>Forma de pago
+              <select name="condicion" id="condicion-compra"><option value="CONTADO">Contado (ya pagué)</option><option value="CREDITO">Crédito (pago después)</option></select></label>
+            <label id="caja-vence-compra" hidden>Vence el <input name="vence" type="date"></label>
+          </div>
           <button type="submit">Registrar compra</button>
           <p class="error" id="error-compra" role="alert"></p>
           <p id="ok-compra" role="status"></p>
         </form>
+        <h2>Por pagar a proveedores</h2>
+        <p class="nota">Compras al crédito. Toca una para registrar lo que pagaste (sale de la cuenta que elijas, así la caja cuadra).</p>
+        <div id="kpis-por-pagar" class="kpis"></div>
+        <ul id="lista-por-pagar" class="lista"></ul>
         <h2>Últimas compras</h2>
         <ul id="lista-compras" class="lista"></ul>
       </div>

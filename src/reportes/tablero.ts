@@ -11,6 +11,7 @@
 import { sqlSaldo } from '../cobros/pagos.js';
 import type { Db } from '../db/conexion.js';
 import { dec } from '../dinero.js';
+import { porPagar } from '../inventario/por-pagar.js';
 import { ahoraLima, diasEntre } from '../fechas.js';
 
 export const MODULOS = ['panel', 'vencimientos', 'resumen', 'certificado', 'cobros', 'notas', 'productos', 'exportar', 'compras', 'avisos', 'estadisticas'] as const;
@@ -46,9 +47,11 @@ export interface Tablero {
   certificado?: { vence: string; dias: number } | { falta: true };
   sunat?: { pendientes: number; rechazados: number };
   cobros?: { comprobantes: number; saldo: string };
+  /** Deudas a proveedores (compras al crédito): solo para quien ve las compras. */
+  porPagar?: { saldo: string; vencido: string; vencePronto: string };
 }
 
-export async function tablero(db: Db, empresaId: string, opciones: { hoy?: string; modulos?: readonly Modulo[] } = {}): Promise<Tablero> {
+export async function tablero(db: Db, empresaId: string, opciones: { hoy?: string; modulos?: readonly Modulo[]; porPagar?: boolean } = {}): Promise<Tablero> {
   const hoy = opciones.hoy ?? ahoraLima().fecha;
   const activo = (m: Modulo) => !opciones.modulos || opciones.modulos.includes(m);
   const e = (await db.query(`SELECT ruc, buen_contribuyente FROM empresas WHERE id = $1`, [empresaId])).rows[0];
@@ -137,6 +140,10 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
       [empresaId],
     )).rows[0];
     t.cobros = { comprobantes: p.n, saldo: dec(p.saldo).toFixed(2) };
+  }
+  if (opciones.porPagar && activo('compras')) {
+    const r = (await porPagar(db, empresaId, hoy)).resumen;
+    if (r.total !== '0.00') t.porPagar = { saldo: r.total, vencido: r.vencido, vencePronto: r.vencePronto };
   }
   return t;
 }

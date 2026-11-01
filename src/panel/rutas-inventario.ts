@@ -6,7 +6,9 @@ import type { Context, Hono } from 'hono';
 import { registrarCompra } from '../inventario/compras.js';
 import { ErrorInventario, ajustarStock, guardarProducto, listarStock } from '../inventario/productos.js';
 import { asignarProveedor, guardarDiasEntrega, kardex, reposicion } from '../inventario/reposicion.js';
-import { ROLES_CORRIGEN, ROLES_COMPRAS, csvParaExcel } from './comun-rutas.js';
+import { ErrorPorPagar, anularPagoCompra, pagarCompra, porPagar } from '../inventario/por-pagar.js';
+import { ahoraLima } from '../fechas.js';
+import { ROLES_CORRIGEN, ROLES_COMPRAS, UUID, csvParaExcel } from './comun-rutas.js';
 import type { Comun } from './comun-rutas.js';
 
 export function registrarInventario(app: Hono<any>, { d, conEmpresa, sinModulo, texto }: Comun): void {
@@ -151,6 +153,7 @@ export function registrarInventario(app: Hono<any>, { d, conEmpresa, sinModulo, 
         tipoComprobante: b.tipo === '03' ? '03' : '01',
         serie: texto(b.serie, 4), numero, fecha: texto(b.fecha, 10),
         igv: texto(b.igv, 20), total: texto(b.total, 20), items,
+        ...(texto(b.vence, 10) ? { vence: texto(b.vence, 10) } : {}),
       }, s.usuarioId);
       return c.json({ ok: true, ...r }, 201);
     } catch (e) {
@@ -163,11 +166,58 @@ export function registrarInventario(app: Hono<any>, { d, conEmpresa, sinModulo, 
     if (s instanceof Response) return s;
     if (!s.empresa.modulos.includes('compras')) return sinModulo(c, 'compras');
     const r = await d.db.query(
-      `SELECT c.fecha_emision::text AS fecha, c.serie, c.numero, p.razon_social AS proveedor, c.igv::text AS igv, c.total::text AS total
+      `SELECT c.fecha_emision::text AS fecha, c.serie, c.numero, p.razon_social AS proveedor, c.igv::text AS igv, c.total::text AS total, c.vence::text AS vence
          FROM compras c JOIN proveedores p ON p.id = c.proveedor_id
         WHERE c.empresa_id = $1 AND c.anulada_en IS NULL ORDER BY c.creado_en DESC LIMIT 20`,
       [s.empresa.id],
     );
     return c.json({ compras: r.rows.map((x) => ({ ...x, numero: `${x.serie}-${x.numero}` })) });
+  });
+
+  // ---------- Cuentas por pagar: lo que se debe a proveedores por compras al crédito ----------
+  const conPorPagar = async (c: Context) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('compras')) return sinModulo(c, 'compras');
+    return ROLES_COMPRAS.includes(s.empresa.rol) ? s : d.error(c, 403, 'SIN_PERMISO', 'Tu rol no ve ni paga deudas a proveedores.');
+  };
+  app.get('/panel/api/por-pagar', async (c) => {
+    const s = await conPorPagar(c);
+    if (s instanceof Response) return s;
+    return c.json(await porPagar(d.db, s.empresa.id, ahoraLima().fecha));
+  });
+  app.post('/panel/api/compras/:id/pagos', async (c) => {
+    const s = await conPorPagar(c);
+    if (s instanceof Response) return s;
+    const id = c.req.param('id');
+    if (!UUID.test(id)) return d.error(c, 404, 'NO_ENCONTRADO', 'Compra no encontrada.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const hoy = ahoraLima().fecha;
+    try {
+      const r = await pagarCompra(d.db, s.empresa.id, id, {
+        medio: texto(b.medio, 20).toUpperCase(), fecha: texto(b.fecha, 10) || hoy,
+        ...(texto(b.monto, 20) ? { monto: texto(b.monto, 20).replace(',', '.') } : {}),
+        ...(typeof b.cuenta === 'string' && UUID.test(b.cuenta) ? { cuentaId: b.cuenta } : {}),
+        ...(texto(b.referencia, 60) ? { referencia: texto(b.referencia, 60) } : {}),
+      }, s.usuarioId, hoy);
+      return c.json(r, 201);
+    } catch (e) {
+      if (e instanceof ErrorPorPagar) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  });
+  app.post('/panel/api/pagos-compra/:id/anular', async (c) => {
+    const s = await conPorPagar(c);
+    if (s instanceof Response) return s;
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador anula pagos.');
+    const id = c.req.param('id');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      return UUID.test(id) && (await anularPagoCompra(d.db, s.empresa.id, id, texto(b.motivo, 200), s.usuarioId))
+        ? c.json({ ok: true }) : d.error(c, 409, 'NO_SE_PUEDE', 'Ese pago no existe o ya estaba anulado.');
+    } catch (e) {
+      if (e instanceof ErrorPorPagar) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
   });
 }

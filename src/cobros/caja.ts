@@ -79,7 +79,7 @@ export interface FilaCaja {
   cobros: number;
   /** Lo que entró (cobros). */
   monto: string;
-  /** Lo que salió (gastos no anulados). */
+  /** Lo que salió (gastos y pagos a proveedores, no anulados). */
   gastos: string;
   /** Lo que debería quedar: entró − salió. */
   neto: string;
@@ -102,6 +102,10 @@ export async function caja(db: Db, empresaId: string, desde: string, hasta: stri
         WHERE empresa_id = $1 AND anulado_en IS NULL AND fecha BETWEEN $2::date AND $3::date
        UNION ALL
        SELECT cuenta_id, medio, 0, monto, 0 FROM gastos
+        WHERE empresa_id = $1 AND anulado_en IS NULL AND fecha BETWEEN $2::date AND $3::date
+       UNION ALL
+       -- Pagos a proveedores por compras al crédito: también es dinero que sale de la cuenta.
+       SELECT cuenta_id, medio, 0, monto, 0 FROM pagos_compra
         WHERE empresa_id = $1 AND anulado_en IS NULL AND fecha BETWEEN $2::date AND $3::date)
      SELECT k.id AS cuenta_id, coalesce(k.nombre, 'Sin cuenta: ' || initcap(m.medio::text)) AS nombre, m.medio::text AS medio,
             k.titular, coalesce(k.de_la_empresa, true) AS de_la_empresa, sum(m.es_cobro)::int AS cobros,

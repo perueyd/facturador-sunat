@@ -34,6 +34,8 @@ export interface DatosCompra {
   otros?: string;
   items: ItemCompra[];
   notas?: string;
+  /** Compra al crédito: fecha en que vence el pago al proveedor (sin esto, es al contado). */
+  vence?: string;
 }
 
 export async function registrarCompra(db: Db, empresaId: string, d: DatosCompra, usuarioId?: string): Promise<{ compraId: string; base: string }> {
@@ -44,6 +46,7 @@ export async function registrarCompra(db: Db, empresaId: string, d: DatosCompra,
   if (!/^[A-Z0-9]{1,4}$/i.test(d.serie) || !Number.isSafeInteger(d.numero) || d.numero < 1) errores.push('Serie o número del comprobante del proveedor inválidos.');
   if (!esFecha(d.fecha)) errores.push('Fecha inválida (AAAA-MM-DD).');
   if (d.items.length === 0) errores.push('La compra debe tener al menos un ítem.');
+  if (d.vence !== undefined && (!esFecha(d.vence) || (esFecha(d.fecha) && d.vence < d.fecha))) errores.push('La fecha de vencimiento del crédito debe ser igual o posterior a la de la compra.');
   if (errores.length) throw new ErrorInventario(errores.join(' '));
 
   const items = d.items.map((it) => {
@@ -70,10 +73,10 @@ export async function registrarCompra(db: Db, empresaId: string, d: DatosCompra,
         [empresaId, d.proveedor.ruc, d.proveedor.razonSocial.trim()],
       );
       const c = await tx.query(
-        `INSERT INTO compras (empresa_id, proveedor_id, tipo_comprobante, serie, numero, fecha_emision, periodo, base_imponible, igv, otros, total, notas, registrado_por)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+        `INSERT INTO compras (empresa_id, proveedor_id, tipo_comprobante, serie, numero, fecha_emision, periodo, base_imponible, igv, otros, total, notas, registrado_por, condicion, vence)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
         [empresaId, prov.rows[0].id, d.tipoComprobante ?? '01', d.serie.toUpperCase(), d.numero, d.fecha, d.fecha.slice(0, 7),
-          base.toFixed(2), igv.toFixed(2), otros.toFixed(2), total.toFixed(2), d.notas ?? null, usuarioId ?? null],
+          base.toFixed(2), igv.toFixed(2), otros.toFixed(2), total.toFixed(2), d.notas ?? null, usuarioId ?? null, d.vence ? 'CREDITO' : 'CONTADO', d.vence ?? null],
       );
       const compraId = c.rows[0].id as string;
       const afectados: string[] = [];

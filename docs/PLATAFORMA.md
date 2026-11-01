@@ -127,6 +127,5 @@ Todo se ve también en el panel → **Plataforma → Salud de la plataforma**.
 
 **Próximos módulos sugeridos** (no dependen de SUNAT; cada uno como sección activable por plan):
 1. Pedidos a medida: adelanto → fabricación → entrega (verificar cuándo se emite comprobante por un adelanto).
-2. Cuentas por pagar a proveedores.
-3. Después, según lo que pidan los clientes: libro de reclamaciones virtual, comisiones por vendedor,
+2. Después, según lo que pidan los clientes: libro de reclamaciones virtual, comisiones por vendedor,
    puntos y cupones, sucursales y almacenes, agenda de citas, flota de vehículos.

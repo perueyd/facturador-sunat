@@ -479,7 +479,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   app.get('/panel/api/tablero', async (c) => {
     const s = await conEmpresa(c);
     if (s instanceof Response) return s;
-    return c.json(await tablero(d.db, s.empresa.id, { modulos: s.empresa.modulos }));
+    return c.json(await tablero(d.db, s.empresa.id, { modulos: s.empresa.modulos, porPagar: ROLES_COMPRAS.includes(s.empresa.rol) }));
   });
 
   // Cuánto se vende y de dónde: solo quienes responden por la empresa y el contador.
