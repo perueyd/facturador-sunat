@@ -12,7 +12,8 @@ import { ErrorCotizacion, anularCotizacion, cargarCotizacion, crearCotizacion, l
 import { tokenCotizacion } from '../api/enlaces.js';
 import { idComprobanteLegible } from '../tipos.js';
 import { ROLES_EMISORES } from './usuarios.js';
-import { ROLES_CORRIGEN, UUID, csvParaExcel, origenPropio } from './comun-rutas.js';
+import { ROLES_COMPRAS, ROLES_CORRIGEN, UUID, csvParaExcel, origenPropio } from './comun-rutas.js';
+import { CATEGORIAS_GASTO, type CategoriaGasto } from '../cobros/gastos.js';
 import type { Comun } from './comun-rutas.js';
 
 export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, sinModulo, texto }: Comun): void {
@@ -120,6 +121,44 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
     if (!s.empresa.modulos.includes('exportar')) return sinModulo(c, 'exportar');
     const mes = c.req.query('mes') ?? '';
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return d.error(c, 400, 'MES_INVALIDO', 'Indica el mes como AAAA-MM.');
+    const que = c.req.query('que') ?? 'ventas';
+    const csv = (nombre: string, lineas: unknown[][]) => c.body(csvParaExcel(lineas), 200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${nombre}-${s.empresa.ruc}-${mes}.csv"`,
+    });
+    // Compras y gastos muestran costos: solo quienes responden por la empresa y el contador.
+    if (que === 'compras' || que === 'gastos') {
+      if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no puede exportar compras ni gastos.');
+      if (que === 'compras') {
+        if (!s.empresa.modulos.includes('compras')) return sinModulo(c, 'compras');
+        const r = await d.db.query(
+          `SELECT k.fecha_emision::text AS fecha, k.tipo_comprobante, k.serie, k.numero, p.ruc, p.razon_social, k.base_imponible::text AS base,
+                  k.igv::text AS igv, k.otros::text AS otros, k.total::text AS total, k.condicion, k.vence::text AS vence, k.anulada_motivo
+             FROM compras k JOIN proveedores p ON p.id = k.proveedor_id
+            WHERE k.empresa_id = $1 AND k.periodo = $2 ORDER BY k.fecha_emision, k.serie, k.numero`,
+          [s.empresa.id, mes],
+        );
+        return csv('compras', [
+          ['Fecha', 'Tipo', 'Número', 'RUC proveedor', 'Proveedor', 'Base imponible', 'IGV', 'Otros', 'Total', 'Forma de pago', 'Vence', 'Anulada (motivo)'],
+          ...r.rows.map((x) => [x.fecha, x.tipo_comprobante === '03' ? 'Boleta' : 'Factura', `${x.serie}-${x.numero}`, x.ruc, x.razon_social,
+            x.base, x.igv, x.otros, x.total, x.condicion === 'CREDITO' ? 'Crédito' : 'Contado', x.vence ?? '', x.anulada_motivo ?? '']),
+        ]);
+      }
+      if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
+      const r = await d.db.query(
+        `SELECT g.fecha::text AS fecha, g.categoria, g.descripcion, g.monto::text AS monto, g.medio::text AS medio, k.nombre AS cuenta, g.documento,
+                coalesce(u.nombre, u.email) AS registrado_por, g.foto_archivo_id IS NOT NULL AS foto, g.motivo_anulacion
+           FROM gastos g JOIN usuarios u ON u.id = g.registrado_por LEFT JOIN cuentas_cobro k ON k.id = g.cuenta_id
+          WHERE g.empresa_id = $1 AND to_char(g.fecha, 'YYYY-MM') = $2 ORDER BY g.fecha, g.creado_en`,
+        [s.empresa.id, mes],
+      );
+      return csv('gastos', [
+        ['Fecha', 'Categoría', 'Descripción', 'Monto', 'Salió de', 'Comprobante del proveedor', 'Registrado por', 'Foto del recibo', 'Anulado (motivo)'],
+        ...r.rows.map((x) => [x.fecha, CATEGORIAS_GASTO[x.categoria as CategoriaGasto] ?? x.categoria, x.descripcion, x.monto, x.cuenta ?? x.medio,
+          x.documento ?? '', x.registrado_por, x.foto ? 'sí' : 'no', x.motivo_anulacion ?? '']),
+      ]);
+    }
+    if (que !== 'ventas') return d.error(c, 400, 'DATOS_INVALIDOS', 'Elige ventas, compras o gastos.');
     const r = await d.db.query(
       `SELECT co.fecha_emision::text AS fecha, co.tipo_comprobante, co.serie, co.numero, co.cliente_numero_doc, co.cliente_nombre,
               (co.total_gravado + co.total_exonerado + co.total_inafecto)::text AS base, co.total_igv::text AS igv, co.importe_total::text AS total,
@@ -136,10 +175,7 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
         x.cliente_nombre, x.base, x.igv, x.total, x.estado, x.pago, x.canal,
       ]),
     ];
-    return c.body(csvParaExcel(lineas), 200, {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="ventas-${s.empresa.ruc}-${mes}.csv"`,
-    });
+    return csv('ventas', lineas);
   });
 
   // Devolución total: nota de crédito por todo lo que quede por devolver; el stock vuelve.

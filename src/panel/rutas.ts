@@ -31,6 +31,8 @@ import { base32, urlOtpauth } from '../seguridad/totp.js';
 import { ErrorPdf } from '../pdf/representacion.js';
 import { iniciarPrueba, suscripcionDe } from '../plataforma/suscripciones.js';
 import { estadisticas } from '../reportes/estadisticas.js';
+import { resultadoDelMes } from '../reportes/resultado.js';
+import { ahoraLima } from '../fechas.js';
 import { tablero, type Modulo } from '../reportes/tablero.js';
 import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
@@ -491,9 +493,11 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (s instanceof Response) return s;
     if (!s.empresa.modulos.includes('estadisticas')) return sinModulo(c, 'estadisticas');
     if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no puede ver las estadísticas de ventas.');
-    return c.json(await estadisticas(d.db, s.empresa.id, {
-      compras: s.empresa.modulos.includes('compras'), productos: s.empresa.modulos.includes('productos'),
-    }));
+    const m = s.empresa.modulos;
+    return c.json({
+      ...(await estadisticas(d.db, s.empresa.id, { compras: m.includes('compras'), productos: m.includes('productos') })),
+      resultado: await resultadoDelMes(d.db, s.empresa.id, ahoraLima().fecha.slice(0, 7), { compras: m.includes('compras'), gastos: m.includes('cobros') }),
+    });
   });
 
   // Productos guardados, para elegirlos al emitir en vez de escribirlos.
