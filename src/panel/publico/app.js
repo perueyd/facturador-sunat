@@ -359,6 +359,11 @@ async function cargarTablero() {
   if (t.cobros) {
     tarjetas.push(tarjeta('Por cobrar', `S/ ${t.cobros.saldo}`, `${t.cobros.comprobantes} comprobante(s)`));
   }
+  if (t.porPagar) {
+    const urgente = t.porPagar.vencido !== '0.00' || t.porPagar.vencePronto !== '0.00';
+    tarjetas.push(tarjeta('Por pagar a proveedores', `S/ ${t.porPagar.saldo}`,
+      t.porPagar.vencido !== '0.00' ? `⚠️ vencido S/ ${t.porPagar.vencido}` : t.porPagar.vencePronto !== '0.00' ? `vence en 7 días S/ ${t.porPagar.vencePronto}` : 'al día', urgente ? 'urgente' : ''));
+  }
   $('#tablero').replaceChildren(...tarjetas);
   $('#nota-estimado').hidden = !r;
 }
@@ -1551,13 +1556,80 @@ function sugerirMontosCompra() {
 
 async function cargarCompras() {
   const { compras } = await api('/compras');
-  $('#lista-compras').replaceChildren(...compras.map((x) => linea(`${x.fecha} · ${x.numero} · ${x.proveedor}`, `S/ ${x.total} (IGV ${x.igv})`)));
+  $('#lista-compras').replaceChildren(...compras.map((x) => linea(`${x.fecha} · ${x.numero} · ${x.proveedor}${x.vence ? ` · crédito hasta ${fechaPeru(x.vence)}` : ''}`, `S/ ${x.total} (IGV ${x.igv})`)));
+  await cargarPorPagar();
   if (!$('#items-compra').children.length) agregarLineaCompra();
   if (!$('#form-compra').fecha.value) $('#form-compra').fecha.value = new Date().toISOString().slice(0, 10);
   if (tiene('productos')) {
     const { stock } = await api('/stock');
     $('#lista-skus').replaceChildren(...stock.map((p) => new Option(p.nombre, p.sku)));
   }
+}
+
+// ---------- Cuentas por pagar ----------
+const ESTADO_DEUDA = { VENCIDA: '⚠️ vencida', VENCE_PRONTO: 'vence pronto', AL_DIA: 'al día' };
+
+async function cargarPorPagar() {
+  const { deudas, resumen } = await api('/por-pagar');
+  $('#kpis-por-pagar').replaceChildren(
+    kpi(resumen.total === '0.00' ? 'gris' : 'azul', 'Debes', soles(resumen.total), `${resumen.proveedores} proveedor(es)`),
+    kpi(resumen.vencido === '0.00' ? 'gris' : 'rosa', 'Vencido', soles(resumen.vencido), 'pagar cuanto antes'),
+    kpi(resumen.vencePronto === '0.00' ? 'gris' : 'ambar', 'Vence en 7 días', soles(resumen.vencePronto), 'prepara el pago'),
+  );
+  $('#lista-por-pagar').replaceChildren(...(deudas.length ? deudas.map((x) => {
+    const cuando = x.diasParaVencer < 0 ? `venció hace ${-x.diasParaVencer} día(s)` : x.diasParaVencer === 0 ? 'vence hoy' : `vence en ${x.diasParaVencer} día(s)`;
+    const li = linea(`${x.proveedor} · ${x.documento} · ${cuando} (${ESTADO_DEUDA[x.estado]})`, `debes ${soles(x.saldo)}`, x.estado === 'VENCIDA' ? 'bajo' : '');
+    li.addEventListener('click', (e) => {
+      if (e.target.closest('.pago-compra')) return;
+      const abierto = li.querySelector('.pago-compra');
+      if (abierto) { abierto.remove(); return; }
+      li.append(formularioPagoCompra(x));
+    });
+    return li;
+  }) : [linea('No debes nada a tus proveedores. 🎉', '')]));
+}
+
+function formularioPagoCompra(x) {
+  const caja = Object.assign(document.createElement('div'), { className: 'pago-compra' });
+  const pagos = Object.assign(document.createElement('ul'), { className: 'lista' });
+  for (const g of x.pagos) {
+    const p = linea(`${fechaPeru(g.fecha)} · ${g.cuenta ?? MEDIO_TEXTO[g.medio] ?? g.medio}`, g.anulado ? `anulado: ${g.anulado}` : soles(g.monto), g.anulado ? 'apagado' : '');
+    if (!g.anulado && yo?.puedeAdministrar) {
+      p.addEventListener('click', async () => {
+        const motivo = prompt(`¿Anular el pago de ${soles(g.monto)}? Escribe el motivo:`);
+        if (!motivo) return;
+        try { await api(`/pagos-compra/${g.id}/anular`, { cuerpo: { motivo } }); await cargarPorPagar(); } catch (err) { alert(err.message); }
+      });
+    }
+    pagos.append(p);
+  }
+  if (x.pagos.length) caja.append(pagos);
+  const f = document.createElement('form');
+  const medio = document.createElement('select');
+  llenarMedios(medio);
+  const monto = Object.assign(document.createElement('input'), { placeholder: `todo el saldo (${x.saldo})` });
+  monto.setAttribute('inputmode', 'decimal');
+  const referencia = Object.assign(document.createElement('input'), { placeholder: 'Nº de operación (opcional)', maxLength: 60 });
+  const error = Object.assign(document.createElement('p'), { className: 'error' });
+  const fila = Object.assign(document.createElement('div'), { className: 'fila' });
+  const etiqueta = (texto, campo) => { const l = Object.assign(document.createElement('label'), { textContent: texto }); l.append(campo); return l; };
+  fila.append(etiqueta('Monto', monto), etiqueta('Salió de', medio));
+  f.append(fila, referencia, Object.assign(document.createElement('button'), { type: 'submit', textContent: 'Registrar pago al proveedor' }), error);
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api(`/compras/${x.compraId}/pagos`, { cuerpo: {
+        ...leerMedio(medio.value), ...(monto.value.trim() ? { monto: monto.value.trim().replace(',', '.') } : {}),
+        ...(referencia.value.trim() ? { referencia: referencia.value.trim() } : {}),
+      } });
+      alert(r.saldo === '0.00' ? '✔ Compra pagada por completo.' : `✔ Pago registrado. Aún debes S/ ${r.saldo}.`);
+      await Promise.all([cargarPorPagar(), cargarTablero()]);
+    } catch (err) {
+      error.textContent = err.message;
+    }
+  });
+  caja.append(f);
+  return caja;
 }
 
 async function alComprar(e) {
@@ -1576,8 +1648,10 @@ async function alComprar(e) {
       proveedor: { ruc: String(f.get('ruc')).trim(), razonSocial: String(f.get('razonSocial')).trim() },
       tipo: f.get('tipo'), serie: String(f.get('serie')).trim(), numero: String(f.get('numero')).trim(), fecha: f.get('fecha'),
       igv: String(f.get('igv')).trim().replace(',', '.'), total: String(f.get('total')).trim().replace(',', '.'), items,
+      ...(f.get('condicion') === 'CREDITO' ? { vence: f.get('vence') } : {}),
     } });
     e.target.reset();
+    $('#caja-vence-compra').hidden = true;
     $('#items-compra').replaceChildren();
     $('#ok-compra').textContent = '✔ Compra registrada. Su IGV ya se descuenta en el tablero.';
     await Promise.all([cargarCompras(), cargarTablero()]);
@@ -1985,6 +2059,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-cuenta').addEventListener('submit', alGuardarCuenta);
   for (const b of document.querySelectorAll('#periodo-caja button')) b.addEventListener('click', () => cargarCaja(b.dataset.periodo).catch((err) => alert(err.message)));
   $('#form-cierre').addEventListener('submit', alCerrarCaja);
+  $('#condicion-compra').addEventListener('change', (e) => { $('#caja-vence-compra').hidden = e.target.value !== 'CREDITO'; $('#form-compra').vence.required = e.target.value === 'CREDITO'; });
   $('#admin-alta').addEventListener('click', async () => { await abrirPestana('mas'); $('#caja-empresa-nueva').open = true; $('#caja-empresa-nueva').scrollIntoView({ behavior: 'smooth' }); });
   $('#admin-reportes').addEventListener('click', () => $('#titulo-reportes').scrollIntoView({ behavior: 'smooth' }));
   $('#admin-salud').addEventListener('click', () => $('#titulo-salud').scrollIntoView({ behavior: 'smooth' }));

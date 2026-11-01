@@ -647,6 +647,10 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   del proveedor opcional). La caja muestra por cuenta entró / salió / queda y el cierre espera cobros − gastos.
   Quien vende puede anotar un gasto; verlos y anularlos (con motivo, sin borrar) es del dueño o administrador.
   Las compras de mercadería con factura siguen en Compras (IGV y stock).
+- **Cuentas por pagar** (pestaña Compras): una compra puede ser al crédito con fecha de vencimiento. La
+  lista "Por pagar" muestra el saldo por proveedor, lo vencido y lo que vence en 7 días (también en el
+  tablero). Cada pago (total o parcial) dice de qué cuenta salió y se resta en la caja y el cierre; no
+  deja pagar de más; se anula con motivo, sin borrar.
 - **Cotizaciones / proformas** (pestaña Vender): el mismo formulario se guarda como cotización (COT-000001,
   numeración propia, válida N días, nota). PDF con logo que dice "NO ES COMPROBANTE DE PAGO", enlace firmado
   para mandarlo por WhatsApp (`/q/…`), y "Vender" la carga en el formulario: al emitir la boleta o factura

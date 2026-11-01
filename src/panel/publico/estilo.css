@@ -168,3 +168,6 @@ button.acceso small { color: var(--gris); font-size: 13px; }
 .lista li.apagado { opacity: .55; }
 .lista li:has(.botones) { flex-wrap: wrap; }
 .lista li .botones { flex-basis: 100%; }
+/* Por pagar: el formulario de pago baja a su propia fila dentro de la deuda. */
+.lista li:has(.pago-compra) { flex-wrap: wrap; cursor: default; }
+.lista li .pago-compra { flex-basis: 100%; }
