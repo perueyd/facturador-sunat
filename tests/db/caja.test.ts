@@ -11,6 +11,7 @@ import { emitirComprobante } from '../../src/comprobantes/emitir.js';
 import type { Db } from '../../src/db/conexion.js';
 import { ahoraLima } from '../../src/fechas.js';
 import { item, solicitudBoleta } from '../ayudantes.js';
+import { digitoVerificadorRuc } from '../../src/validaciones/documentos.js';
 import { URL_PRUEBAS, crearEmpresa, prepararBase, type Fixture } from './base-prueba.js';
 
 describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
@@ -128,5 +129,23 @@ describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
     expect(p.total).toBe('30.00');
     expect(p.porCategoria).toEqual([{ categoria: 'SERVICIOS', nombre: 'Luz, agua, internet', monto: '30.00', ancho: 100 }]);
     expect(p.gastos.find((g) => g.id === pasaje)?.anulado).toMatchObject({ motivo: 'Lo pagó el cliente', por: 'Caja' });
+  });
+
+  it('fondo inicial: el cajón empieza con lo que quedó en el último cierre; se puede corregir', async () => {
+    const g = await crearEmpresa(db, `2060000008${digitoVerificadorRuc('2060000008')}`);
+    const cajon = await guardarCuenta(db, g.empresaId, { nombre: 'Cajón', medio: 'EFECTIVO', deLaEmpresa: true, predeterminada: true }, usuarioId);
+    // Día 1: se dejan S/ 50 de sencillo en el cajón.
+    expect((await lineasParaCerrar(db, g.empresaId, '2020-05-01'))[0]).toMatchObject({ clave: cajon, esperado: '0.00', fondoSugerido: '0.00' });
+    await cerrarCaja(db, g.empresaId, '2020-05-01', { [cajon]: '50' }, 'fondo de sencillo', usuarioId, hoy);
+    // Día 2: se pagan S/ 20 de un pasaje con el cajón. Debería haber 50 − 20 = 30.
+    await registrarGasto(db, g.empresaId, { fecha: '2020-05-02', monto: '20', categoria: 'TRANSPORTE', descripcion: 'Pasaje', medio: 'EFECTIVO', cuentaId: cajon }, usuarioId, hoy);
+    expect((await lineasParaCerrar(db, g.empresaId, '2020-05-02'))[0]).toMatchObject({ esperado: '-20.00', fondoSugerido: '50.00' });
+    const cuadra = await cerrarCaja(db, g.empresaId, '2020-05-02', { [cajon]: '30' }, null, usuarioId, hoy);
+    expect(cuadra.lineas[0]).toMatchObject({ fondo: '50.00', esperado: '-20.00', deberiaHaber: '30.00', contado: '30.00', diferencia: '0.00' });
+    expect(cuadra.totales).toMatchObject({ fondo: '50.00', deberiaHaber: '30.00', diferencia: '0.00' });
+    // Si en realidad empezó con 40, se corrige el fondo: sobran 10.
+    const corregido = await cerrarCaja(db, g.empresaId, '2020-05-02', { [cajon]: '30' }, null, usuarioId, hoy, { [cajon]: '40' });
+    expect(corregido.lineas[0]).toMatchObject({ fondo: '40.00', deberiaHaber: '20.00', diferencia: '10.00' });
+    await expect(cerrarCaja(db, g.empresaId, '2020-05-02', { [cajon]: '30' }, null, usuarioId, hoy, { [cajon]: '4,0' })).rejects.toThrow(/fondo inicial/);
   });
 });
