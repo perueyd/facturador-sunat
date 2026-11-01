@@ -101,4 +101,31 @@ describe.skipIf(!URL_PRUEBAS)('estadísticas de ventas', () => {
     // El mes sí es neto: lo vendido menos lo devuelto.
     expect(e.mes.ventas).toBe('195.00');
   });
+
+  it('ventas por vendedor: la devolución resta a quien vendió, no a quien la hizo', async () => {
+    const usuario = async (n: string) =>
+      (await db.query(`INSERT INTO usuarios (email, nombre) VALUES ($1, $2) RETURNING id`, [`${n.toLowerCase()}@vendedores.pe`, n])).rows[0].id as string;
+    const ana = await usuario('Ana');
+    const beto = await usuario('Beto');
+    const emitirComo = async (usuarioId: string, s: SolicitudComprobante) => {
+      const r = await emitirComprobante(db, { empresaId: f.empresaId, canalId: f.canalManual, solicitud: s, usuarioId });
+      if (r.resultado === 'ERROR_VALIDACION') throw new Error(r.errores.join('; '));
+      return r.guardado.id;
+    };
+    const deAna = await emitirComo(ana, solicitudBoleta({ fechaEmision: hoy, items: [item('50.00')] }));
+    await emitirComo(beto, solicitudBoleta({ fechaEmision: hoy, items: [item('30.00')] }));
+    const { numero } = (await db.query(`SELECT numero FROM comprobantes WHERE id = $1`, [deAna])).rows[0];
+    // Beto atiende la devolución de una venta de Ana: le resta a Ana.
+    await emitirComo(beto, {
+      ...solicitudBoleta({ fechaEmision: hoy, items: [item('10.00')] }),
+      tipo: TipoComprobante.NOTA_CREDITO, serie: 'BC01',
+      notaCredito: { referencia: { tipo: TipoComprobante.BOLETA, serie: 'B001', numero: Number(numero) }, motivoCodigo: '07', motivoDescripcion: 'Devolución' },
+    });
+    const { vendedores } = await estadisticas(db, f.empresaId, { hoy });
+    expect(vendedores).toEqual([
+      { vendedor: 'Tienda / API', comprobantes: 2, ventas: '195.00', alto: 100 },
+      { vendedor: 'Ana', comprobantes: 1, ventas: '40.00', alto: 21 },
+      { vendedor: 'Beto', comprobantes: 1, ventas: '30.00', alto: 15 },
+    ]);
+  });
 });

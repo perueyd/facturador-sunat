@@ -651,6 +651,8 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   sustento (5 años o más) y se ve con "📎 Ver recibo". Una por gasto.
 - **Resultado del mes (estimado)** en las estadísticas: ventas sin IGV − compras sin IGV − gastos, con su
   margen. Es una guía para el dueño, no el resultado contable (no considera stock sin vender ni impuestos).
+- **Ventas por vendedor** (estadísticas, este mes): quién emitió cada venta; una devolución resta al vendedor
+  de la venta original. Se muestra si vende más de una persona.
 - **Para tu contador** (pestaña Más): exportar a Excel las ventas, las compras o los gastos de un mes
   (compras y gastos solo para dueño, administrador y contador).
 - **Cuentas por pagar** (pestaña Compras): una compra puede ser al crédito con fecha de vencimiento. La
