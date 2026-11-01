@@ -26,6 +26,16 @@ async function cargarUsuarios() {
   const { usuarios } = await api('/usuarios');
   $('#lista-usuarios').replaceChildren(...usuarios.map((u) => {
     const li = linea(`${u.nombre} · ${u.email}`, `${u.rol}${u.activo ? '' : ' · desactivado'}${u.pendiente ? ' · invitación pendiente' : ''}`);
+    // Comisión del vendedor (% sobre sus ventas sin IGV); se ve estimada en Estadísticas.
+    if (u.rol !== 'DUENO' && u.rol !== 'CONTADOR' && u.rol !== 'SOLO_LECTURA') {
+      const com = Object.assign(document.createElement('button'), { type: 'button', className: 'enlace', textContent: u.comision ? `Comisión ${Number(u.comision)}%` : 'Poner comisión' });
+      com.addEventListener('click', async () => {
+        const p = prompt(`Comisión de ${u.nombre} (% sobre sus ventas sin IGV). Déjalo vacío para quitarla:`, u.comision ? String(Number(u.comision)) : '');
+        if (p === null) return;
+        try { await api(`/usuarios/${u.id}/comision`, { cuerpo: { porcentaje: p.trim() } }); await cargarUsuarios(); } catch (err) { alert(err.message); }
+      });
+      li.append(com);
+    }
     if (u.pendiente && u.activo) {
       const b = Object.assign(document.createElement('button'), { type: 'button', className: 'enlace', textContent: 'Nuevo enlace' });
       b.addEventListener('click', async () => {

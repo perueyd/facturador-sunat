@@ -121,10 +121,12 @@ describe.skipIf(!URL_PRUEBAS)('estadísticas de ventas', () => {
       tipo: TipoComprobante.NOTA_CREDITO, serie: 'BC01',
       notaCredito: { referencia: { tipo: TipoComprobante.BOLETA, serie: 'B001', numero: Number(numero) }, motivoCodigo: '07', motivoDescripcion: 'Devolución' },
     });
+    // Ana gana 10 % sobre sus ventas sin IGV: (42.37 − 8.47) × 10 % = 3.39. Beto no tiene comisión.
+    await db.query(`INSERT INTO usuario_empresa (usuario_id, empresa_id, rol, comision) VALUES ($1, $2, 'VENDEDOR', 10), ($3, $2, 'VENDEDOR', NULL)`, [ana, f.empresaId, beto]);
     const { vendedores } = await estadisticas(db, f.empresaId, { hoy });
     expect(vendedores).toEqual([
       { vendedor: 'Tienda / API', comprobantes: 2, ventas: '195.00', alto: 100 },
-      { vendedor: 'Ana', comprobantes: 1, ventas: '40.00', alto: 21 },
+      { vendedor: 'Ana', comprobantes: 1, ventas: '40.00', alto: 21, comision: { porcentaje: '10', monto: '3.39' } },
       { vendedor: 'Beto', comprobantes: 1, ventas: '30.00', alto: 15 },
     ]);
   });

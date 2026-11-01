@@ -617,11 +617,33 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (s instanceof Response) return s;
     if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño administra los usuarios.');
     const r = await d.db.query(
-      `SELECT u.id, u.email, u.nombre, ue.rol::text AS rol, u.activo, u.totp_activo FROM usuario_empresa ue JOIN usuarios u ON u.id = ue.usuario_id
+      `SELECT u.id, u.email, u.nombre, ue.rol::text AS rol, u.activo, u.totp_activo, ue.comision::text AS comision
+         FROM usuario_empresa ue JOIN usuarios u ON u.id = ue.usuario_id
         WHERE ue.empresa_id = $1 ORDER BY u.nombre`,
       [s.empresa.id],
     );
-    return c.json({ usuarios: r.rows.map((x) => ({ id: x.id, email: x.email, nombre: x.nombre, rol: x.rol, activo: x.activo, dosPasos: x.totp_activo, pendiente: !x.totp_activo })) });
+    return c.json({ usuarios: r.rows.map((x) => ({
+      id: x.id, email: x.email, nombre: x.nombre, rol: x.rol, activo: x.activo, dosPasos: x.totp_activo, pendiente: !x.totp_activo, comision: x.comision,
+    })) });
+  });
+
+  // Comisión del vendedor: % sobre sus ventas sin IGV del mes (vacío = sin comisión). Solo el dueño.
+  app.post('/panel/api/usuarios/:id/comision', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño pone las comisiones.');
+    const id = c.req.param('id');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const p = texto(b.porcentaje, 6).replace(',', '.');
+    if (p && (!/^\d{1,3}(\.\d{1,2})?$/.test(p) || Number(p) > 100)) return d.error(c, 422, 'DATOS_INVALIDOS', 'La comisión es un porcentaje de 0 a 100, por ejemplo 5 o 2.5.');
+    const r = UUID.test(id) ? await d.db.query(
+      `UPDATE usuario_empresa SET comision = $3 WHERE usuario_id = $1 AND empresa_id = $2 RETURNING usuario_id`, [id, s.empresa.id, p || null],
+    ) : { rowCount: 0 };
+    if (!r.rowCount) return d.error(c, 404, 'NO_ENCONTRADO', 'Usuario no encontrado en esta empresa.');
+    await d.db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'CAMBIAR_COMISION', 'usuarios', $3, $4)`, [
+      s.empresa.id, s.usuarioId, id, JSON.stringify({ porcentaje: p || null }),
+    ]);
+    return c.json({ ok: true, porcentaje: p || null });
   });
 
   // Dar acceso a otra persona (vendedor, contador…). Si el correo es nuevo, se crea el usuario

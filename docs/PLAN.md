@@ -653,6 +653,8 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   margen. Es una guía para el dueño, no el resultado contable (no considera stock sin vender ni impuestos).
 - **Ventas por vendedor** (estadísticas, este mes): quién emitió cada venta; una devolución resta al vendedor
   de la venta original. Se muestra si vende más de una persona.
+  **Comisiones:** el dueño pone a cada vendedor un % (Más → Usuarios); el gráfico muestra la comisión
+  estimada del mes sobre sus ventas sin IGV (nunca negativa).
 - **Para tu contador** (pestaña Más): exportar a Excel las ventas, las compras o los gastos de un mes
   (compras y gastos solo para dueño, administrador y contador).
 - **Cuentas por pagar** (pestaña Compras): una compra puede ser al crédito con fecha de vencimiento. La

@@ -481,6 +481,19 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect((await pedir(`/panel/api/exportar?que=otra&mes=${mes}`, { cookie: dueno })).status).toBe(400);
   });
 
+  it('comisiones: solo el dueño las pone, de 0 a 100 %, y vacío las quita', async () => {
+    const dueno = await entrar(await usuario('DUENO'));
+    const vendedorU = await usuario('VENDEDOR');
+    const vendedor = await entrar(vendedorU);
+    const id = vendedorU.usuarioId;
+    expect((await pedir(`/panel/api/usuarios/${id}/comision`, { cookie: vendedor, cuerpo: { porcentaje: '50' } })).status).toBe(403);
+    expect((await pedir(`/panel/api/usuarios/${id}/comision`, { cookie: dueno, cuerpo: { porcentaje: '150' } })).status).toBe(422);
+    expect(await (await pedir(`/panel/api/usuarios/${id}/comision`, { cookie: dueno, cuerpo: { porcentaje: '2,5' } })).json()).toEqual({ ok: true, porcentaje: '2.5' });
+    const { usuarios } = await (await pedir('/panel/api/usuarios', { cookie: dueno })).json();
+    expect(usuarios.find((u: { id: string }) => u.id === id).comision).toBe('2.50');
+    expect(await (await pedir(`/panel/api/usuarios/${id}/comision`, { cookie: dueno, cuerpo: { porcentaje: '' } })).json()).toEqual({ ok: true, porcentaje: null });
+  });
+
   it('venta rápida: lo más vendido, con su precio, para venderlo con un toque', async () => {
     const dueno = await entrar(await usuario('DUENO'));
     const corte = { descripcion: `Corte clásico ${++n}`, cantidad: 1, precio: '25.00' };
