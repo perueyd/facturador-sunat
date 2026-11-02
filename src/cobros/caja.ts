@@ -7,6 +7,7 @@
  * (NUMERIC), como texto.
  */
 import { enTransaccion, type Db } from '../db/conexion.js';
+import { sumarDias } from '../fechas.js';
 import { dec } from '../dinero.js';
 import { MEDIOS_PAGO, type MedioPago } from './pagos.js';
 
@@ -44,26 +45,30 @@ export async function guardarCuenta(
   const activa = c.activa ?? true;
   const predeterminada = c.predeterminada && activa;
   try {
-    if (predeterminada) {
-      await db.query(`UPDATE cuentas_cobro SET predeterminada = false WHERE empresa_id = $1 AND medio = $2 AND ($3::uuid IS NULL OR id <> $3)`, [empresaId, c.medio, c.id ?? null]);
-    }
-    const r = c.id
-      ? await db.query(
-        // Un titular que no se manda se conserva (ej. al solo desactivar la cuenta).
-        `UPDATE cuentas_cobro SET nombre = $3, medio = $4, titular = CASE WHEN $9 THEN $5 ELSE titular END, de_la_empresa = $6, predeterminada = $7, activa = $8
-          WHERE id = $1 AND empresa_id = $2 RETURNING id`,
-        [c.id, empresaId, nombre, c.medio, c.titular?.trim() || null, c.deLaEmpresa, predeterminada, activa, c.titular !== undefined],
-      )
-      : await db.query(
-        `INSERT INTO cuentas_cobro (empresa_id, nombre, medio, titular, de_la_empresa, predeterminada) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [empresaId, nombre, c.medio, c.titular?.trim() || null, c.deLaEmpresa, predeterminada],
-      );
-    const id = r.rows[0]?.id as string | undefined;
-    if (!id) throw new ErrorCuenta('Cuenta no encontrada.');
-    await db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'GUARDAR_CUENTA_COBRO', 'cuentas_cobro', $3, $4)`, [
-      empresaId, usuarioId, id, JSON.stringify({ nombre, medio: c.medio, titular: c.titular ?? null, deLaEmpresa: c.deLaEmpresa, predeterminada, activa }),
-    ]);
-    return id;
+    // En una transacción: si el guardado falla (ej. nombre repetido), la cuenta predeterminada
+    // anterior conserva su marca.
+    return await enTransaccion(db, async (tx) => {
+      if (predeterminada) {
+        await tx.query(`UPDATE cuentas_cobro SET predeterminada = false WHERE empresa_id = $1 AND medio = $2 AND ($3::uuid IS NULL OR id <> $3)`, [empresaId, c.medio, c.id ?? null]);
+      }
+      const r = c.id
+        ? await tx.query(
+          // Un titular que no se manda se conserva (ej. al solo desactivar la cuenta).
+          `UPDATE cuentas_cobro SET nombre = $3, medio = $4, titular = CASE WHEN $9 THEN $5 ELSE titular END, de_la_empresa = $6, predeterminada = $7, activa = $8
+            WHERE id = $1 AND empresa_id = $2 RETURNING id`,
+          [c.id, empresaId, nombre, c.medio, c.titular?.trim() || null, c.deLaEmpresa, predeterminada, activa, c.titular !== undefined],
+        )
+        : await tx.query(
+          `INSERT INTO cuentas_cobro (empresa_id, nombre, medio, titular, de_la_empresa, predeterminada) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+          [empresaId, nombre, c.medio, c.titular?.trim() || null, c.deLaEmpresa, predeterminada],
+        );
+      const id = r.rows[0]?.id as string | undefined;
+      if (!id) throw new ErrorCuenta('Cuenta no encontrada.');
+      await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'GUARDAR_CUENTA_COBRO', 'cuentas_cobro', $3, $4)`, [
+        empresaId, usuarioId, id, JSON.stringify({ nombre, medio: c.medio, titular: c.titular ?? null, deLaEmpresa: c.deLaEmpresa, predeterminada, activa }),
+      ]);
+      return id;
+    });
   } catch (e) {
     if (e instanceof Error && 'code' in e && (e as { code?: string }).code === '23505') throw new ErrorCuenta('Ya tienes una cuenta con ese nombre.');
     throw e;
@@ -107,11 +112,14 @@ export async function caja(db: Db, empresaId: string, desde: string, hasta: stri
        -- Pagos a proveedores por compras al crédito: también es dinero que sale de la cuenta.
        SELECT cuenta_id, medio, 0, monto, 0 FROM pagos_compra
         WHERE empresa_id = $1 AND anulado_en IS NULL AND fecha BETWEEN $2::date AND $3::date)
-     SELECT k.id AS cuenta_id, coalesce(k.nombre, 'Sin cuenta: ' || initcap(m.medio::text)) AS nombre, m.medio::text AS medio,
+     -- Una línea por cuenta (aunque la cuenta haya cambiado de medio: vale el medio actual) y,
+     -- para lo que no dijo cuenta, una línea por medio.
+     SELECT k.id AS cuenta_id, coalesce(k.nombre, 'Sin cuenta: ' || initcap(min(m.medio::text))) AS nombre,
+            coalesce(k.medio::text, min(m.medio::text)) AS medio,
             k.titular, coalesce(k.de_la_empresa, true) AS de_la_empresa, sum(m.es_cobro)::int AS cobros,
             sum(m.entra)::text AS monto, sum(m.sale)::text AS gastos
        FROM mov m LEFT JOIN cuentas_cobro k ON k.id = m.cuenta_id
-      GROUP BY k.id, m.medio ORDER BY sum(m.entra) DESC, sum(m.sale) DESC`,
+      GROUP BY k.id, CASE WHEN k.id IS NULL THEN m.medio END ORDER BY sum(m.entra) DESC, sum(m.sale) DESC`,
     [empresaId, desde, hasta],
   );
   let empresa = dec('0');
@@ -186,16 +194,25 @@ export async function lineasParaCerrar(db: Db, empresaId: string, fecha: string)
   }
   // Último contado de cada cuenta en efectivo, del cierre más reciente ANTES de este día.
   const anteriores = (await db.query(
-    `SELECT DISTINCT ON (l.cuenta_id, l.medio) l.cuenta_id, l.medio::text AS medio, l.contado::text AS contado
+    `SELECT DISTINCT ON (l.cuenta_id, l.medio) l.cuenta_id, l.medio::text AS medio, l.contado::text AS contado, k.fecha::text AS fecha
        FROM cierres_caja k JOIN cierre_caja_lineas l ON l.cierre_id = k.id
       WHERE k.empresa_id = $1 AND k.fecha < $2::date AND l.medio = 'EFECTIVO'
       ORDER BY l.cuenta_id, l.medio, k.fecha DESC, k.creado_en DESC`,
     [empresaId, fecha],
   )).rows;
-  return lineas.map((l) => {
+  const sugerencias: LineaCierre[] = [];
+  for (const l of lineas) {
     const previo = l.medio === 'EFECTIVO' ? anteriores.find((a) => claveDe(a.cuenta_id, a.medio) === l.clave) : undefined;
-    return { ...l, fondoSugerido: previo ? dec(previo.contado).toFixed(2) : '0.00' };
-  });
+    let fondo = previo ? dec(previo.contado) : dec('0');
+    // Si hubo días sin cierre entre aquel y este, lo que se movió esos días también está en el cajón.
+    if (previo && sumarDias(previo.fecha, 1) < fecha) {
+      const intermedio = (await caja(db, empresaId, sumarDias(previo.fecha, 1), sumarDias(fecha, -1))).cuentas
+        .find((x) => claveDe(x.cuentaId, x.medio) === l.clave);
+      if (intermedio) fondo = fondo.plus(dec(intermedio.neto));
+    }
+    sugerencias.push({ ...l, fondoSugerido: (fondo.gt(0) ? fondo : dec('0')).toFixed(2) });
+  }
+  return sugerencias;
 }
 
 /**

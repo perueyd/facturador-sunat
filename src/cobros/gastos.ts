@@ -62,25 +62,33 @@ export async function registrarGasto(
     if (!cuenta) throw new ErrorGasto('Esa cuenta no existe o está desactivada.');
     if (cuenta.medio !== g.medio) throw new ErrorGasto(`Esa cuenta es de ${cuenta.medio}, no de ${g.medio}.`);
   }
-  const r = await db.query(
-    `INSERT INTO gastos (empresa_id, fecha, monto, categoria, descripcion, medio, cuenta_id, documento, registrado_por)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-    [empresaId, g.fecha, g.monto, g.categoria, descripcion, g.medio, g.cuentaId ?? null, g.documento?.trim().slice(0, 60) || null, usuarioId],
-  );
-  return r.rows[0].id as string;
+  return enTransaccion(db, async (tx) => {
+    const id = (await tx.query(
+      `INSERT INTO gastos (empresa_id, fecha, monto, categoria, descripcion, medio, cuenta_id, documento, registrado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [empresaId, g.fecha, g.monto, g.categoria, descripcion, g.medio, g.cuentaId ?? null, g.documento?.trim().slice(0, 60) || null, usuarioId],
+    )).rows[0].id as string;
+    await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'REGISTRAR_GASTO', 'gastos', $3, $4)`, [
+      empresaId, usuarioId, id, JSON.stringify({ fecha: g.fecha, monto: g.monto, categoria: g.categoria, medio: g.medio, cuenta: g.cuentaId ?? null }),
+    ]);
+    return id;
+  });
 }
 
 export async function anularGasto(db: Db, empresaId: string, id: string, motivo: string, usuarioId: string): Promise<boolean> {
   const m = motivo.trim();
   if (m.length < 3) throw new ErrorGasto('Escribe por qué se anula el gasto.');
-  const r = await db.query(
-    `UPDATE gastos SET anulado_en = now(), anulado_por = $3, motivo_anulacion = $4 WHERE id = $1 AND empresa_id = $2 AND anulado_en IS NULL RETURNING id`,
-    [id, empresaId, usuarioId, m.slice(0, 200)],
-  );
-  if (r.rowCount) {
-    await db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, motivo) VALUES ($1, $2, 'ANULAR_GASTO', 'gastos', $3, $4)`, [empresaId, usuarioId, id, m]);
-  }
-  return Boolean(r.rowCount);
+  // La anulación y su registro en la auditoría van juntos: o quedan los dos o ninguno.
+  return enTransaccion(db, async (tx) => {
+    const r = await tx.query(
+      `UPDATE gastos SET anulado_en = now(), anulado_por = $3, motivo_anulacion = $4 WHERE id = $1 AND empresa_id = $2 AND anulado_en IS NULL RETURNING id`,
+      [id, empresaId, usuarioId, m.slice(0, 200)],
+    );
+    if (r.rowCount) {
+      await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, motivo) VALUES ($1, $2, 'ANULAR_GASTO', 'gastos', $3, $4)`, [empresaId, usuarioId, id, m]);
+    }
+    return Boolean(r.rowCount);
+  });
 }
 
 /** Gastos de un período (incluye los anulados, marcados) y el total por categoría. */
@@ -99,8 +107,13 @@ export async function gastosDelPeriodo(db: Db, empresaId: string, desde: string,
     cuenta: f.cuenta, documento: f.documento, foto: f.foto, registradoPor: f.registrado_por,
     anulado: f.motivo_anulacion ? { motivo: f.motivo_anulacion, por: f.anulado_por } : null,
   }));
-  const sumas = new Map<CategoriaGasto, ReturnType<typeof dec>>();
-  for (const g of gastos) if (!g.anulado) sumas.set(g.categoria, (sumas.get(g.categoria) ?? dec('0')).plus(g.monto));
+  // Los totales se suman en la base, sobre TODOS los gastos del período (la lista de arriba
+  // muestra solo los últimos 500).
+  const sumas = new Map<CategoriaGasto, ReturnType<typeof dec>>((await db.query(
+    `SELECT categoria, sum(monto)::text AS monto FROM gastos
+      WHERE empresa_id = $1 AND fecha BETWEEN $2::date AND $3::date AND anulado_en IS NULL GROUP BY categoria`,
+    [empresaId, desde, hasta],
+  )).rows.map((f) => [f.categoria as CategoriaGasto, dec(f.monto)]));
   const orden = [...sumas].sort((a, b) => b[1].comparedTo(a[1]));
   const mayor = orden[0]?.[1];
   // Ancho de la barra (0 a 100) respecto de la categoría más grande; lo calcula el facturador.

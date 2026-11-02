@@ -151,6 +151,43 @@ describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
     const corregido = await cerrarCaja(db, g.empresaId, '2020-05-02', { [cajon]: '30' }, null, usuarioId, hoy, { [cajon]: '40' });
     expect(corregido.lineas[0]).toMatchObject({ fondo: '40.00', deberiaHaber: '20.00', diferencia: '10.00' });
     await expect(cerrarCaja(db, g.empresaId, '2020-05-02', { [cajon]: '30' }, null, usuarioId, hoy, { [cajon]: '4,0' })).rejects.toThrow(/fondo inicial/);
+    // Día 3 sin cierre (se olvidaron): salieron 5 del cajón. El día 4 debe empezar con 30 − 5 = 25,
+    // no con los 30 del último cierre (antes se ignoraba el día sin cerrar y salía un faltante falso).
+    await registrarGasto(db, g.empresaId, { fecha: '2020-05-03', monto: '5', categoria: 'TRANSPORTE', descripcion: 'Pasaje', medio: 'EFECTIVO', cuentaId: cajon }, usuarioId, hoy);
+    expect((await lineasParaCerrar(db, g.empresaId, '2020-05-04'))[0]).toMatchObject({ fondoSugerido: '25.00' });
+  });
+
+  it('cuentas: un cambio de medio no parte la cuenta en dos; un nombre repetido no deja sin predeterminada', async () => {
+    const g = await crearEmpresa(db, `2060000007${digitoVerificadorRuc('2060000007')}`);
+    const cuenta = await guardarCuenta(db, g.empresaId, { nombre: 'Celular de la tienda', medio: 'YAPE', deLaEmpresa: true, predeterminada: true }, usuarioId);
+    await registrarGasto(db, g.empresaId, { fecha: hoy, monto: '3', categoria: 'OTROS', descripcion: 'Antes', medio: 'YAPE', cuentaId: cuenta }, usuarioId, hoy);
+    await guardarCuenta(db, g.empresaId, { id: cuenta, nombre: 'Celular de la tienda', medio: 'PLIN', deLaEmpresa: true, predeterminada: true }, usuarioId);
+    await registrarGasto(db, g.empresaId, { fecha: hoy, monto: '2', categoria: 'OTROS', descripcion: 'Después', medio: 'PLIN', cuentaId: cuenta }, usuarioId, hoy);
+    const lineas = (await caja(db, g.empresaId, hoy, hoy)).cuentas.filter((x) => x.cuentaId === cuenta);
+    expect(lineas).toEqual([expect.objectContaining({ medio: 'PLIN', gastos: '5.00' })]);
+
+    // Crear otra predeterminada con un nombre que ya existe falla, y la anterior sigue siéndolo.
+    await expect(guardarCuenta(db, g.empresaId, { nombre: 'celular de la tienda', medio: 'PLIN', deLaEmpresa: true, predeterminada: true }, usuarioId)).rejects.toThrow(/nombre/);
+    expect((await listarCuentas(db, g.empresaId)).filter((k) => k.predeterminada).map((k) => k.id)).toEqual([cuenta]);
+  });
+
+  it('gastos: el total suma TODO el período aunque la lista muestre solo los últimos 500', async () => {
+    const g = await crearEmpresa(db, `2060000006${digitoVerificadorRuc('2060000006')}`);
+    await db.query(
+      `INSERT INTO gastos (empresa_id, fecha, monto, categoria, descripcion, medio, registrado_por)
+       SELECT $1, '2020-07-01', 1, 'OTROS', 'Gasto ' || i, 'EFECTIVO', $2 FROM generate_series(1, 510) i`,
+      [g.empresaId, usuarioId],
+    );
+    const p = await gastosDelPeriodo(db, g.empresaId, '2020-07-01', '2020-07-31');
+    expect(p.gastos).toHaveLength(500);
+    expect(p.total).toBe('510.00');
+    expect(p.porCategoria).toEqual([expect.objectContaining({ categoria: 'OTROS', monto: '510.00' })]);
+  });
+
+  it('cada gasto registrado y anulado queda en la auditoría', async () => {
+    const id = await registrarGasto(db, f.empresaId, { fecha: hoy, monto: '7', categoria: 'OTROS', descripcion: 'Auditado', medio: 'EFECTIVO' }, usuarioId, hoy);
+    await anularGasto(db, f.empresaId, id, 'Prueba', usuarioId);
+    expect((await db.query(`SELECT accion FROM auditoria WHERE entidad_id = $1 ORDER BY id`, [id])).rows.map((x) => x.accion)).toEqual(['REGISTRAR_GASTO', 'ANULAR_GASTO']);
   });
 
   it('foto del recibo: una por gasto, solo JPG o PNG, y queda guardada como sustento', async () => {

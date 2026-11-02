@@ -63,5 +63,7 @@ describe.skipIf(!URL_PRUEBAS)('cuentas por pagar', () => {
     expect(await anularPagoCompra(db, f.empresaId, p1.id, 'Se registró dos veces', usuarioId)).toBe(true);
     expect((await porPagar(db, f.empresaId, hoy)).deudas[0]).toMatchObject({ documento: 'F001-2', saldo: '200.00', pagado: '390.00' });
     await expect(db.query(`DELETE FROM pagos_compra WHERE id = $1`, [p1.id])).rejects.toThrow(/no se borra/);
+    // El pago y su anulación quedan en la auditoría.
+    expect((await db.query(`SELECT accion FROM auditoria WHERE entidad_id = $1 ORDER BY id`, [p1.id])).rows.map((x) => x.accion)).toEqual(['PAGAR_COMPRA', 'ANULAR_PAGO_COMPRA']);
   });
 });

@@ -117,6 +117,7 @@ export function registrarCobros(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
   app.post('/panel/api/gastos/:id/anular', async (c) => {
     const s = await conEmpresa(c);
     if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
     if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador anula gastos.');
     const id = c.req.param('id');
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -151,6 +152,7 @@ export function registrarCobros(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
   app.get('/panel/api/gastos/:id/foto', async (c) => {
     const s = await conEmpresa(c);
     if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('cobros')) return sinModulo(c, 'cobros');
     if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no ve los gastos.');
     const id = c.req.param('id');
     const f = UUID.test(id) ? await fotoDeGasto(d.db, d.almacen, s.empresa.id, id) : undefined;

@@ -41,6 +41,8 @@ export async function porPagar(db: Db, empresaId: string, hoy: string): Promise<
                         FROM pagos_compra g LEFT JOIN cuentas_cobro k ON k.id = g.cuenta_id WHERE g.compra_id = c.id), '[]') AS pagos
        FROM compras c JOIN proveedores p ON p.id = c.proveedor_id
       WHERE c.empresa_id = $1 AND c.condicion = 'CREDITO' AND c.anulada_en IS NULL
+        -- Solo lo que todavía tiene saldo: las compras ya pagadas no viajan desde la base.
+        AND c.total > coalesce((SELECT sum(monto) FROM pagos_compra WHERE compra_id = c.id AND anulado_en IS NULL), 0)
       ORDER BY c.vence, c.fecha_emision`,
     [empresaId],
   );
@@ -100,6 +102,9 @@ export async function pagarCompra(
       `INSERT INTO pagos_compra (empresa_id, compra_id, fecha, monto, medio, cuenta_id, referencia, registrado_por) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
       [empresaId, compraId, p.fecha, monto.toFixed(2), p.medio, p.cuentaId ?? null, p.referencia?.trim().slice(0, 60) || null, usuarioId],
     )).rows[0].id as string;
+    await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'PAGAR_COMPRA', 'pagos_compra', $3, $4)`, [
+      empresaId, usuarioId, id, JSON.stringify({ compra: compraId, fecha: p.fecha, monto: monto.toFixed(2), medio: p.medio, cuenta: p.cuentaId ?? null }),
+    ]);
     return { id, saldo: saldo.minus(monto).toFixed(2) };
   });
 }
@@ -107,12 +112,15 @@ export async function pagarCompra(
 export async function anularPagoCompra(db: Db, empresaId: string, pagoId: string, motivo: string, usuarioId: string): Promise<boolean> {
   const m = motivo.trim();
   if (m.length < 3) throw new ErrorPorPagar('Escribe por qué se anula el pago.');
-  const r = await db.query(
-    `UPDATE pagos_compra SET anulado_en = now(), anulado_por = $3, motivo_anulacion = $4 WHERE id = $1 AND empresa_id = $2 AND anulado_en IS NULL RETURNING id`,
-    [pagoId, empresaId, usuarioId, m.slice(0, 200)],
-  );
-  if (r.rowCount) {
-    await db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, motivo) VALUES ($1, $2, 'ANULAR_PAGO_COMPRA', 'pagos_compra', $3, $4)`, [empresaId, usuarioId, pagoId, m]);
-  }
-  return Boolean(r.rowCount);
+  // La anulación y su registro en la auditoría van juntos: o quedan los dos o ninguno.
+  return enTransaccion(db, async (tx) => {
+    const r = await tx.query(
+      `UPDATE pagos_compra SET anulado_en = now(), anulado_por = $3, motivo_anulacion = $4 WHERE id = $1 AND empresa_id = $2 AND anulado_en IS NULL RETURNING id`,
+      [pagoId, empresaId, usuarioId, m.slice(0, 200)],
+    );
+    if (r.rowCount) {
+      await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, motivo) VALUES ($1, $2, 'ANULAR_PAGO_COMPRA', 'pagos_compra', $3, $4)`, [empresaId, usuarioId, pagoId, m]);
+    }
+    return Boolean(r.rowCount);
+  });
 }
