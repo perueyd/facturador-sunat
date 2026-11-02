@@ -184,20 +184,24 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
   // margen) y mueve el stock.
   const productos = await productosPorSku(tx, p.empresaId, c.items.flatMap((i) => (i.codigo ? [i.codigo] : [])));
   const productoDe = (codigo?: string) => (codigo ? productos.get(codigo.toUpperCase()) : undefined);
-  for (const [i, item] of c.items.entries()) {
+  // Todos los ítems en UNA sola consulta: la serie está bloqueada hasta el COMMIT, así que cada
+  // ida y vuelta a la base de más hace esperar a quien emite al mismo tiempo en la misma serie.
+  const COLUMNAS_ITEM = 15;
+  const filas = c.items.map((item, i) => {
     const producto = productoDe(item.codigo);
-    await tx.query(
-      `INSERT INTO comprobante_items (comprobante_id, orden, producto_id, codigo, descripcion, unidad_medida, cantidad,
-         precio_unitario_con_igv, valor_unitario_sin_igv, tipo_afectacion_igv, porcentaje_igv, valor_venta, igv, total, costo_unitario)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-      [
-        id, i + 1, producto?.id ?? null, item.codigo ?? null, item.descripcion, item.unidad, item.cantidad.toString(),
-        item.precioUnitario.toString(), item.valorUnitario.toString(), item.afectacion,
-        item.porcentajeIgv.toFixed(2), item.valorVenta.toFixed(2), item.igv.toFixed(2), item.total.toFixed(2),
-        producto?.costoPromedio ?? null,
-      ],
-    );
-  }
+    return [
+      id, i + 1, producto?.id ?? null, item.codigo ?? null, item.descripcion, item.unidad, item.cantidad.toString(),
+      item.precioUnitario.toString(), item.valorUnitario.toString(), item.afectacion,
+      item.porcentajeIgv.toFixed(2), item.valorVenta.toFixed(2), item.igv.toFixed(2), item.total.toFixed(2),
+      producto?.costoPromedio ?? null,
+    ];
+  });
+  await tx.query(
+    `INSERT INTO comprobante_items (comprobante_id, orden, producto_id, codigo, descripcion, unidad_medida, cantidad,
+       precio_unitario_con_igv, valor_unitario_sin_igv, tipo_afectacion_igv, porcentaje_igv, valor_venta, igv, total, costo_unitario)
+     VALUES ${filas.map((_, f) => `(${Array.from({ length: COLUMNAS_ITEM }, (_, k) => `$${f * COLUMNAS_ITEM + k + 1}`).join(',')})`).join(', ')}`,
+    filas.flat(),
+  );
   await moverStockPorComprobante(tx, {
     empresaId: p.empresaId, comprobanteId: id, tipoComprobante: c.tipo,
     ...(c.notaCredito ? { motivoNota: c.notaCredito.motivoCodigo } : {}),
