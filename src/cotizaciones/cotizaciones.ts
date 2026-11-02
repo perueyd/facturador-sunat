@@ -8,7 +8,7 @@
  */
 import PDFDocument from 'pdfkit';
 import type { Almacen } from '../almacen/almacen.js';
-import { enTransaccion, type Db } from '../db/conexion.js';
+import { enTransaccion, type Db, type Tx } from '../db/conexion.js';
 import { dec, sumar } from '../dinero.js';
 import { sumarDias } from '../fechas.js';
 import { formatearMonto } from '../pdf/representacion.js';
@@ -91,6 +91,7 @@ export async function crearCotizacion(db: Db, empresaId: string, e: EntradaCotiz
         [nuevo, i + 1, x.codigo, x.descripcion, x.cantidad, x.precio, x.importe.toFixed(2)],
       );
     }
+    await auditar(tx, empresaId, usuarioId, 'CREAR_COTIZACION', nuevo, { numero, total: v.total.toFixed(2) });
     return nuevo;
   });
   const c = await cargarCotizacion(db, empresaId, id);
@@ -129,24 +130,45 @@ async function leer(db: Db, empresaId: string, filtro: { id?: string }): Promise
 
 /** Anula una cotización vigente (no se borra). */
 export async function anularCotizacion(db: Db, empresaId: string, id: string, usuarioId: string): Promise<boolean> {
-  const r = await db.query(
-    `UPDATE cotizaciones SET estado = 'ANULADA', cambiado_por = $3, cambiado_en = now() WHERE id = $1 AND empresa_id = $2 AND estado = 'VIGENTE' RETURNING id`,
-    [id, empresaId, usuarioId],
-  );
-  return Boolean(r.rowCount);
+  return enTransaccion(db, async (tx) => {
+    const r = await tx.query(
+      `UPDATE cotizaciones SET estado = 'ANULADA', cambiado_por = $3, cambiado_en = now() WHERE id = $1 AND empresa_id = $2 AND estado = 'VIGENTE' RETURNING id`,
+      [id, empresaId, usuarioId],
+    );
+    if (r.rowCount) await auditar(tx, empresaId, usuarioId, 'ANULAR_COTIZACION', id, null);
+    return Boolean(r.rowCount);
+  });
 }
 
-/** Enlaza la cotización con la boleta o factura emitida a partir de ella. */
+/**
+ * Enlaza la cotización con la boleta o factura emitida a partir de ella. El comprobante debe
+ * ser de la empresa, no estar rechazado ni anulado, y no estar enlazado ya a otra cotización
+ * (lo asegura además un índice único, por si dos personas lo hacen a la vez).
+ */
 export async function marcarConvertida(db: Db, empresaId: string, id: string, comprobanteId: string, usuarioId: string): Promise<boolean> {
-  const r = await db.query(
-    `UPDATE cotizaciones SET estado = 'CONVERTIDA', comprobante_id = $3, cambiado_por = $4, cambiado_en = now()
-      WHERE id = $1 AND empresa_id = $2 AND estado = 'VIGENTE'
-        AND EXISTS (SELECT 1 FROM comprobantes WHERE id = $3 AND empresa_id = $2 AND tipo_comprobante IN ('01', '03'))
-      RETURNING id`,
-    [id, empresaId, comprobanteId, usuarioId],
-  );
-  return Boolean(r.rowCount);
+  try {
+    return await enTransaccion(db, async (tx) => {
+      const r = await tx.query(
+        `UPDATE cotizaciones SET estado = 'CONVERTIDA', comprobante_id = $3, cambiado_por = $4, cambiado_en = now()
+          WHERE id = $1 AND empresa_id = $2 AND estado = 'VIGENTE'
+            AND EXISTS (SELECT 1 FROM comprobantes WHERE id = $3 AND empresa_id = $2 AND tipo_comprobante IN ('01', '03') AND estado NOT IN ('RECHAZADO', 'ANULADO'))
+            AND NOT EXISTS (SELECT 1 FROM cotizaciones WHERE comprobante_id = $3)
+          RETURNING id`,
+        [id, empresaId, comprobanteId, usuarioId],
+      );
+      if (r.rowCount) await auditar(tx, empresaId, usuarioId, 'CONVERTIR_COTIZACION', id, { comprobante: comprobanteId });
+      return Boolean(r.rowCount);
+    });
+  } catch (e) {
+    if ((e as { code?: string }).code === '23505') return false;
+    throw e;
+  }
 }
+
+const auditar = (tx: Tx, empresaId: string, usuarioId: string, accion: string, id: string, despues: object | null) =>
+  tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, $3, 'cotizaciones', $4, $5)`, [
+    empresaId, usuarioId, accion, id, despues ? JSON.stringify(despues) : null,
+  ]);
 
 // ---------------------------------------------------------------------------
 // PDF (A4) con logo y datos de la empresa

@@ -91,6 +91,17 @@ describe.skipIf(!URL_PRUEBAS)('cotizaciones', () => {
     expect(convertida?.comprobante).toMatch(/^B001-\d{8}$/);
     // Ya convertida: no se anula.
     expect(await anularCotizacion(db, f.empresaId, k.id, usuarioId)).toBe(false);
+    // La misma boleta no cierra una segunda cotización (antes se podía: dos presupuestos "vendidos" con una venta).
+    const segunda = await crearCotizacion(db, f.empresaId, base, usuarioId, hoy);
+    expect(await marcarConvertida(db, f.empresaId, segunda.id, r.guardado.id, usuarioId)).toBe(false);
+    // Una boleta rechazada no sirve para convertir.
+    const rechazada = await emitirComprobante(db, { empresaId: f.empresaId, canalId: f.canalManual, solicitud: solicitudBoleta({ fechaEmision: hoy, items: [item('5.00')] }) });
+    if (rechazada.resultado === 'ERROR_VALIDACION') throw new Error(rechazada.errores.join('; '));
+    await db.query(`UPDATE comprobantes SET estado = 'RECHAZADO' WHERE id = $1`, [rechazada.guardado.id]);
+    expect(await marcarConvertida(db, f.empresaId, segunda.id, rechazada.guardado.id, usuarioId)).toBe(false);
+    // Cada paso queda en la auditoría.
+    const acciones = (await db.query(`SELECT accion FROM auditoria WHERE entidad = 'cotizaciones' AND entidad_id = $1 ORDER BY id`, [k.id])).rows.map((x) => x.accion);
+    expect(acciones).toEqual(['CREAR_COTIZACION', 'CONVERTIR_COTIZACION']);
   });
 
   it('el PDF dice que NO es comprobante de pago', async () => {

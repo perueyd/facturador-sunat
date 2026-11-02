@@ -57,6 +57,11 @@ describe.skipIf(!URL_PRUEBAS)('resultado del mes', () => {
     // 90 − 50 − 5 = 35 → 35 / 90 = 38.9 %
     expect(await resultadoDelMes(db, f.empresaId, mes, { compras: true, gastos: true }))
       .toEqual({ mes, ventas: '90.00', compras: '50.00', gastos: '5.00', resultado: '35.00', margen: '38.9', estimado: true });
+    // La mercadería pagada desde caja que también se registró en Compras no se resta dos veces;
+    // sin Compras activo, ese gasto sí cuenta (es la única forma en que aparece).
+    await registrarGasto(db, f.empresaId, { fecha: hoy, monto: '59', categoria: 'MERCADERIA', descripcion: 'Tela F001-1', medio: 'EFECTIVO' }, usuarioId, hoy);
+    expect((await resultadoDelMes(db, f.empresaId, mes, { compras: true, gastos: true })).resultado).toBe('35.00');
+    expect((await resultadoDelMes(db, f.empresaId, mes, { compras: false, gastos: true })).gastos).toBe('64.00');
     // Sin las funciones de compras ni de caja, solo cuentan las ventas.
     expect((await resultadoDelMes(db, f.empresaId, mes, { compras: false, gastos: false })).resultado).toBe('90.00');
   });
