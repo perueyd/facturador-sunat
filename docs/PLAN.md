@@ -175,16 +175,24 @@ Al final de cada fase: revisión de seguridad + tu aprobación antes de unir a `
 
 ## 6. Antes de pasar a producción (lista obligatoria)
 
+Estado al 02/11/2026. El dueño escribió su autorización ("Autorizo pasar a producción la
+empresa Corporación Agamenón") ese día; producción se activa solo cuando toda la lista esté en ✅.
+
 - [ ] Boletas, facturas y notas de crédito aceptadas en SUNAT beta, sin errores
-- [ ] Pruebas automáticas pasando al 100 %
-- [ ] Un contador revisó boletas y facturas de prueba
-- [ ] Probado que un pedido repetido no genera dos comprobantes
-- [ ] Probado qué pasa si SUNAT no responde (queda pendiente y se reenvía)
-- [ ] Ningún certificado ni clave aparece en GitHub
+      (boletas y facturas ✅ el 23/10/2026; falta repetir la nota de crédito: `npm run sunat:beta`)
+- [x] Pruebas automáticas pasando al 100 %
+- [ ] Un contador revisó boletas y facturas de prueba (qué llevarle: `docs/REVISION_CONTADOR.md`)
+- [x] Probado que un pedido repetido no genera dos comprobantes
+- [x] Probado qué pasa si SUNAT no responde (queda pendiente y se reenvía)
+- [x] Ningún certificado ni clave aparece en GitHub (auditoría del 02/11/2026)
 - [ ] Respaldo diario funcionando y restaurado al menos una vez de prueba
-- [ ] Revisión de seguridad final hecha
+      (desde el 02/11/2026 cada respaldo se restaura solo en una base desechable y se compara
+      tabla por tabla: `scripts/probar-respaldo.sh`; se marca cuando una ejecución real salga verde)
+- [x] Revisión de seguridad final hecha (`docs/SEGURIDAD.md`, 02/11/2026)
 - [ ] Confirmado si SUNAT exige homologación / autorización previa del SEE - Del Contribuyente
-- [ ] Revisado el impacto de R.S. 000048-2026 (vigente desde 1-ene-2027)
+      (fuentes secundarias dicen que la homologación se eliminó en 2017; falta leer el texto oficial)
+- [ ] Revisado el impacto de R.S. 000048-2026 (fuentes secundarias: postergada por otra resolución;
+      entre otros cambios, una nota de crédito solo podrá modificar un comprobante; falta el texto oficial)
 
 Antes de vender a otros negocios: confirmar con un contador o abogado tributario
 si debes inscribirte como **PSE** (Proveedor de Servicios Electrónicos), y tener
