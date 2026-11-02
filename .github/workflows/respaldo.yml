@@ -8,6 +8,9 @@
 #   - Secreto DATABASE_URL     (la de producción)
 #   - Secreto RESPALDO_CLAVE   (una clave larga; guárdala en tu gestor de contraseñas)
 #
+# Cada respaldo se restaura solo en una base desechable y se compara con la real
+# (scripts/probar-respaldo.sh): así se sabe que de verdad sirve.
+#
 # Restaurar (en tu PC, ver docs/PUBLICAR.md):
 #   openssl enc -d -aes-256-cbc -pbkdf2 -in respaldo.sql.gz.enc -out respaldo.sql.gz
 name: respaldo
@@ -19,14 +22,27 @@ on:
 jobs:
   respaldar:
     runs-on: ubuntu-latest
+    # Base vacía y desechable donde se prueba restaurar cada respaldo (se borra al terminar).
+    services:
+      restaurada:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: solo-para-probar
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
+      - uses: actions/checkout@v7
       - name: Copia cifrada de la base
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           RESPALDO_CLAVE: ${{ secrets.RESPALDO_CLAVE }}
+          PSQL: docker run --rm -i --network host postgres:17 psql
         run: |
           if [ -z "$DATABASE_URL" ] || [ -z "$RESPALDO_CLAVE" ]; then echo "Respaldo sin configurar: no se hace nada."; exit 0; fi
           set -o pipefail
+          # Cuántas filas tenía cada tabla ANTES del respaldo, para comprobarlo después.
+          # Si el conteo fallara, el respaldo se hace igual (la prueba de abajo avisará).
+          bash scripts/probar-respaldo.sh --contar "$DATABASE_URL" > conteos-antes.txt || echo "No se pudo contar la base."
           docker run --rm -e DATABASE_URL postgres:17 sh -c 'pg_dump --no-owner --no-privileges "$DATABASE_URL"' \
             | gzip -9 \
             | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:RESPALDO_CLAVE -out respaldo.sql.gz.enc
@@ -37,3 +53,12 @@ jobs:
           path: respaldo.sql.gz.enc
           retention-days: 90
           if-no-files-found: ignore
+      # Va DESPUÉS de guardar el archivo: si la prueba falla, el respaldo igual queda guardado.
+      # Un respaldo que no se puede restaurar no sirve: cada día se restaura en la base vacía y
+      # se compara tabla por tabla. Si falla, GitHub marca la ejecución en rojo y te avisa.
+      - name: Probar que el respaldo se puede restaurar
+        if: hashFiles('respaldo.sql.gz.enc') != ''
+        env:
+          RESPALDO_CLAVE: ${{ secrets.RESPALDO_CLAVE }}
+          PSQL: docker run --rm -i --network host postgres:17 psql
+        run: bash scripts/probar-respaldo.sh conteos-antes.txt respaldo.sql.gz.enc postgres://postgres:solo-para-probar@localhost:5432/postgres
