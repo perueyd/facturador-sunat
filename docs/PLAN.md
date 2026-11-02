@@ -185,9 +185,10 @@ empresa Corporación Agamenón") ese día; producción se activa solo cuando tod
 - [x] Probado que un pedido repetido no genera dos comprobantes
 - [x] Probado qué pasa si SUNAT no responde (queda pendiente y se reenvía)
 - [x] Ningún certificado ni clave aparece en GitHub (auditoría del 02/11/2026)
-- [ ] Respaldo diario funcionando y restaurado al menos una vez de prueba
-      (desde el 02/11/2026 cada respaldo se restaura solo en una base desechable y se compara
-      tabla por tabla: `scripts/probar-respaldo.sh`; se marca cuando una ejecución real salga verde)
+- [x] Respaldo diario funcionando y restaurado al menos una vez de prueba
+      (02/11/2026: el respaldo real se restauró en una base desechable y volvieron completas las
+      61 tablas y los 36 candados — GitHub Actions, ejecución 13 de `respaldo`. Desde entonces
+      cada respaldo diario se prueba igual: `scripts/probar-respaldo.sh`)
 - [x] Revisión de seguridad final hecha (`docs/SEGURIDAD.md`, 02/11/2026)
 - [ ] Confirmado si SUNAT exige homologación / autorización previa del SEE - Del Contribuyente
       (fuentes secundarias dicen que la homologación se eliminó en 2017; falta leer el texto oficial)
