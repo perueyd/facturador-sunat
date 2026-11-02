@@ -417,7 +417,7 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     const id = await comprobanteDeLaLlave(c);
     if (!id) return error(c, 404, 'NO_ENCONTRADO', 'Comprobante no encontrado.');
     const cuerpo = (await c.req.json().catch(() => ({}))) as { motivo?: unknown };
-    const r = await solicitarAnulacion(dep.db, { comprobanteId: id, motivo: typeof cuerpo.motivo === 'string' ? cuerpo.motivo : '' });
+    const r = await solicitarAnulacion(dep.db, { empresaId: c.get('llave').empresaId, apiLlaveId: c.get('llave').apiLlaveId, comprobanteId: id, motivo: typeof cuerpo.motivo === 'string' ? cuerpo.motivo : '' });
     if (r.resultado === 'ERROR') return error(c, 422, 'NO_SE_PUEDE_ANULAR', r.errores[0] ?? 'No se pudo anular.', r.errores);
     return c.json({ estado: 'ANULACION_EN_PROCESO', via: r.via, documento: r.identificador }, 202);
   });

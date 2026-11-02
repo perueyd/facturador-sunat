@@ -214,7 +214,7 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
     const id = await deLaEmpresa(s.empresa.id, c.req.param('id'));
     if (!id) return d.error(c, 404, 'NO_ENCONTRADO', 'Comprobante no encontrado.');
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const r = await solicitarAnulacion(d.db, { comprobanteId: id, motivo: texto(b.motivo, 200), usuarioId: s.usuarioId });
+    const r = await solicitarAnulacion(d.db, { empresaId: s.empresa.id, comprobanteId: id, motivo: texto(b.motivo, 200), usuarioId: s.usuarioId });
     if (r.resultado === 'ERROR') return d.error(c, 422, 'NO_SE_PUEDE_ANULAR', r.errores.join(' '));
     return c.json({ ok: true, via: r.via, documento: r.identificador });
   });

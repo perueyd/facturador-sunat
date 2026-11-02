@@ -277,6 +277,9 @@ describe.skipIf(!URL_PRUEBAS)('API HTTP', () => {
       const r = await pedir(`/v1/comprobantes/${id}/anular`, { cuerpo: { motivo: 'Venta cancelada' }, llave: conPermiso });
       expect(r.status).toBe(202);
       expect(await r.json()).toMatchObject({ estado: 'ANULACION_EN_PROCESO', via: 'RESUMEN_DIARIO' });
+      // La auditoría dice qué llave (qué canal) pidió la anulación; antes quedaba sin autor.
+      const autor = (await db.query(`SELECT api_llave_id FROM auditoria WHERE accion = 'SOLICITAR_ANULACION' AND entidad_id = $1`, [id])).rows[0];
+      expect(autor?.api_llave_id).toEqual(expect.any(String));
       // Una llave solo de consulta no puede emitir.
       expect((await pedir('/v1/comprobantes', { cuerpo: boleta('ED-11'), llave: conPermiso })).status).toBe(403);
     });
