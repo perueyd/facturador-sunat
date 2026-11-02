@@ -12,6 +12,9 @@ autorización escrita y la lista de `docs/PLAN.md` (sección 6).
 | Cola cada 5 min (mantiene despierto al servidor) | cron-job.org | Gratis |
 | Respaldo diario y cola de reserva | GitHub Actions | Gratis (con el repositorio público) |
 
+> **Desde el 02/11/2026 el facturador está en Starter** (US$ 7/mes, no se duerme; `plan: starter`
+> en `render.yaml`). Lo que sigue explica el plan gratis, por si se vuelve a él.
+>
 > **Plan gratis de Render:** se "duerme" tras 15 minutos sin visitas y tarda casi un minuto
 > en despertar. cron-job.org lo visita cada 5 minutos (paso 5b), así que casi siempre está
 > despierto. GitHub también tiene la cola cada 5 minutos, pero en la práctica (octubre 2026)
