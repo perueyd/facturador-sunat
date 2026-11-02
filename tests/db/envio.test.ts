@@ -233,7 +233,10 @@ describe.skipIf(!URL_PRUEBAS)('envío a SUNAT (simulado) con base de datos', () 
 
     it('factura → comunicación de baja → ticket → en proceso → ANULADA', async () => {
       const id = await aceptada();
-      const r = await solicitarAnulacion(db, { comprobanteId: id, motivo: 'Error en el RUC del cliente', hoy });
+      // Otra empresa no puede anularlo aunque conozca su id (segunda barrera, además de la ruta).
+      expect(await solicitarAnulacion(db, { empresaId: '00000000-0000-4000-8000-000000000000', comprobanteId: id, motivo: 'x', hoy }))
+        .toMatchObject({ resultado: 'ERROR', errores: ['El comprobante no existe.'] });
+      const r = await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: id, motivo: 'Error en el RUC del cliente', hoy });
       expect(r).toMatchObject({ resultado: 'SOLICITADA', via: 'BAJA', identificador: `RA-${hoy.replaceAll('-', '')}-1` });
       expect((await estado(id)).estado).toBe('ANULACION_EN_PROCESO');
 
@@ -255,7 +258,7 @@ describe.skipIf(!URL_PRUEBAS)('envío a SUNAT (simulado) con base de datos', () 
 
     it('boleta → resumen diario con estado 3', async () => {
       const id = await aceptada(solicitudBoleta({ fechaEmision: hoy }));
-      const r = await solicitarAnulacion(db, { comprobanteId: id, motivo: 'Venta cancelada', hoy });
+      const r = await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: id, motivo: 'Venta cancelada', hoy });
       expect(r).toMatchObject({ resultado: 'SOLICITADA', via: 'RESUMEN_DIARIO' });
       await procesarCola(db, s);
       expect(sunat.recibidas.at(-1)?.fileName).toMatch(/-RC-\d{8}-1\.zip$/);
@@ -267,7 +270,7 @@ describe.skipIf(!URL_PRUEBAS)('envío a SUNAT (simulado) con base de datos', () 
 
     it('SUNAT rechaza la anulación: el comprobante sigue vigente (ACEPTADO) y avisa', async () => {
       const id = await aceptada();
-      await solicitarAnulacion(db, { comprobanteId: id, motivo: 'Error', hoy });
+      await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: id, motivo: 'Error', hoy });
       await procesarCola(db, s);
       sunat.colaStatus.push({ modo: 'rechazado', codigo: '2108', descripcion: 'Presentacion fuera de fecha' });
       avanzar(1);
@@ -279,22 +282,22 @@ describe.skipIf(!URL_PRUEBAS)('envío a SUNAT (simulado) con base de datos', () 
     it('dos bajas el mismo día: correlativos 1 y 2', async () => {
       const a = await aceptada();
       const b = await aceptada();
-      const ra = await solicitarAnulacion(db, { comprobanteId: a, motivo: 'x', hoy });
-      const rb = await solicitarAnulacion(db, { comprobanteId: b, motivo: 'y', hoy });
+      const ra = await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: a, motivo: 'x', hoy });
+      const rb = await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: b, motivo: 'y', hoy });
       expect([ra, rb].map((r) => (r.resultado === 'SOLICITADA' ? r.identificador.split('-')[2] : ''))).toEqual(['1', '2']);
     });
 
     it('no se anula lo que no fue aceptado, ni dos veces, ni fuera de plazo, ni sin motivo', async () => {
       const pendiente = await emitir();
-      expect((await solicitarAnulacion(db, { comprobanteId: pendiente, motivo: 'x', hoy })).resultado).toBe('ERROR');
+      expect((await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: pendiente, motivo: 'x', hoy })).resultado).toBe('ERROR');
 
       const id = await aceptada();
-      expect(await solicitarAnulacion(db, { comprobanteId: id, motivo: '  ', hoy })).toMatchObject({ resultado: 'ERROR' });
+      expect(await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: id, motivo: '  ', hoy })).toMatchObject({ resultado: 'ERROR' });
       const lejos = new Date(Date.parse(`${hoy}T12:00:00Z`) + 8 * 86_400_000).toISOString().slice(0, 10);
-      const tarde = await solicitarAnulacion(db, { comprobanteId: id, motivo: 'x', hoy: lejos });
+      const tarde = await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: id, motivo: 'x', hoy: lejos });
       expect(tarde).toEqual({ resultado: 'ERROR', errores: [expect.stringMatching(/Pasó el plazo de 7 días.*nota de crédito/)] });
-      expect((await solicitarAnulacion(db, { comprobanteId: id, motivo: 'x', hoy })).resultado).toBe('SOLICITADA');
-      const otra = await solicitarAnulacion(db, { comprobanteId: id, motivo: 'x', hoy });
+      expect((await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: id, motivo: 'x', hoy })).resultado).toBe('SOLICITADA');
+      const otra = await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: id, motivo: 'x', hoy });
       expect(otra).toEqual({ resultado: 'ERROR', errores: [expect.stringMatching(/en proceso de anulación/)] });
     });
   });

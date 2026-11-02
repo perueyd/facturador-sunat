@@ -11,9 +11,13 @@ import { TipoComprobante, idComprobanteLegible } from '../tipos.js';
 import { parametro } from './repositorio.js';
 
 export interface SolicitudAnulacion {
+  /** Empresa de quien pide: un comprobante de otra empresa no se encuentra. */
+  empresaId: string;
   comprobanteId: string;
   motivo: string;
   usuarioId?: string;
+  /** Llave de API del canal que pidió la anulación (queda en la auditoría). */
+  apiLlaveId?: string;
   /** Fecha de hoy en Lima (AAAA-MM-DD). Para pruebas. */
   hoy?: string;
 }
@@ -42,8 +46,8 @@ export async function solicitarAnulacion(db: Db, s: SolicitudAnulacion): Promise
                 to_char(c.fecha_emision, 'YYYY-MM-DD') AS fecha, ref.tipo_comprobante AS ref_tipo
          FROM comprobantes c
          LEFT JOIN comprobantes ref ON ref.id = c.comprobante_referencia_id
-         WHERE c.id = $1 FOR UPDATE OF c`,
-        [s.comprobanteId],
+         WHERE c.id = $1 AND c.empresa_id = $2 FOR UPDATE OF c`,
+        [s.comprobanteId, s.empresaId],
       );
       const c = r.rows[0];
       if (!c) throw new ErrorAnulacion('El comprobante no existe.');
@@ -103,9 +107,9 @@ export async function solicitarAnulacion(db: Db, s: SolicitudAnulacion): Promise
       );
       const identificador = `${prefijo}-${hoy.replaceAll('-', '')}-${correlativo}`;
       await tx.query(
-        `INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, motivo, despues)
-         VALUES ($1, $2, 'SOLICITAR_ANULACION', 'comprobantes', $3, $4, $5)`,
-        [c.empresa_id, s.usuarioId ?? null, c.id, motivo, JSON.stringify({ comprobante: nombre, via, identificador })],
+        `INSERT INTO auditoria (empresa_id, usuario_id, api_llave_id, accion, entidad, entidad_id, motivo, despues)
+         VALUES ($1, $2, $3, 'SOLICITAR_ANULACION', 'comprobantes', $4, $5, $6)`,
+        [c.empresa_id, s.usuarioId ?? null, s.apiLlaveId ?? null, c.id, motivo, JSON.stringify({ comprobante: nombre, via, identificador })],
       );
       return { resultado: 'SOLICITADA' as const, via, documentoId, identificador };
     });

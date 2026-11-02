@@ -29,6 +29,24 @@ Revisión completa antes de publicar el facturador (23/10/2026). Se repite al ce
 5. **Conexión a la base** cifrada y verificada con el certificado de Supabase (`DATABASE_CA_CERT`).
 6. **Respaldos** cifrados (AES-256) antes de salir hacia GitHub.
 
+## Auditoría del 02/11/2026
+
+Revisado otra vez, con todo lo agregado después (caja, gastos, cotizaciones, cuentas por pagar,
+plataforma): dependencias sin vulnerabilidades, historial de Git sin claves, sin `innerHTML` en el
+panel (no se puede inyectar código con datos de clientes), consultas con parámetros, montos solo
+con decimales exactos, tasas y límites en la base, correlativos con bloqueo de fila, idempotencia
+con índice único, XML y CDR guardados 6 años, contraseñas con scrypt, segundo paso que no acepta
+un código dos veces, sesiones que se cierran al restablecer el acceso, enlaces de PDF firmados y con
+vencimiento, CSV a prueba de fórmulas, producción con doble candado.
+
+Corregido:
+
+1. **Anulación por la API sin autor.** La auditoría no guardaba qué llave (qué canal) pidió la
+   anulación; ahora sí. Además, la anulación revisa por sí misma que el comprobante sea de la
+   empresa que la pide (antes lo revisaba solo la ruta).
+
+Sigue pendiente lo de la tabla de abajo (RLS y usuario de base con permisos mínimos).
+
 ## Panel web (`/panel`)
 
 | Tema | Cómo está protegido |

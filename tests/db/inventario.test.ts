@@ -136,7 +136,7 @@ describe.skipIf(!URL_PRUEBAS)('inventario', () => {
     const id = await emitir(solicitudBoleta({ fechaEmision: hoy, items: [item('354.00', '2')] }));
     await procesarCola(db, s);
     expect(await stock()).toBe('0');
-    await solicitarAnulacion(db, { comprobanteId: id, motivo: 'Venta cancelada', hoy });
+    await solicitarAnulacion(db, { empresaId: f.empresaId, comprobanteId: id, motivo: 'Venta cancelada', hoy });
     await procesarCola(db, s); // envía el resumen
     reloj = new Date(reloj.getTime() + 60_000);
     await procesarCola(db, s); // ticket aceptado
