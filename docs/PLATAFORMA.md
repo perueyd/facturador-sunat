@@ -12,7 +12,7 @@ funcione. Al final, la lista de **proyectos pendientes**.
    fuente y la fecha cuando se confirme.
 2. Términos del servicio y política de datos personales (Ley 29733): guardarás certificados y claves
    SOL de terceros (cifrados).
-3. Pasar a planes de pago: Render **Starter** (no se duerme) y Supabase **Pro**. El plan gratis no
+3. Pasar a planes de pago: Render **Starter** (no se duerme; ✅ activado el 02/11/2026) y Supabase **Pro**. El plan gratis no
    sirve para clientes que pagan.
 
 ## Planes (propuesta inicial, se cambian en el panel → Plataforma → Precios)
