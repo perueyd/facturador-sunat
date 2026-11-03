@@ -152,7 +152,8 @@ describe.skipIf(!URL_PRUEBAS)('envío a SUNAT (simulado) con base de datos', () 
 
   it('muchos intentos fallidos: sigue reintentando, nunca lo descarta, y avisa', async () => {
     sunat.porDefectoBill = { modo: 'http500' };
-    const id = await emitir();
+    // Factura: su plazo legal es de 3 días (el de la boleta es 7), así el aviso de plazo llega en estas 60 h.
+    const id = await emitir(solicitudFactura({ fechaEmision: hoy }));
     for (let i = 0; i < 12; i++) {
       await procesarCola(db, s);
       avanzar(300);

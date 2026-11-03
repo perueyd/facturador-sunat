@@ -72,6 +72,15 @@ describe.skipIf(!URL_PRUEBAS)('emisión con base de datos', () => {
     expect(aud.rows[0]?.accion).toBe('EMITIR');
   });
 
+  it('plazo legal de envío según el tipo: factura 3 días, boleta 7 (parámetros, no fijos en el código)', async () => {
+    // Antes todo comprobante llevaba 3 días fijos: una boleta, que tiene 7, avisaba "vence" antes de tiempo.
+    const limite = async (id: string) => (await db.query(
+      `SELECT (fecha_limite_legal - c.fecha_emision)::int AS dias FROM cola_envios k JOIN comprobantes c ON c.id = k.referencia_id WHERE k.referencia_id = $1`, [id],
+    )).rows[0].dias;
+    expect(await limite(emitido(await emitirComprobante(db, pedido())).id)).toBe(7);
+    expect(await limite(emitido(await emitirComprobante(db, pedido({ solicitud: solicitudFactura() }))).id)).toBe(3);
+  });
+
   it('el XML del comprobante guardado es idéntico al calculado y cumple UBL 2.1', async () => {
     const g = emitido(await emitirComprobante(db, pedido({ solicitud: solicitudFactura() })));
     const recargado = await cargarComprobante(db, g.id);

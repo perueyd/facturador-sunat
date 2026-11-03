@@ -46,7 +46,9 @@ Hoy la red del entorno bloquea `e-beta.sunat.gob.pe`. Para habilitarla:
 2. En **Network access** (acceso de red), agrega `e-beta.sunat.gob.pe` en
    **Allowed domains**, dejando marcada la casilla de gestores de paquetes.
    (Guía: <https://code.claude.com/docs/en/cloud-environments#network-access>)
-3. Avísame y yo mismo corro la prueba.
+3. Avísame y yo mismo corro la prueba. En ese entorno Node no usa el proxy por su cuenta: se corre con
+   `NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt npm run sunat:beta -- --ruc …`
+   (así se hizo el 03/11/2026: 15 de 15 aceptados).
 
 Para producción, más adelante, el servidor donde viva el facturador tendrá que
 poder conectarse a `e-factura.sunat.gob.pe`.
