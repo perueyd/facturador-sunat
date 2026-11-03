@@ -131,7 +131,7 @@ export type ResultadoEntrar = { ok: true; token: string; expira: Date } | { ok: 
 
 export async function entrar(
   db: Db,
-  d: { email: string; contrasena: string; codigo: string; llaveMaestra: Buffer; ip?: string; ahora?: number; recordar?: boolean },
+  d: { email: string; contrasena: string; codigo: string; llaveMaestra: Buffer; ip?: string; ahora?: number; recordar?: boolean; aparato?: string },
 ): Promise<ResultadoEntrar> {
   const ahora = d.ahora ?? Date.now();
   const r = await db.query(
@@ -167,8 +167,8 @@ export async function entrar(
   const expira = new Date(ahora + (d.recordar ? SESION_RECORDADA_DIAS * 24 : SESION_HORAS) * 3_600_000);
   const empresa = await db.query(`SELECT empresa_id FROM usuario_empresa WHERE usuario_id = $1 ORDER BY creado_en LIMIT 1`, [u.id]);
   await db.query(`UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = $1`, [u.id]);
-  await db.query(`INSERT INTO sesiones (usuario_id, token_hash, empresa_id, ip, expira_en) VALUES ($1, $2, $3, $4, $5)`, [
-    u.id, huella(token), empresa.rows[0]?.empresa_id ?? null, d.ip ?? null, expira,
+  await db.query(`INSERT INTO sesiones (usuario_id, token_hash, empresa_id, ip, expira_en, aparato, ultimo_uso_en) VALUES ($1, $2, $3, $4, $5, $6, now())`, [
+    u.id, huella(token), empresa.rows[0]?.empresa_id ?? null, d.ip ?? null, expira, d.aparato ? describirAparato(d.aparato) : null,
   ]);
   await db.query(`INSERT INTO auditoria (usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, 'PANEL_ENTRADA', 'usuarios', $1, $2)`, [
     u.id, JSON.stringify({ ip: d.ip ?? null, ...(segundoPaso === 'RESPALDO' ? { codigoRespaldo: true } : {}) }),
@@ -212,6 +212,9 @@ export async function leerSesion(db: Db, token: string | undefined): Promise<Ses
   );
   const s = r.rows[0];
   if (!s) return undefined;
+  // "Último uso" para Mis sesiones: como mucho una escritura cada 5 minutos, sin hacer esperar.
+  void db.query(`UPDATE sesiones SET ultimo_uso_en = now() WHERE id = $1 AND (ultimo_uso_en IS NULL OR ultimo_uso_en < now() - interval '5 minutes')`, [s.id])
+    .catch(() => undefined);
   const e = await db.query(
     `SELECT e.id, e.ruc, e.razon_social, ue.rol::text AS rol, e.ambiente_sunat::text AS ambiente, e.modulos_desactivados,
             p.secciones AS secciones_plan
@@ -299,6 +302,43 @@ export async function restablecerAcceso(
     ]);
     return secreto;
   });
+}
+
+/**
+ * "Safari en iPhone", "Chrome en Windows"… a partir de lo que dice el navegador. Solo para que
+ * la persona reconozca sus aparatos en "Mis sesiones"; no se usa para nada de seguridad.
+ */
+export function describirAparato(agente: string): string {
+  const a = agente.slice(0, 400);
+  const sistema = /iPhone/.test(a) ? 'iPhone' : /iPad/.test(a) ? 'iPad' : /Android/.test(a) ? 'Android'
+    : /Windows/.test(a) ? 'Windows' : /Mac OS X|Macintosh/.test(a) ? 'Mac' : /Linux/.test(a) ? 'Linux' : 'otro sistema';
+  // El orden importa: Edge y Opera también dicen "Chrome", y Chrome también dice "Safari".
+  const navegador = /Edg\//.test(a) ? 'Edge' : /OPR\//.test(a) ? 'Opera' : /SamsungBrowser/.test(a) ? 'Samsung Internet'
+    : /CriOS|Chrome\//.test(a) ? 'Chrome' : /FxiOS|Firefox\//.test(a) ? 'Firefox' : /Safari\//.test(a) ? 'Safari' : 'navegador';
+  return `${navegador} en ${sistema}`;
+}
+
+export interface SesionAbierta { id: string; aparato: string; ip: string | null; desde: string; ultimoUso: string | null; esta: boolean }
+
+/** Las sesiones abiertas del usuario (la de este aparato primero). */
+export async function sesionesAbiertas(db: Db, sesion: { usuarioId: string; sesionId: string }): Promise<SesionAbierta[]> {
+  const r = await db.query(
+    `SELECT id, aparato, ip, creado_en, ultimo_uso_en FROM sesiones
+      WHERE usuario_id = $1 AND revocada_en IS NULL AND expira_en > now()
+      ORDER BY (id = $2) DESC, coalesce(ultimo_uso_en, creado_en) DESC LIMIT 30`,
+    [sesion.usuarioId, sesion.sesionId],
+  );
+  return r.rows.map((f) => ({
+    id: f.id, aparato: f.aparato ?? 'Aparato sin identificar', ip: f.ip, desde: new Date(f.creado_en).toISOString(),
+    ultimoUso: f.ultimo_uso_en ? new Date(f.ultimo_uso_en).toISOString() : null, esta: f.id === sesion.sesionId,
+  }));
+}
+
+/** Cierra UNA sesión del usuario (no la de este aparato: para eso está "Salir"). */
+export async function cerrarSesion(db: Db, sesion: { usuarioId: string; sesionId: string }, id: string): Promise<boolean> {
+  if (id === sesion.sesionId) return false;
+  const r = await db.query(`UPDATE sesiones SET revocada_en = now() WHERE id = $1 AND usuario_id = $2 AND revocada_en IS NULL`, [id, sesion.usuarioId]);
+  return Boolean(r.rowCount);
 }
 
 /** Cierra las demás sesiones del usuario (otro celular, una computadora prestada); esta sigue. */
