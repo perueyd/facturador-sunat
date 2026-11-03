@@ -160,8 +160,14 @@ async function alCrearEmpresa(e) {
   const datos = Object.fromEntries(new FormData(e.target));
   datos.propia = datos.propia === 'on';
   try {
-    await api('/empresas', { cuerpo: datos });
+    const r = await api('/empresas', { cuerpo: datos });
     e.target.reset();
+    if (r.aliado) {
+      // El aliado no entra a la empresa del cliente: el siguiente paso es invitar a su dueño.
+      mensaje('#mensaje-empresa', '✔ Cliente creado. Ahora invita a su dueño en "Mis clientes".');
+      await abrirPestana('aliado');
+      return;
+    }
     mensaje('#mensaje-empresa', '✔ Empresa creada. Ahora carga su certificado digital aquí arriba.');
     await cargarPanel();
   } catch (err) {
@@ -237,6 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-cierre').addEventListener('submit', alCerrarCaja);
   $('#condicion-compra').addEventListener('change', (e) => { $('#caja-vence-compra').hidden = e.target.value !== 'CREDITO'; $('#form-compra').vence.required = e.target.value === 'CREDITO'; });
   $('#admin-alta').addEventListener('click', async () => { await abrirPestana('mas'); $('#caja-empresa-nueva').open = true; $('#caja-empresa-nueva').scrollIntoView({ behavior: 'smooth' }); });
+  $('#aliado-alta').addEventListener('click', async () => { await abrirPestana('mas'); $('#caja-empresa-nueva').open = true; $('#caja-empresa-nueva').scrollIntoView({ behavior: 'smooth' }); });
   $('#admin-reportes').addEventListener('click', () => $('#titulo-reportes').scrollIntoView({ behavior: 'smooth' }));
   $('#admin-salud').addEventListener('click', () => $('#titulo-salud').scrollIntoView({ behavior: 'smooth' }));
   $('#alerta-plataforma').addEventListener('click', () => $('#titulo-salud').scrollIntoView({ behavior: 'smooth' }));

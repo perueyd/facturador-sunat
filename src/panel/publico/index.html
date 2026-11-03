@@ -200,6 +200,7 @@
         <button type="button" data-pestana="stock" data-modulo="productos">Stock</button>
         <button type="button" data-pestana="mas">Más</button>
         <button type="button" data-pestana="plataforma" id="boton-plataforma" hidden>Administrador</button>
+        <button type="button" data-pestana="aliado" id="boton-aliado" hidden>Mis clientes</button>
       </nav>
 
       <div data-vista="inicio" hidden>
@@ -500,6 +501,13 @@
         <div id="actividad-plataforma" class="kpis"></div>
         <h2>Tus clientes</h2>
         <ul id="lista-clientes" class="clientes"></ul>
+        <details class="ajustes" id="caja-aliados">
+          <summary>Aliados (venden el facturador por comisión)</summary>
+          <p class="nota">La persona debe tener ya una cuenta activa (por ejemplo, invitada como Contador). La comisión
+            se calcula sola al registrar cada pago de sus clientes, con el % de ese momento.</p>
+          <ul id="lista-aliados" class="lista"></ul>
+          <div id="form-aliado"></div>
+        </details>
         <details class="ajustes">
           <summary>Precios y límites de los planes</summary>
           <p class="nota">Límite vacío = sin límite. Los cambios aplican a todos los clientes de ese plan.</p>
@@ -514,6 +522,23 @@
           <summary>Últimos errores internos</summary>
           <ul id="errores-salud" class="lista"></ul>
         </details>
+      </div>
+
+      <!-- Aliado: vende el facturador. Ve SOLO los clientes que trajo (sin sus comprobantes) y su comisión -->
+      <div data-vista="aliado" hidden>
+        <h1>Mis clientes</h1>
+        <p class="nota">Los negocios que trajiste al facturador y tu comisión. No ves sus comprobantes: solo si su plan está al día.</p>
+        <div class="botones">
+          <button type="button" class="secundario" id="aliado-alta">➕ Dar de alta un cliente</button>
+        </div>
+        <div id="resumen-aliado" class="kpis"></div>
+        <h2>Tus clientes</h2>
+        <p class="nota">Después de darlo de alta, invita a su dueño: él sube su certificado y configura todo desde su panel.</p>
+        <ul id="lista-clientes-aliado" class="clientes"></ul>
+        <h2>Tu comisión por mes</h2>
+        <ul id="comision-meses" class="lista"></ul>
+        <h2>Pagos que recibiste</h2>
+        <ul id="comision-pagos" class="lista"></ul>
       </div>
 
       <div data-vista="mas" hidden>
@@ -633,7 +658,7 @@
             <label>En el régimen desde <input name="regimenDesde" type="date" required></label>
             <label>Marca (opcional) <input name="marca" maxlength="100"></label>
           </div>
-          <label class="casilla"><input type="checkbox" name="propia"> Es mía (otro RUC propio, sin plan ni cobro)</label>
+          <label class="casilla" id="opcion-propia"><input type="checkbox" name="propia"> Es mía (otro RUC propio, sin plan ni cobro)</label>
           <div class="fila" id="datos-cliente">
             <label>Plan de prueba <select name="plan"><option value="EMPRENDEDOR">Emprendedor</option><option value="NEGOCIO">Negocio</option><option value="EMPRESA">Empresa</option></select></label>
             <label>Contacto del cliente <input name="contacto" maxlength="200" placeholder="correo o celular"></label>

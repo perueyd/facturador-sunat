@@ -74,6 +74,32 @@ Lo que el cliente hace en SUNAT con su Clave SOL (no se puede automatizar): crea
 secundario solo con permisos de comprobantes electrónicos y, para producción, los trámites de
 emisor electrónico que correspondan (verificar en la normativa vigente).
 
+## Aliados: quienes venden el facturador por comisión
+
+Un aliado (por ejemplo, tu contador) consigue clientes y gana un % de lo que esos clientes pagan.
+
+**Nombrar a un aliado** (Administrador → *Aliados*): pon el correo de su cuenta y su %. La persona
+debe tener ya una cuenta activa: invítala antes a tu empresa, por ejemplo con el rol Contador.
+Con el mismo formulario le cambias el %.
+
+**Lo que puede hacer el aliado** (pestaña *Mis clientes*):
+- Dar de alta empresas de clientes (siempre con plan de prueba, nunca "propias"). Quedan a su nombre.
+- Invitar al dueño de cada negocio que trajo, **solo mientras ese negocio no tenga un dueño activo**.
+- Ver sus clientes (plan, vencimiento, si ya cargó el certificado) y su comisión por mes, lo pagado y
+  lo que tiene por cobrar.
+
+**Lo que NO puede:** ver comprobantes ni datos de sus clientes (no es usuario de esas empresas),
+ver a los clientes de otros, registrar pagos de clientes ni tocar precios o planes.
+
+**Cómo se calcula la comisión:** al registrar tú el pago de un cliente, se guarda el % de ese
+momento y su monto. Cambiar el % después no cambia lo ya ganado. Un aliado desactivado deja de
+ganar por los pagos nuevos; lo ya ganado y sus clientes quedan.
+
+**Pagarle:** Administrador → *Aliados* → el aliado → *Registrar pago al aliado*. No deja pagar
+más de lo que tiene por cobrar, y un pago registrado no se borra.
+
+También puedes asignar (o quitar) el aliado de cualquier cliente desde su ficha en *Tus clientes*.
+
 ## La app en el celular y el escáner
 
 - **Instalar:** abrir la dirección de Render + `/panel` en **Chrome del celular** → botón **"📲 Instalar app"**

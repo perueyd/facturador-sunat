@@ -252,6 +252,7 @@ async function abrirPestana(nombre) {
     if (nombre === 'stock') await cargarStock();
     if (nombre === 'mas') await cargarUsuarios();
     if (nombre === 'plataforma') await cargarPlataforma();
+    if (nombre === 'aliado') await cargarAliado();
   } catch (err) { alert(err.message); }
 }
 
