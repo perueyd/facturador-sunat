@@ -155,11 +155,10 @@ async function cargarPanel() {
   if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
   productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
   $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
-  // El dueño y el administrador entran a su panel de control; quien vende, directo a vender.
-  $('#boton-inicio').hidden = !yo.puedeAdministrar;
-  if (yo.puedeAdministrar) {
-    dibujarAccesos();
-    await abrirPestana('inicio');
-  }
+  // Todos tienen su Inicio con el tablero (antes el tablero ocupaba la parte de arriba de TODAS las
+  // pestañas y había que bajar para encontrarlas). Quien solo vende entra directo a Vender.
+  $('#boton-inicio').hidden = false;
+  dibujarAccesos();
+  await abrirPestana(yo.puedeEmitir && !yo.puedeAdministrar ? 'vender' : 'inicio');
   await Promise.all([cargarTablero(), cargarLista(), cargarVentaRapida().catch(() => undefined), cargarCotizaciones().catch(() => undefined)]);
 }

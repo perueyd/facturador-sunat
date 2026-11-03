@@ -20,6 +20,40 @@ function mostrarEnlace(caja, r, nombre) {
   caja.hidden = false;
 }
 
+// ---------- "Más" ordenado por grupos y Mis sesiones ----------
+
+/** Un grupo de "Más" sin nada visible para este usuario (ej. "Mi empresa" para un vendedor) no se muestra. */
+function ordenarMas() {
+  for (const g of document.querySelectorAll('.grupo-mas')) {
+    g.hidden = ![...g.children].some((x) => x.tagName !== 'H2' && !x.hidden);
+  }
+}
+
+const fechaHora = (iso) => new Date(iso).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+/** Los aparatos donde está abierto el panel, con un botón para cerrar cada uno. */
+async function cargarSesiones() {
+  const { sesiones } = await api('/sesiones');
+  $('#lista-sesiones').replaceChildren(...sesiones.map((x) => {
+    const icono = /iPhone|Android|iPad/.test(x.aparato) ? '📱' : '💻';
+    const uso = x.esta ? 'este aparato' : x.ultimoUso ? `último uso ${fechaHora(x.ultimoUso)}` : `desde ${fechaHora(x.desde)}`;
+    const li = linea(`${icono} ${x.aparato} · desde ${fechaHora(x.desde)}${x.ip && x.ip !== 'directo' ? ` · IP ${x.ip}` : ''}`, uso, x.esta ? 'actual' : '');
+    if (!x.esta) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'enlace', textContent: 'Cerrar' });
+      b.addEventListener('click', async () => {
+        try {
+          await api(`/sesiones/${x.id}/cerrar`, { cuerpo: {} });
+          await cargarSesiones();
+        } catch (err) {
+          mensaje('#mensaje-sesiones', err.message, true);
+        }
+      });
+      li.append(b);
+    }
+    return li;
+  }));
+}
+
 async function cargarUsuarios() {
   if (yo?.puedeAdministrar) cargarConfiguracion().catch(() => { $('#caja-configuracion').hidden = true; });
   if (!yo?.esDueno) return;
@@ -231,6 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const r = await api('/sesiones/cerrar-otras', { cuerpo: {} });
       mensaje('#mensaje-sesiones', r.cerradas ? `✔ Se cerraron ${r.cerradas} sesión(es) en otros dispositivos.` : 'No había otras sesiones abiertas.');
+      await cargarSesiones();
     } catch (err) {
       mensaje('#mensaje-sesiones', err.message, true);
     }

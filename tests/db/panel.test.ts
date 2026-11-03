@@ -69,7 +69,7 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     return { email, secreto, usuarioId };
   }
 
-  const pedir = (ruta: string, o: { cuerpo?: unknown; cookie?: string; sinCabecera?: boolean; origen?: string } = {}) =>
+  const pedir = (ruta: string, o: { cuerpo?: unknown; cookie?: string; sinCabecera?: boolean; origen?: string; agente?: string } = {}) =>
     app.request(`http://localhost${ruta}`, {
       method: o.cuerpo !== undefined ? 'POST' : 'GET',
       headers: {
@@ -77,6 +77,7 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
         ...(o.sinCabecera ? {} : { 'X-Panel': '1' }),
         ...(o.cookie ? { Cookie: o.cookie } : {}),
         ...(o.origen ? { Origin: o.origen } : {}),
+        ...(o.agente ? { 'User-Agent': o.agente } : {}),
       },
       ...(o.cuerpo !== undefined ? { body: JSON.stringify(o.cuerpo) } : {}),
     });
@@ -718,5 +719,31 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect(r.cerradas).toBe(1);
     expect((await pedir('/panel/api/yo', { cookie: corta.cookie })).status).toBe(401);
     expect((await pedir('/panel/api/yo', { cookie: larga.cookie })).status).toBe(200);
+  });
+
+  it('Mis sesiones: lista los aparatos donde está abierto el panel y cierra uno solo', async () => {
+    // Antes solo existía "cerrar todas las demás": no se podía ver en qué aparatos estaba abierto.
+    const u = await usuario();
+    const entrarCon = async (agente: string, paso: number) => {
+      const r = await pedir('/panel/api/entrar', { agente, cuerpo: { email: u.email, contrasena: CONTRASENA, codigo: codigoTotp(u.secreto, paso) } });
+      expect(r.status).toBe(200);
+      return (r.headers.get('set-cookie') ?? '').split(';')[0]!;
+    };
+    const p = pasoActual();
+    const iphone = await entrarCon('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1', p);
+    const pc = await entrarCon('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36', p + 1);
+    const { sesiones } = await (await pedir('/panel/api/sesiones', { cookie: pc })).json() as { sesiones: { id: string; aparato: string; esta: boolean }[] };
+    expect(sesiones.map((x) => [x.aparato, x.esta])).toEqual([['Chrome en Windows', true], ['Safari en iPhone', false]]);
+    // No se cierra la de este aparato desde aquí (para eso está "Salir"); la del iPhone sí.
+    expect((await pedir(`/panel/api/sesiones/${sesiones[0]!.id}/cerrar`, { cookie: pc, cuerpo: {} })).status).toBe(404);
+    expect((await pedir(`/panel/api/sesiones/${sesiones[1]!.id}/cerrar`, { cookie: pc, cuerpo: {} })).status).toBe(200);
+    expect((await pedir('/panel/api/yo', { cookie: iphone })).status).toBe(401);
+    expect((await pedir('/panel/api/yo', { cookie: pc })).status).toBe(200);
+    // La sesión de OTRA persona no se puede cerrar aunque se conozca su id.
+    const otro = await usuario();
+    const ajena = await (await pedir('/panel/api/entrar', { cuerpo: { email: otro.email, contrasena: CONTRASENA, codigo: codigoTotp(otro.secreto, p) } })).headers.get('set-cookie')!.split(';')[0]!;
+    const idAjena = (await (await pedir('/panel/api/sesiones', { cookie: ajena })).json()).sesiones[0].id;
+    expect((await pedir(`/panel/api/sesiones/${idAjena}/cerrar`, { cookie: pc, cuerpo: {} })).status).toBe(404);
+    expect((await pedir('/panel/api/yo', { cookie: ajena })).status).toBe(200);
   });
 });

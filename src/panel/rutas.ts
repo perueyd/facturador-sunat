@@ -39,7 +39,7 @@ import { idComprobanteLegible } from '../tipos.js';
 import QRCode from 'qrcode';
 import type { Regimen } from '../tipos.js';
 import {
-  ROLES, ROLES_EMISORES, activarTotp, asignarEmpresa, cambiarContrasena, cerrarOtrasSesiones, codigosRespaldoRestantes, crearEnlaceRecuperacion,
+  ROLES, ROLES_EMISORES, activarTotp, asignarEmpresa, cambiarContrasena, cerrarOtrasSesiones, cerrarSesion, sesionesAbiertas, codigosRespaldoRestantes, crearEnlaceRecuperacion,
   crearUsuario, elegirEmpresa, entrar, leerSesion, nuevosCodigosRespaldo, recuperarConEnlace, regenerarCodigosRespaldo, restablecerAcceso, salir,
   type Rol, type Sesion,
 } from './usuarios.js';
@@ -317,7 +317,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const r = await entrar(d.db, {
       email: crudo(b.email, 200), contrasena: crudo(b.contrasena, 200), codigo: crudo(b.codigo, 20).trim(),
-      llaveMaestra: d.llaveMaestra, ip, recordar: b.recordar === true,
+      llaveMaestra: d.llaveMaestra, ip, recordar: b.recordar === true, aparato: c.req.header('user-agent') ?? '',
     });
     if (!r.ok) {
       if (!d.fallos.contar(ip)) return frenado(c);
@@ -358,6 +358,21 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const codigos = await regenerarCodigosRespaldo(d.db, { usuarioId: s.usuarioId, codigo: typeof b.codigo === 'string' ? b.codigo.slice(0, 20).trim() : '', llaveMaestra: d.llaveMaestra });
     if (codigos) return c.json({ codigosRespaldo: codigos });
     return d.fallos.contar(ip) ? d.error(c, 422, 'CODIGO_INCORRECTO', 'El código no es correcto o ya se usó. Espera el siguiente.') : frenado(c);
+  });
+
+  // Mis sesiones: en qué aparatos está abierto el panel, y cerrar uno.
+  app.get('/panel/api/sesiones', async (c) => {
+    const s = await conSesion(c);
+    if (s instanceof Response) return s;
+    return c.json({ sesiones: await sesionesAbiertas(d.db, s) });
+  });
+
+  app.post('/panel/api/sesiones/:id/cerrar', async (c) => {
+    const s = await conSesion(c);
+    if (s instanceof Response) return s;
+    const id = c.req.param('id');
+    return UUID.test(id) && (await cerrarSesion(d.db, s, id))
+      ? c.json({ ok: true }) : d.error(c, 404, 'NO_ENCONTRADO', 'Esa sesión ya estaba cerrada (o es la de este aparato: usa "Salir").');
   });
 
   app.post('/panel/api/sesiones/cerrar-otras', async (c) => {
