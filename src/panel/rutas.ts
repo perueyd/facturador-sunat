@@ -29,6 +29,7 @@ import { ErrorCertificado } from '../firma/certificado.js';
 import { guardarCertificado } from '../firma/repositorio-certificados.js';
 import { base32, urlOtpauth } from '../seguridad/totp.js';
 import { ErrorPdf } from '../pdf/representacion.js';
+import { aliadoActivo } from '../plataforma/aliados.js';
 import { iniciarPrueba, suscripcionDe } from '../plataforma/suscripciones.js';
 import { estadisticas } from '../reportes/estadisticas.js';
 import { resultadoDelMes } from '../reportes/resultado.js';
@@ -395,6 +396,8 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       puedeAdministrar: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol)),
       esDueno: s.empresa?.rol === 'DUENO',
       adminPlataforma: s.adminPlataforma,
+      // Aliado: vende el facturador y ve sus clientes y su comisión (pestaña "Mis clientes").
+      aliado: (await aliadoActivo(d.db, s.usuarioId)) ?? null,
       puedeComprar: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('compras')),
       verEstadisticas: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('estadisticas')),
       verCaja: Boolean(s.empresa && ROLES_COMPRAS.includes(s.empresa.rol) && s.empresa.modulos.includes('cobros')),
@@ -557,11 +560,14 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
 
   // ---------- Empresas, certificado y usuarios ----------
 
-  // Alta de una empresa NUEVA (solo administrador de la plataforma). Quien la crea queda como DUEÑO.
+  // Alta de una empresa NUEVA. El administrador de la plataforma queda como DUEÑO. Un aliado
+  // NO: la empresa queda a su nombre (para su comisión), en prueba, y él invita al dueño real;
+  // así el aliado nunca ve los comprobantes ni los datos de sus clientes.
   app.post('/panel/api/empresas', async (c) => {
     const s = await conSesion(c);
     if (s instanceof Response) return s;
-    if (!s.adminPlataforma) return d.error(c, 403, 'SIN_PERMISO', 'Solo el administrador de la plataforma da de alta empresas.');
+    const comoAliado = !s.adminPlataforma && Boolean(await aliadoActivo(d.db, s.usuarioId));
+    if (!s.adminPlataforma && !comoAliado) return d.error(c, 403, 'SIN_PERMISO', 'Solo el administrador de la plataforma o un aliado da de alta empresas.');
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const ruc = texto(b.ruc, 11);
     if ((await d.db.query(`SELECT 1 FROM empresas WHERE ruc = $1`, [ruc])).rowCount) {
@@ -575,11 +581,15 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
         provincia: texto(b.provincia, 60), distrito: texto(b.distrito, 60), direccion: texto(b.direccion, 250), regimen,
         regimenDesde: texto(b.regimenDesde, 10), ...(texto(b.marca, 100) ? { marca: texto(b.marca, 100) } : {}),
       });
+      const datosPrueba = { empresaId, ...(texto(b.plan, 20) ? { plan: texto(b.plan, 20) } : {}), ...(texto(b.contacto, 200) ? { contacto: texto(b.contacto, 200) } : {}) };
+      if (comoAliado) {
+        await iniciarPrueba(d.db, { ...datosPrueba, aliadoId: s.usuarioId });
+        await d.db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id) VALUES ($1, $2, 'ALTA_POR_ALIADO', 'empresas', $1)`, [empresaId, s.usuarioId]);
+        return c.json({ ok: true, empresaId, aliado: true }, 201);
+      }
       await asignarEmpresa(d.db, s.usuarioId, empresaId, 'DUENO');
       // Empresa de un cliente: empieza con días de prueba. Una propia (otro RUC tuyo) no tiene plan.
-      if (b.propia !== true) {
-        await iniciarPrueba(d.db, { empresaId, ...(texto(b.plan, 20) ? { plan: texto(b.plan, 20) } : {}), ...(texto(b.contacto, 200) ? { contacto: texto(b.contacto, 200) } : {}) });
-      }
+      if (b.propia !== true) await iniciarPrueba(d.db, datosPrueba);
       // Queda elegida en esta sesión para seguir configurándola (certificado, usuarios).
       await d.db.query(`UPDATE sesiones SET empresa_id = $2 WHERE id = $1`, [s.sesionId, empresaId]);
       return c.json({ ok: true, empresaId }, 201);

@@ -139,8 +139,11 @@ async function cargarPanel() {
   $('#caja-usuarios').hidden = !yo.esDueno;
   $('#caja-certificado').hidden = !yo.esDueno;
   $('#caja-sol').hidden = !yo.esDueno;
-  $('#caja-empresa-nueva').hidden = !yo.adminPlataforma;
+  // El aliado también da de alta empresas (de clientes, nunca "propias").
+  $('#caja-empresa-nueva').hidden = !yo.adminPlataforma && !yo.aliado;
+  $('#opcion-propia').hidden = !yo.adminPlataforma;
   $('#boton-plataforma').hidden = !yo.adminPlataforma;
+  $('#boton-aliado').hidden = !yo.aliado;
   $('#caja-cuentas').hidden = !(yo.puedeAdministrar && tiene('cobros'));
   cargarCuentas().catch(() => {});
   mostrarPlan(yo.plan);

@@ -10,7 +10,8 @@
  * enviar lo que quedó en cola, consultar y descargar sus comprobantes (PDF, XML, CDR),
  * notas de crédito y comunicaciones de baja. Solo se frena emitir boletas y facturas NUEVAS.
  */
-import type { Db, Tx } from '../db/conexion.js';
+import { enTransaccion, type Db, type Tx } from '../db/conexion.js';
+import { comisionDelPago } from './aliados.js';
 import { dec } from '../dinero.js';
 import { ahoraLima } from '../fechas.js';
 
@@ -88,10 +89,10 @@ export async function suscripcionDe(db: Db | Tx, empresaId: string, hoy = ahoraL
 }
 
 /** Empresa nueva de un cliente: empieza con días de prueba en el plan indicado. */
-export async function iniciarPrueba(db: Db | Tx, d: { empresaId: string; plan?: string; contacto?: string; hoy?: string }): Promise<void> {
+export async function iniciarPrueba(db: Db | Tx, d: { empresaId: string; plan?: string; contacto?: string; aliadoId?: string; hoy?: string }): Promise<void> {
   await db.query(
-    `INSERT INTO suscripciones (empresa_id, plan_codigo, estado, vence_en, contacto) VALUES ($1, $2, 'PRUEBA', $3::date + $4::int, $5)`,
-    [d.empresaId, d.plan ?? 'EMPRENDEDOR', d.hoy ?? ahoraLima().fecha, DIAS_PRUEBA, d.contacto ?? null],
+    `INSERT INTO suscripciones (empresa_id, plan_codigo, estado, vence_en, contacto, aliado_id) VALUES ($1, $2, 'PRUEBA', $3::date + $4::int, $5, $6)`,
+    [d.empresaId, d.plan ?? 'EMPRENDEDOR', d.hoy ?? ahoraLima().fecha, DIAS_PRUEBA, d.contacto ?? null, d.aliadoId ?? null],
   );
 }
 
@@ -104,7 +105,7 @@ export class ErrorSuscripcion extends Error {}
 export async function registrarPago(
   db: Db,
   d: { empresaId: string; periodo: 'MENSUAL' | 'ANUAL'; monto?: string; medio: string; referencia?: string; plan?: string; usuarioId: string; hoy?: string },
-): Promise<{ hasta: string; monto: string }> {
+): Promise<{ hasta: string; monto: string; comisionAliado?: string }> {
   const hoy = d.hoy ?? ahoraLima().fecha;
   if (!['MENSUAL', 'ANUAL'].includes(d.periodo)) throw new ErrorSuscripcion('Elige mensual o anual.');
   if (!d.medio.trim()) throw new ErrorSuscripcion('Indica cómo pagó (Yape, transferencia…).');
@@ -119,18 +120,24 @@ export async function registrarPago(
     `SELECT greatest($1::date, $2::date)::text AS desde, (greatest($1::date, $2::date) + ($3 = 'ANUAL')::int * interval '1 year' + ($3 = 'MENSUAL')::int * interval '1 month')::date::text AS hasta`,
     [actual.vence_en, hoy, d.periodo],
   )).rows[0];
-  await db.query(
-    `INSERT INTO pagos_suscripcion (empresa_id, plan_codigo, periodo, monto, medio, referencia, desde, hasta, registrado_por) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [d.empresaId, plan.codigo, d.periodo, monto, d.medio.trim().slice(0, 60), d.referencia?.trim().slice(0, 120) || null, fechas.desde, fechas.hasta, d.usuarioId],
-  );
-  await db.query(
-    `UPDATE suscripciones SET plan_codigo = $2, estado = 'ACTIVA', vence_en = $3, actualizado_en = now() WHERE empresa_id = $1`,
-    [d.empresaId, plan.codigo, fechas.hasta],
-  );
-  await db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'PAGO_SUSCRIPCION', 'empresas', $1, $3)`, [
-    d.empresaId, d.usuarioId, JSON.stringify({ plan: plan.codigo, periodo: d.periodo, monto, hasta: fechas.hasta }),
-  ]);
-  return { hasta: fechas.hasta, monto };
+  // El pago, la extensión del plan, la comisión del aliado y la auditoría van juntos.
+  return enTransaccion(db, async (tx) => {
+    const comision = await comisionDelPago(tx, d.empresaId, monto);
+    await tx.query(
+      `INSERT INTO pagos_suscripcion (empresa_id, plan_codigo, periodo, monto, medio, referencia, desde, hasta, registrado_por, aliado_id, comision_porcentaje, comision_monto)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [d.empresaId, plan.codigo, d.periodo, monto, d.medio.trim().slice(0, 60), d.referencia?.trim().slice(0, 120) || null, fechas.desde, fechas.hasta, d.usuarioId,
+        comision?.aliadoId ?? null, comision?.porcentaje ?? null, comision?.monto ?? null],
+    );
+    await tx.query(
+      `UPDATE suscripciones SET plan_codigo = $2, estado = 'ACTIVA', vence_en = $3, actualizado_en = now() WHERE empresa_id = $1`,
+      [d.empresaId, plan.codigo, fechas.hasta],
+    );
+    await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'PAGO_SUSCRIPCION', 'empresas', $1, $3)`, [
+      d.empresaId, d.usuarioId, JSON.stringify({ plan: plan.codigo, periodo: d.periodo, monto, hasta: fechas.hasta, comision: comision ?? null }),
+    ]);
+    return { hasta: fechas.hasta, monto, ...(comision ? { comisionAliado: comision.monto } : {}) };
+  });
 }
 
 /** Cambia el plan o el estado (suspender, reactivar, cancelar) dejando constancia de quién y por qué. */
@@ -158,14 +165,19 @@ export interface FilaCliente {
   ambiente: string;
   suscripcion: Suscripcion | null;
   contacto: string | null;
+  /** Nombre del aliado que trajo al cliente (null si ninguno). */
+  aliado: string | null;
   certificadoVence: string | null;
   pendientes: number;
   rechazados7d: number;
   ultimoComprobante: string | null;
 }
 
-/** Todas las empresas de la plataforma, con su plan, uso y salud. Para el panel del administrador. */
-export async function clientes(db: Db, hoy = ahoraLima().fecha): Promise<{ clientes: FilaCliente[]; resumen: { activos: number; prueba: number; vencidos: number; porVencer: number; ingresoMensual: string } }> {
+/**
+ * Las empresas de la plataforma, con su plan, uso y salud. Para el panel del administrador
+ * (todas) o para un aliado (solo las que trajo él: `aliadoId`).
+ */
+export async function clientes(db: Db, hoy = ahoraLima().fecha, aliadoId?: string): Promise<{ clientes: FilaCliente[]; resumen: { activos: number; prueba: number; vencidos: number; porVencer: number; ingresoMensual: string } }> {
   const subs = new Map<string, Record<string, unknown>>();
   for (const f of (await db.query(`${SELECT_SUSCRIPCION} WHERE $1::uuid IS NULL`, [null, hoy])).rows) subs.set(f.empresa_id as string, f);
   const r = await db.query(
@@ -173,8 +185,12 @@ export async function clientes(db: Db, hoy = ahoraLima().fecha): Promise<{ clien
             (SELECT valido_hasta::date::text FROM certificados WHERE empresa_id = e.id AND activo) AS cert,
             (SELECT count(*) FROM comprobantes WHERE empresa_id = e.id AND estado IN ('EMITIDO_LOCAL', 'PENDIENTE_ENVIO'))::int AS pendientes,
             (SELECT count(*) FROM comprobantes WHERE empresa_id = e.id AND estado = 'RECHAZADO' AND creado_en > now() - interval '7 days')::int AS rechazados,
-            (SELECT max(fecha_emision)::text FROM comprobantes WHERE empresa_id = e.id) AS ultimo
-       FROM empresas e ORDER BY e.razon_social`,
+            (SELECT max(fecha_emision)::text FROM comprobantes WHERE empresa_id = e.id) AS ultimo,
+            (SELECT u.nombre FROM suscripciones su JOIN usuarios u ON u.id = su.aliado_id WHERE su.empresa_id = e.id) AS aliado
+       FROM empresas e
+      WHERE $1::uuid IS NULL OR e.id IN (SELECT empresa_id FROM suscripciones WHERE aliado_id = $1)
+      ORDER BY e.razon_social`,
+    [aliadoId ?? null],
   );
   let ingreso = dec('0');
   const resumen = { activos: 0, prueba: 0, vencidos: 0, porVencer: 0, ingresoMensual: '0.00' };
@@ -192,7 +208,7 @@ export async function clientes(db: Db, hoy = ahoraLima().fecha): Promise<{ clien
       if (s.estado === 'POR_VENCER') resumen.porVencer++;
     }
     return {
-      empresaId: e.id, ruc: e.ruc, razonSocial: e.razon_social, ambiente: e.ambiente, suscripcion: s, contacto: (f?.contacto as string | null) ?? null,
+      empresaId: e.id, ruc: e.ruc, razonSocial: e.razon_social, ambiente: e.ambiente, suscripcion: s, contacto: (f?.contacto as string | null) ?? null, aliado: e.aliado,
       certificadoVence: e.cert, pendientes: e.pendientes, rechazados7d: e.rechazados, ultimoComprobante: e.ultimo,
     };
   });

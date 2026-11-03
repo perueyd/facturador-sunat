@@ -5,7 +5,9 @@
 import type { Context, Hono } from 'hono';
 import { ErrorInvitacion, invitar } from './invitaciones.js';
 import { ErrorSuscripcion, actividadPlataforma, cambiarSuscripcion, clientes, registrarPago as registrarPagoPlan } from '../plataforma/suscripciones.js';
+import { ErrorAliado, aliadoActivo, aliadoPuedeInvitar, asignarAliado, comisionesDelAliado, desactivarAliado, listarAliados, nombrarAliado, pagarAliado } from '../plataforma/aliados.js';
 import { saludPlataforma } from '../plataforma/vigilancia.js';
+import { ahoraLima } from '../fechas.js';
 import { SECCIONES_DE_PLAN } from '../reportes/tablero.js';
 import { UUID } from './comun-rutas.js';
 import type { Comun } from './comun-rutas.js';
@@ -31,7 +33,7 @@ export function registrarPlataforma(app: Hono<any>, { d, conSesion, texto, frena
     )).rows.map((p) => ({
       codigo: p.codigo, nombre: p.nombre, mensual: p.mensual, anual: p.anual, comprobantesMes: p.comprobantes_mes, usuariosMax: p.usuarios_max, activo: p.activo, secciones: p.secciones,
     }));
-    return c.json({ ...(await clientes(d.db)), planes, actividad: await actividadPlataforma(d.db) });
+    return c.json({ ...(await clientes(d.db)), planes, actividad: await actividadPlataforma(d.db), aliados: await listarAliados(d.db) });
   });
 
   app.get('/panel/api/plataforma/salud', async (c) => {
@@ -126,6 +128,114 @@ export function registrarPlataforma(app: Hono<any>, { d, conSesion, texto, frena
       s.usuarioId, JSON.stringify({ codigo: c.req.param('codigo'), mensual, anual, comprobantes, usuarios, secciones: secciones ?? null }),
     ]);
     return c.json({ ok: true });
+  });
+
+  // ---------- Aliados: venden el facturador y ganan comisión ----------
+  const conAliado = async (c: Context) => {
+    const s = await conSesion(c);
+    if (s instanceof Response) return s;
+    return (await aliadoActivo(d.db, s.usuarioId)) ? s : d.error(c, 403, 'SIN_PERMISO', 'Solo para aliados del facturador.');
+  };
+  const errorAliado = (c: Context, e: unknown) => {
+    if (e instanceof ErrorAliado || e instanceof ErrorInvitacion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+    throw e;
+  };
+
+  // Lo que ve el aliado: SOLO los clientes que trajo (estado del plan, sin sus comprobantes) y su comisión.
+  app.get('/panel/api/aliado', async (c) => {
+    const s = await conAliado(c);
+    if (s instanceof Response) return s;
+    const hoy = ahoraLima().fecha;
+    const r = await clientes(d.db, hoy, s.usuarioId);
+    return c.json({
+      clientes: r.clientes.map((x) => ({
+        empresaId: x.empresaId, ruc: x.ruc, razonSocial: x.razonSocial, produccion: x.ambiente === 'PRODUCCION', contacto: x.contacto,
+        plan: x.suscripcion ? { nombre: x.suscripcion.nombrePlan, estado: x.suscripcion.estado, venceEn: x.suscripcion.venceEn, precioMensual: x.suscripcion.precioMensual } : null,
+        listo: Boolean(x.certificadoVence), ultimoComprobante: x.ultimoComprobante,
+      })),
+      resumen: { activos: r.resumen.activos, prueba: r.resumen.prueba, vencidos: r.resumen.vencidos },
+      comisiones: await comisionesDelAliado(d.db, s.usuarioId, hoy),
+    });
+  });
+
+  // El aliado invita al dueño del negocio que trajo, solo mientras ese negocio no tenga un dueño activo.
+  app.post('/panel/api/aliado/:empresaId/invitar', async (c) => {
+    const s = await conAliado(c);
+    if (s instanceof Response) return s;
+    const empresaId = await empresaDeRuta(c);
+    if (!empresaId) return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
+    const puede = await aliadoPuedeInvitar(d.db, s.usuarioId, empresaId);
+    if (puede === 'NO_ES_SUYA') return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
+    if (puede === 'YA_TIENE_DUENO') return d.error(c, 409, 'YA_TIENE_DUENO', 'Ese negocio ya tiene su dueño activo: él invita a su gente desde su panel.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (texto(b.email, 200).trim().toLowerCase() === s.email.toLowerCase()) return d.error(c, 422, 'DATOS_INVALIDOS', 'Invita al dueño del negocio, no a ti.');
+    try {
+      const r = await invitar(d.db, { email: texto(b.email, 200), nombre: texto(b.nombre, 120), empresaId, rol: 'DUENO', creadaPor: s.usuarioId });
+      if (r.existente) return c.json({ ok: true, existente: true });
+      const razon = (await d.db.query(`SELECT razon_social FROM empresas WHERE id = $1`, [empresaId])).rows[0].razon_social as string;
+      const enlace = enlaceInvitacion(c, r.token);
+      avisarInvitacion(texto(b.email, 200).toLowerCase(), enlace, razon);
+      return c.json({ ok: true, existente: false, enlace, expira: r.expira, porCorreo: Boolean(d.correo) }, 201);
+    } catch (e) {
+      return errorAliado(c, e);
+    }
+  });
+
+  // El dueño de la plataforma nombra aliados, les cambia el %, los desactiva y les paga.
+  app.post('/panel/api/plataforma/aliados', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      return c.json({ ok: true, ...(await nombrarAliado(d.db, { email: texto(b.email, 200), comision: texto(b.comision, 6), porUsuario: s.usuarioId })) });
+    } catch (e) {
+      return errorAliado(c, e);
+    }
+  });
+
+  app.post('/panel/api/plataforma/aliados/:aliadoId/desactivar', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const aliadoId = c.req.param('aliadoId');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      return UUID.test(aliadoId) && (await desactivarAliado(d.db, { aliadoId, motivo: texto(b.motivo, 300), porUsuario: s.usuarioId }))
+        ? c.json({ ok: true }) : d.error(c, 404, 'NO_ENCONTRADO', 'Aliado no encontrado o ya desactivado.');
+    } catch (e) {
+      return errorAliado(c, e);
+    }
+  });
+
+  app.post('/panel/api/plataforma/aliados/:aliadoId/pago', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const aliadoId = c.req.param('aliadoId');
+    if (!UUID.test(aliadoId)) return d.error(c, 404, 'NO_ENCONTRADO', 'Aliado no encontrado.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      return c.json({ ok: true, ...(await pagarAliado(d.db, {
+        aliadoId, monto: texto(b.monto, 12), medio: texto(b.medio, 60), porUsuario: s.usuarioId, ...(texto(b.referencia, 120) ? { referencia: texto(b.referencia, 120) } : {}),
+      })) });
+    } catch (e) {
+      return errorAliado(c, e);
+    }
+  });
+
+  // Qué aliado trajo a este cliente (vacío = ninguno).
+  app.post('/panel/api/plataforma/:empresaId/aliado', async (c) => {
+    const s = await conPlataforma(c);
+    if (s instanceof Response) return s;
+    const empresaId = await empresaDeRuta(c);
+    if (!empresaId) return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const aliadoId = texto(b.aliadoId, 36);
+    if (aliadoId && !UUID.test(aliadoId)) return d.error(c, 404, 'NO_ENCONTRADO', 'Aliado no encontrado.');
+    try {
+      await asignarAliado(d.db, { empresaId, aliadoId: aliadoId || null, porUsuario: s.usuarioId });
+      return c.json({ ok: true });
+    } catch (e) {
+      return errorAliado(c, e);
+    }
   });
 
   // ---------- Reportes: "algo no funciona" o "me falta esto" ----------

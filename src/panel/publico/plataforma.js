@@ -71,6 +71,7 @@ async function cargarPlataforma() {
     const datos = document.createElement('div');
     datos.className = 'datos';
     const partes = [
+      ...(c.aliado ? [`aliado: ${c.aliado}`] : []),
       s ? `${s.nombrePlan} · hasta ${s.venceEn} · ${s.usoMes}${s.limiteMes ? `/${s.limiteMes}` : ''} comprobantes este mes` : 'sin plan',
       c.ambiente === 'PRODUCCION' ? 'PRODUCCIÓN' : 'beta',
       c.certificadoVence ? `certificado hasta ${c.certificadoVence}` : '⚠️ sin certificado',
@@ -105,6 +106,16 @@ async function cargarPlataforma() {
         return `✔ Pagado S/ ${res.monto}: activo hasta el ${res.hasta}.`;
       }));
       d.querySelector('[name=plan]').value = s.plan;
+      // Qué aliado trajo a este cliente: gana su comisión en cada pago que registres.
+      d.append(formulario([
+        ['Aliado que lo trajo ', selector('aliadoId', [['', '(ninguno)'], ...p.aliados.filter((a) => a.activo).map((a) => [a.aliadoId, `${a.nombre} (${a.comision}%)`])])],
+      ], 'Guardar aliado', async (v) => {
+        await api(`/plataforma/${c.empresaId}/aliado`, { cuerpo: v });
+        setTimeout(cargarPlataforma, 1200);
+        return '✔ Guardado.';
+      }));
+      const elegido = p.aliados.find((a) => a.nombre === c.aliado && a.activo);
+      if (elegido) d.querySelector('[name=aliadoId]').value = elegido.aliadoId;
       d.append(formulario([
         ['Cambiar a ', selector('estado', [['', '(mismo estado)'], ['ACTIVA', 'Activo'], ['SUSPENDIDA', 'Suspendido'], ['CANCELADA', 'Cancelado']])],
         ['Plan ', selector('plan', [['', '(mismo plan)'], ...opcionesPlan])],
@@ -135,6 +146,7 @@ async function cargarPlataforma() {
     f.prepend(Object.assign(document.createElement('b'), { textContent: x.nombre }));
     return f;
   }));
+  dibujarAliados(p.aliados);
   cargarReportes().catch(() => {});
   $('#numeros-salud').textContent = `${salud.ultimas24h} comprobante(s) en 24 h · ${salud.enCola} en cola · base de datos ${salud.baseDatosMb} MB de ${salud.limiteBaseDatosMb} MB`;
   $('#problemas-salud').replaceChildren(...(salud.problemas.length
@@ -291,4 +303,96 @@ function prepararApp() {
     // Revisa si hay versión nueva cada vez que se vuelve a la app.
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
   }).catch(() => {});
+}
+
+// ---------- Aliados: venden el facturador por comisión ----------
+function dibujarAliados(aliados) {
+  $('#lista-aliados').replaceChildren(...(aliados.length ? aliados.map((a) => {
+    const li = document.createElement('li');
+    const d = document.createElement('details');
+    d.append(Object.assign(document.createElement('summary'), {
+      textContent: `${a.nombre} · ${a.comision}% · ${a.clientes} cliente(s) · por pagarle ${soles(a.porPagar)}${a.activo ? '' : ' · desactivado'}`,
+    }));
+    d.append(Object.assign(document.createElement('p'), { className: 'nota', textContent: `${a.email} · ganó ${soles(a.ganado)} · le pagaste ${soles(a.pagado)}` }));
+    if (Number(a.porPagar) > 0) {
+      d.append(formulario([
+        ['Pagarle S/ ', entrada('monto', { value: a.porPagar, inputMode: 'decimal', required: true, maxLength: 12 })],
+        ['Cómo ', entrada('medio', { placeholder: 'Yape, transferencia…', required: true, maxLength: 60 })],
+        ['N.º de operación ', entrada('referencia', { maxLength: 120 })],
+      ], 'Registrar pago al aliado', async (v) => {
+        const r = await api(`/plataforma/aliados/${a.aliadoId}/pago`, { cuerpo: v });
+        setTimeout(cargarPlataforma, 1200);
+        return `✔ Registrado. Le queda por cobrar ${soles(r.porPagar)}.`;
+      }));
+    }
+    if (a.activo) {
+      d.append(formulario([['Motivo para desactivarlo ', entrada('motivo', { required: true, maxLength: 300 })]], 'Desactivar aliado', async (v) => {
+        await api(`/plataforma/aliados/${a.aliadoId}/desactivar`, { cuerpo: v });
+        setTimeout(cargarPlataforma, 1200);
+        return '✔ Desactivado: ya no da de alta clientes ni gana comisión nueva.';
+      }));
+    }
+    li.append(d);
+    return li;
+  }) : [Object.assign(document.createElement('li'), { textContent: 'Todavía no tienes aliados.' })]));
+  $('#form-aliado').replaceChildren(formulario([
+    ['Correo de su cuenta ', entrada('email', { type: 'email', required: true, maxLength: 200 })],
+    ['Comisión % ', entrada('comision', { inputMode: 'decimal', required: true, maxLength: 6, placeholder: '20' })],
+  ], 'Nombrar aliado o cambiar su %', async (v) => {
+    const r = await api('/plataforma/aliados', { cuerpo: v });
+    setTimeout(cargarPlataforma, 1200);
+    return `✔ ${r.nombre} es aliado con ${v.comision}%.`;
+  }));
+}
+
+/** "2026-11" → "noviembre de 2026" (mediodía UTC: así ninguna zona horaria cambia el mes). */
+const nombreDelMes = (mes) => new Date(`${mes}-01T12:00:00Z`).toLocaleDateString('es-PE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/** Pestaña "Mis clientes" del aliado: sus clientes (sin sus comprobantes) y su comisión. */
+async function cargarAliado() {
+  const r = await api('/aliado');
+  const c = r.comisiones;
+  $('#resumen-aliado').replaceChildren(
+    kpi('verde', 'Clientes activos', String(r.resumen.activos), `${r.resumen.prueba} en prueba`),
+    kpi(r.resumen.vencidos ? 'rosa' : 'gris', 'Vencidos', String(r.resumen.vencidos), 'recuérdales renovar'),
+    kpi('morado', 'Tu comisión', `${c.comision}%`, 'de lo que pagan tus clientes'),
+    kpi('azul', 'Ganado este mes', soles(c.ganadoMes), `total ${soles(c.ganado)}`),
+    kpi(Number(c.porPagar) > 0 ? 'ambar' : 'gris', 'Por cobrar', soles(c.porPagar), `ya cobraste ${soles(c.pagado)}`),
+  );
+  $('#lista-clientes-aliado').replaceChildren(...(r.clientes.length ? r.clientes.map((x) => {
+    const li = document.createElement('li');
+    li.className = 'cliente';
+    const d = document.createElement('details');
+    const resumen = document.createElement('summary');
+    const nombre = Object.assign(document.createElement('strong'), { textContent: `${x.razonSocial} · ${x.ruc}` });
+    const estado = Object.assign(document.createElement('span'), {
+      className: `estado-plan ${x.plan ? x.plan.estado : 'PROPIA'}`, textContent: x.plan ? ESTADO_PLAN[x.plan.estado] : '—',
+    });
+    const datos = Object.assign(document.createElement('div'), { className: 'datos', textContent: [
+      x.plan ? `${x.plan.nombre} (S/ ${x.plan.precioMensual} al mes) · hasta ${x.plan.venceEn}` : 'sin plan',
+      x.produccion ? 'emitiendo de verdad' : 'en pruebas',
+      x.listo ? 'certificado cargado' : '⚠️ falta su certificado',
+    ].join(' · ') });
+    resumen.append(nombre, estado, datos);
+    d.append(resumen);
+    if (x.contacto) d.append(Object.assign(document.createElement('p'), { className: 'nota', textContent: `Contacto: ${x.contacto}` }));
+    const cajaEnlace = Object.assign(document.createElement('div'), { className: 'enlace-invitacion', hidden: true });
+    d.append(formulario([
+      ['Invitar al dueño del negocio · correo ', entrada('email', { type: 'email', required: true, maxLength: 200 })],
+      ['Nombre ', entrada('nombre', { required: true, maxLength: 120 })],
+    ], 'Crear enlace de invitación', async (v) => {
+      const res = await api(`/aliado/${x.empresaId}/invitar`, { cuerpo: v });
+      if (res.existente) return '✔ Ya tenía cuenta: ahora es dueño de su empresa.';
+      mostrarEnlace(cajaEnlace, res, v.nombre);
+      return '';
+    }), cajaEnlace);
+    li.append(d);
+    return li;
+  }) : [Object.assign(document.createElement('li'), { textContent: 'Aún no tienes clientes: da de alta el primero con el botón de arriba.' })]));
+  $('#comision-meses').replaceChildren(...(c.meses.length
+    ? c.meses.map((m) => linea(`${nombreDelMes(m.mes)} · ${m.pagos} pago(s) de clientes`, soles(m.comision)))
+    : [linea('Todavía no hay pagos de tus clientes', '')]));
+  $('#comision-pagos').replaceChildren(...(c.pagosRecibidos.length
+    ? c.pagosRecibidos.map((x) => linea(`${x.fecha} · ${x.medio}`, soles(x.monto)))
+    : [linea('Todavía no recibiste pagos', '')]));
 }
