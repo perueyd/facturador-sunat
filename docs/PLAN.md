@@ -178,8 +178,10 @@ Al final de cada fase: revisión de seguridad + tu aprobación antes de unir a `
 Estado al 02/11/2026. El dueño escribió su autorización ("Autorizo pasar a producción la
 empresa Corporación Agamenón") ese día; producción se activa solo cuando toda la lista esté en ✅.
 
-- [ ] Boletas, facturas y notas de crédito aceptadas en SUNAT beta, sin errores
-      (boletas y facturas ✅ el 23/10/2026; falta repetir la nota de crédito: `npm run sunat:beta`)
+- [x] Boletas, facturas y notas de crédito aceptadas en SUNAT beta, sin errores
+      (03/11/2026, `npm run sunat:beta`: 15 de 15 aceptados con SHA1 y SHA256 — boletas con y sin
+      cliente, facturas al contado y al crédito, con descuento, nota de crédito de factura y
+      comunicación de baja)
 - [x] Pruebas automáticas pasando al 100 %
 - [ ] Un contador revisó boletas y facturas de prueba (qué llevarle: `docs/REVISION_CONTADOR.md`)
 - [x] Probado que un pedido repetido no genera dos comprobantes
@@ -190,10 +192,18 @@ empresa Corporación Agamenón") ese día; producción se activa solo cuando tod
       61 tablas y los 36 candados — GitHub Actions, ejecución 13 de `respaldo`. Desde entonces
       cada respaldo diario se prueba igual: `scripts/probar-respaldo.sh`)
 - [x] Revisión de seguridad final hecha (`docs/SEGURIDAD.md`, 02/11/2026)
-- [ ] Confirmado si SUNAT exige homologación / autorización previa del SEE - Del Contribuyente
-      (fuentes secundarias dicen que la homologación se eliminó en 2017; falta leer el texto oficial)
-- [ ] Revisado el impacto de R.S. 000048-2026 (fuentes secundarias: postergada por otra resolución;
-      entre otros cambios, una nota de crédito solo podrá modificar un comprobante; falta el texto oficial)
+- [x] Confirmado si SUNAT exige homologación / autorización previa del SEE - Del Contribuyente
+      (**no**: la R.S. 287-2017/SUNAT, del 08/11/2017, eliminó la solicitud de autorización y la
+      homologación. Hoy basta, en SOL: indicar que se desea emitir por el SEE - Del Contribuyente,
+      tener RUC activo y habido y afecto a renta de tercera, registrar el certificado digital vigente
+      y un correo. Texto oficial leído el 03/11/2026 en sunat.gob.pe/legislacion/superin/2017/287-2017.pdf)
+- [x] Revisado el impacto de R.S. 000048-2026 (texto oficial y R.S. 000143-2026 leídos el 03/11/2026:
+      rige desde el **1-ene-2027**. Para este facturador: factura y su nota se envían hasta 3 días
+      después de emitidas; comunicación de baja y resumen diario de boletas hasta el 7.º día; una nota
+      de crédito modifica UN comprobante. Todo eso ya se cumple (parámetros PLAZO_* y una sola
+      referencia por nota). Contingencia: si no se puede emitir electrónicamente, solo comprobantes
+      impresos por imprenta autorizada (ya no tickets ni otros documentos autorizados) — el plan B
+      sigue siendo emitir electrónicamente por la app o SOL de SUNAT)
 
 Antes de vender a otros negocios: confirmar con un contador o abogado tributario
 si debes inscribirte como **PSE** (Proveedor de Servicios Electrónicos), y tener

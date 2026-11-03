@@ -15,7 +15,7 @@ import { TipoComprobante, idComprobanteLegible } from '../tipos.js';
 import { TipoDocIdentidad } from '../validaciones/documentos.js';
 import { moverStockPorComprobante, productosPorSku } from '../inventario/stock.js';
 import { prepararComprobante, type SolicitudComprobante } from './preparar.js';
-import { ErrorConfiguracion, cargarComprobante, cargarContexto, type ComprobanteGuardado } from './repositorio.js';
+import { ErrorConfiguracion, cargarComprobante, cargarContexto, parametro, type ComprobanteGuardado } from './repositorio.js';
 
 export interface PedidoEmision {
   empresaId: string;
@@ -229,11 +229,17 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
   // Una nota de crédito reduce lo que debe el cliente del comprobante original.
   if (referenciaId) await recalcularCobro(tx, referenciaId);
 
-  // ⚠️ El plazo legal exacto se confirmará en la fase 4; por ahora 3 días calendario para facturas.
+  // Plazo legal para que llegue a SUNAT (parámetros con vigencia, no fijos aquí). Contado desde el
+  // día siguiente a la emisión: factura y su nota, 3 días; boleta y su nota, 7 días (lo que permite
+  // el resumen diario). Fuente: R.S. 097-2012/SUNAT arts. 12.1 y 14.2, con el texto de la
+  // R.S. 000048-2026/SUNAT (vigente desde el 1-ene-2027 según la R.S. 000143-2026/SUNAT),
+  // consultadas el 03/11/2026 en sunat.gob.pe y elperuano.pe.
+  const deBoleta = c.tipo === TipoComprobante.BOLETA || s.notaCredito?.referencia.tipo === TipoComprobante.BOLETA;
+  const plazo = await parametro(tx, deBoleta ? 'PLAZO_RESUMEN_BOLETAS_DIAS' : 'PLAZO_ENVIO_FACTURA_DIAS', ctx.empresa.regimen, c.fechaEmision);
   await tx.query(
     `INSERT INTO cola_envios (empresa_id, tipo, referencia_id, fecha_limite_legal)
-     VALUES ($1, 'COMPROBANTE', $2, $3::date + 3)`,
-    [p.empresaId, id, c.fechaEmision],
+     VALUES ($1, 'COMPROBANTE', $2, $3::date + $4::int)`,
+    [p.empresaId, id, c.fechaEmision, plazo.toNumber()],
   );
 
   await tx.query(
