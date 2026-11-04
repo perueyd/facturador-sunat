@@ -99,7 +99,11 @@ describe.skipIf(!URL_PRUEBAS)('API HTTP', () => {
     });
 
     it('la llave se guarda solo como huella (hash)', async () => {
-      const secreto = llave.split('_').at(-1)!;
+      // El secreto completo (43 caracteres). Antes se cortaba por el último "_", pero el secreto
+      // también puede traer "_": a veces quedaba un pedazo de 1 o 2 letras que aparecía por
+      // casualidad entre los números de la huella, y la prueba fallaba sin motivo real.
+      const secreto = llave.replace(/^fk_[0-9a-f]{12}_/, '');
+      expect(secreto).toHaveLength(43);
       const r = await db.query(`SELECT hash FROM api_llaves WHERE empresa_id = $1`, [f.empresaId]);
       expect(JSON.stringify(r.rows)).not.toContain(secreto);
     });

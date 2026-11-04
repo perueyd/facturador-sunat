@@ -185,3 +185,21 @@ button.acceso small { color: var(--gris); font-size: 13px; }
   .pestanas button { flex: 1 1 30%; padding: 8px 4px; font-size: 13px; border: 1px solid var(--borde); border-radius: 8px; background: #fff; }
   .pestanas button.activa { color: #fff; background: var(--tinta); border-color: var(--tinta); margin-bottom: 0; }
 }
+
+/* Vender: Boleta / Factura como dos botones grandes. */
+.eleccion { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 10px; }
+.eleccion button { padding: 12px 8px; font-size: 16px; font-weight: 600; background: #fff; color: var(--tinta); border: 2px solid var(--borde); border-radius: 10px; }
+.eleccion button small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--gris); }
+.eleccion button.activa { border-color: var(--tinta); background: #f2f2f2; }
+/* El botón de emitir (con el total) queda a la vista al bajar por el formulario. */
+.boton-fijo { position: sticky; bottom: 10px; z-index: 5; box-shadow: 0 4px 14px rgba(0, 0, 0, .18); }
+/* En qué empresa se trabaja, en el encabezado. */
+.empresa-actual { flex: 0 1 auto; margin-left: auto; padding: 2px 8px; font-size: 12px; color: var(--tinta); background: var(--ambar); border-radius: 999px; max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Aviso de configuración que lleva a donde falta. */
+.aviso-boton { display: block; width: 100%; text-align: left; cursor: pointer; font-size: 15px; }
+.aviso-boton { color: var(--tinta); font-weight: 600; border: 1px solid #f5c26b; }
+@media (max-width: 600px) {
+  /* En el celular el encabezado muestra la empresa (lo importante) en vez del nombre de la persona. */
+  header #quien { display: none; }
+  .empresa-actual { max-width: 60vw; }
+}

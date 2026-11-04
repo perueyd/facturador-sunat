@@ -137,6 +137,18 @@ async function cargarConfiguracion() {
   $('#caja-configuracion').hidden = hechos === pasos.length;
 }
 
+/** Aviso en Inicio: lo que le falta a la empresa para emitir de verdad, con un toque para ir ahí. */
+async function avisoConfiguracion() {
+  const aviso = $('#aviso-configuracion');
+  if (!yo?.puedeAdministrar) { aviso.hidden = true; return; }
+  const { pasos } = await api('/configuracion');
+  const faltan = pasos.filter((p) => !p.listo && !/opcional/i.test(p.titulo));
+  aviso.hidden = !faltan.length;
+  aviso.textContent = faltan.length
+    ? `⚠️ Te ${faltan.length === 1 ? 'falta 1 paso' : `faltan ${faltan.length} pasos`} para emitir de verdad. Lo siguiente: ${faltan[0].titulo}. Toca aquí.`
+    : '';
+}
+
 async function alGuardarSol(e) {
   e.preventDefault();
   try {
@@ -299,6 +311,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-cierre').addEventListener('submit', alCerrarCaja);
   $('#condicion-compra').addEventListener('change', (e) => { $('#caja-vence-compra').hidden = e.target.value !== 'CREDITO'; $('#form-compra').vence.required = e.target.value === 'CREDITO'; });
   $('#admin-alta').addEventListener('click', async () => { await abrirPestana('mas'); $('#caja-empresa-nueva').open = true; $('#caja-empresa-nueva').scrollIntoView({ behavior: 'smooth' }); });
+  $('#aviso-configuracion').addEventListener('click', async () => {
+    await abrirPestana('mas');
+    $('#caja-configuracion').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
   $('#aliado-alta').addEventListener('click', async () => { await abrirPestana('mas'); $('#caja-empresa-nueva').open = true; $('#caja-empresa-nueva').scrollIntoView({ behavior: 'smooth' }); });
   $('#admin-reportes').addEventListener('click', () => $('#titulo-reportes').scrollIntoView({ behavior: 'smooth' }));
   $('#admin-salud').addEventListener('click', () => $('#titulo-salud').scrollIntoView({ behavior: 'smooth' }));
@@ -317,6 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('#agregar-cuota').addEventListener('click', agregarCuota);
   // El crédito en cuotas solo existe para facturas (lo valida también el facturador).
+  for (const b of document.querySelectorAll('#elegir-tipo button')) b.addEventListener('click', () => elegirTipo(b.dataset.tipo));
   $('#form-emitir').tipo.addEventListener('change', limitarFechaVenta);
   $('#fecha-venta').addEventListener('change', limitarFechaVenta);
   $('#form-emitir').tipo.addEventListener('change', (e) => {

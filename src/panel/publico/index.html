@@ -22,6 +22,7 @@
   <header>
     <strong>Facturador</strong>
     <span id="quien"></span>
+    <span id="empresa-actual" class="empresa-actual" hidden></span>
     <button id="instalar-app" class="enlace" hidden>📲 Instalar app</button>
     <button id="salir" class="enlace" hidden>Salir</button>
   </header>
@@ -173,8 +174,9 @@
       </nav>
 
       <div data-vista="inicio" hidden>
-        <h1>Panel de control</h1>
-        <p class="nota">Todo lo de tu negocio en un toque.</p>
+        <h1>Inicio</h1>
+        <!-- Si a la empresa le falta configurar algo (certificado, usuario SOL…), se dice aquí arriba. -->
+        <button type="button" class="aviso aviso-boton" id="aviso-configuracion" hidden></button>
         <div id="accesos" class="accesos"></div>
         <!-- Tablero: cada tarjeta aparece solo si la función está activa para la empresa -->
         <!-- Ventas en números (función "estadisticas"; dueño, administrador y contador) -->
@@ -182,6 +184,8 @@
         <div id="tablero" class="tablero"></div>
         <p class="nota" id="nota-estimado" hidden>Los impuestos mostrados son <strong>estimados</strong>: confírmalos con tu contador antes de declarar.</p>
 
+        <details class="ajustes" id="caja-graficos">
+          <summary>📈 Ver gráficos de ventas</summary>
         <div id="graficos" class="graficos" hidden>
           <div class="grafico">
             <h3>Ventas de los últimos 6 meses</h3>
@@ -206,6 +210,7 @@
             <div id="graf-vendedores" class="barras"></div>
           </div>
         </div>
+        </details>
       </div>
 
       <div data-vista="vender">
@@ -217,11 +222,16 @@
         <div id="botones-rapidos" class="botones-rapidos"></div>
       </section>
       <form id="form-emitir">
-        <div class="fila">
-          <label>Tipo
-            <select name="tipo"><option value="BOLETA">Boleta</option><option value="FACTURA">Factura</option></select></label>
-          <label>Venta por <select name="canal" id="canal"></select></label>
-        </div>
+        <fieldset>
+          <legend>1. ¿Qué vas a emitir?</legend>
+          <!-- Dos botones grandes en vez de una lista; el select sigue siendo el valor real del formulario. -->
+          <div class="eleccion" id="elegir-tipo">
+            <button type="button" data-tipo="BOLETA" class="activa">🧾 Boleta<small>a personas (DNI o sin documento)</small></button>
+            <button type="button" data-tipo="FACTURA">📄 Factura<small>a empresas (con RUC)</small></button>
+          </div>
+          <select name="tipo" hidden><option value="BOLETA">Boleta</option><option value="FACTURA">Factura</option></select>
+          <label>¿Por dónde fue la venta? <select name="canal" id="canal"></select></label>
+        </fieldset>
         <details class="ajustes" id="caja-fecha-venta">
           <summary>¿La venta fue otro día?</summary>
           <p class="nota">Solo si la venta (entrega o cobro) fue en un día anterior y no se emitió a tiempo, por ejemplo
@@ -231,7 +241,7 @@
         </details>
 
         <fieldset>
-          <legend>Cliente</legend>
+          <legend>2. Cliente</legend>
           <div class="fila">
             <label>Documento
               <select name="tipoDocumento">
@@ -245,7 +255,7 @@
         </fieldset>
 
         <fieldset>
-          <legend>Productos <small>(precio con IGV)</small></legend>
+          <legend>3. Productos <small>(precio con IGV)</small></legend>
           <!-- Un lector de códigos USB/Bluetooth escribe aquí como un teclado y termina con Enter. -->
           <div class="fila escaner">
             <label>Código o código de barras <input id="codigo-venta" autocomplete="off" maxlength="40" placeholder="Escanea o escribe y pulsa Enter"></label>
@@ -259,18 +269,7 @@
         </fieldset>
 
         <fieldset>
-          <legend>Forma de pago</legend>
-          <label><select name="formaPago" id="forma-pago">
-            <option value="CONTADO">Contado</option><option value="CREDITO" id="opcion-credito" disabled>Crédito en cuotas (solo factura)</option></select></label>
-          <div id="caja-cuotas" hidden>
-            <small>Monto con IGV y fecha de cada cuota. Deben sumar el total de la factura. Si te dan un adelanto, regístralo en "Cobrar" al emitir.</small>
-            <div id="cuotas"></div>
-            <button type="button" id="agregar-cuota" class="secundario">+ Agregar cuota</button>
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend>Pago</legend>
+          <legend>4. ¿Cómo pagó?</legend>
           <div class="fila">
             <label>Medio
               <select name="medio">
@@ -279,10 +278,21 @@
               </select></label>
             <label>Nº de operación <input name="referencia" maxlength="60"></label>
           </div>
+          <!-- Al crédito solo existe para facturas: para una boleta ni se muestra. -->
+          <div id="caja-forma-pago" hidden>
+            <label>¿La factura es al crédito?
+              <select name="formaPago" id="forma-pago">
+                <option value="CONTADO">No, al contado</option><option value="CREDITO" id="opcion-credito" disabled>Sí, en cuotas</option></select></label>
+            <div id="caja-cuotas" hidden>
+              <small>Monto con IGV y fecha de cada cuota. Deben sumar el total de la factura. Si te dan un adelanto, regístralo en "Cobrar" al emitir.</small>
+              <div id="cuotas"></div>
+              <button type="button" id="agregar-cuota" class="secundario">+ Agregar cuota</button>
+            </div>
+          </div>
         </fieldset>
 
         <p class="aviso" id="aviso-cotizacion" hidden></p>
-        <button type="submit" id="boton-emitir">Emitir</button>
+        <button type="submit" id="boton-emitir" class="boton-fijo">Emitir boleta</button>
         <details class="ajustes">
           <summary>¿Solo un presupuesto? Guardar como cotización</summary>
           <p class="nota">No es comprobante de pago: no va a SUNAT ni cuenta como venta. Cuando el cliente acepte, la vendes con un toque.</p>
