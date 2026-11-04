@@ -42,7 +42,7 @@ function usarCotizacion(k) {
   if (!k) return;
   $('#aviso-cotizacion').textContent = `Vendiendo la cotización ${k.numero}: revisa los datos, elige cómo pagó y pulsa Emitir.`;
   const f = $('#form-emitir');
-  f.tipo.value = k.cliente.tipoDocumento === 'RUC' ? 'FACTURA' : 'BOLETA';
+  elegirTipo(k.cliente.tipoDocumento === 'RUC' ? 'FACTURA' : 'BOLETA');
   f.tipoDocumento.value = k.cliente.tipoDocumento;
   f.numero.value = k.cliente.numero;
   f.nombre.value = k.cliente.nombre;
@@ -99,28 +99,19 @@ async function cargarCotizaciones() {
 // ---------- Panel de control (inicio del dueño) ----------
 // Cada acceso lleva a una pestaña o a una sección de "Más". Solo se muestran los que el rol
 // y el plan permiten (si la pestaña o la sección están ocultas, el acceso tampoco sale).
+// Solo lo que se HACE en el día (los lugares ya están en las pestañas de arriba). El último
+// valor dice quién lo ve; la configuración no va aquí: si falta algo, sale el aviso de arriba.
 const ACCESOS = [
-  ['🏢', 'Panel del administrador', 'Tus clientes, cobros, uso y salud del sistema', 'plataforma'],
-  ['🧾', 'Vender', 'Boletas y facturas', 'vender'],
-  ['💰', 'Cobros y caja', 'Por cobrar, caja y cierre del día', 'cobrar'],
-  ['📦', 'Stock', 'Productos, reposición y Kardex', 'stock'],
-  ['🛒', 'Compras', 'Registrar compras a proveedores', 'compras'],
-  ['⚙️', 'Configuración', 'Lo que le falta a tu empresa', 'mas', '#caja-configuracion'],
-  ['👥', 'Usuarios', 'Invitar vendedores o a tu contador', 'mas', '#caja-usuarios'],
-  ['🏦', 'Cuentas de cobro', 'Yape, efectivo, banco…', 'mas', '#caja-cuentas'],
-  ['🖼️', 'Logo', 'El que sale en tus boletas', 'mas', '#caja-logo'],
-  ['🔐', 'Certificado digital', 'Para firmar los comprobantes', 'mas', '#caja-certificado'],
-  ['🔑', 'Usuario SOL', 'Para pasar a producción', 'mas', '#caja-sol'],
-  ['📊', 'Para tu contador', 'Ventas del mes en Excel', 'mas', '#caja-exportar'],
-  ['➕', 'Empresa nueva', 'Dar de alta a un cliente', 'mas', '#caja-empresa-nueva'],
+  ['🧾', 'Nueva venta', 'Boleta o factura', 'vender', null, () => yo.puedeEmitir],
+  ['💸', 'Registrar un gasto', 'Dinero que sale de la caja', 'cobrar', '#caja-registrar-gasto', () => yo.puedeEmitir && tiene('cobros')],
+  ['🔒', 'Cerrar la caja', 'Contar el dinero del día', 'cobrar', '#caja-cierre', () => yo.verCaja],
+  ['📊', 'Para tu contador', 'Ventas, compras y gastos en Excel', 'mas', '#caja-exportar', () => tiene('exportar')],
+  ['🛠️', 'Panel del administrador', 'Tus clientes, cobros y salud del sistema', 'plataforma', null, () => yo.adminPlataforma],
+  ['🤝', 'Mis clientes', 'Los negocios que trajiste y tu comisión', 'aliado', null, () => Boolean(yo.aliado)],
 ];
 
 function dibujarAccesos() {
-  const visible = (pestana, seccion) => {
-    const boton = document.querySelector(`#pestanas button[data-pestana="${pestana}"]`);
-    return boton && !boton.hidden && !(seccion && $(seccion).hidden);
-  };
-  $('#accesos').replaceChildren(...ACCESOS.filter(([, , , pestana, seccion]) => visible(pestana, seccion)).map(([icono, titulo, detalle, pestana, seccion]) => {
+  $('#accesos').replaceChildren(...ACCESOS.filter((a) => a[5]()).map(([icono, titulo, detalle, pestana, seccion]) => {
     const b = Object.assign(document.createElement('button'), { type: 'button', className: 'acceso' });
     b.append(Object.assign(document.createElement('span'), { className: 'icono', textContent: icono }),
       Object.assign(document.createElement('strong'), { textContent: titulo }), Object.assign(document.createElement('small'), { textContent: detalle }));
@@ -128,6 +119,7 @@ function dibujarAccesos() {
       await abrirPestana(pestana);
       if (!seccion) return;
       const destino = $(seccion);
+      destino.hidden = false;
       if (destino.tagName === 'DETAILS') destino.open = true;
       destino.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });

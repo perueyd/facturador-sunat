@@ -206,6 +206,7 @@ async function alEmitir(e) {
     // Listo: el siguiente comprobante es otro pedido.
     pedidoActual = nuevoPedido();
     e.target.reset();
+    elegirTipo('BOLETA');
     $('#items').replaceChildren();
     $('#cuotas').replaceChildren();
     $('#caja-cuotas').hidden = true;
@@ -217,7 +218,7 @@ async function alEmitir(e) {
     $('#error-emitir').textContent = [err.message, ...(err.detalles || [])].join('\n');
   } finally {
     b.disabled = false;
-    b.textContent = 'Emitir';
+    textoBotonEmitir();
   }
 }
 

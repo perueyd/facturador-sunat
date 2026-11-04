@@ -55,6 +55,26 @@ function recalcularTotal() {
     total += precio * BigInt(cantidad);
   }
   $('#total').textContent = textoSoles(total);
+  textoBotonEmitir();
+}
+
+/** "Emitir boleta · S/ 470.00": se ve qué y cuánto se va a emitir, sin bajar hasta el total. */
+function textoBotonEmitir() {
+  const b = $('#boton-emitir');
+  if (b.disabled) return;
+  const tipo = $('#form-emitir').tipo.value === 'FACTURA' ? 'factura' : 'boleta';
+  const total = $('#total').textContent;
+  b.textContent = /^S\//.test(total) && total !== 'S/ 0.00' ? `Emitir ${tipo} · ${total}` : `Emitir ${tipo}`;
+}
+
+/** Botones Boleta / Factura: marcan el elegido y actualizan lo que depende del tipo. */
+function elegirTipo(tipo) {
+  const select = $('#form-emitir').tipo;
+  select.value = tipo;
+  for (const b of document.querySelectorAll('#elegir-tipo button')) b.classList.toggle('activa', b.dataset.tipo === tipo);
+  $('#caja-forma-pago').hidden = tipo !== 'FACTURA';
+  select.dispatchEvent(new Event('change'));
+  textoBotonEmitir();
 }
 
 function agregarItem() {
@@ -120,6 +140,9 @@ async function cargarPanel() {
 
   $('#canal').replaceChildren(...yo.canales.map((c) => new Option(c, c)));
   $('#form-emitir').hidden = !yo.puedeEmitir;
+  // En qué empresa se está trabajando, siempre a la vista (para no emitir en la equivocada).
+  $('#empresa-actual').hidden = !yo.empresa;
+  $('#empresa-actual').textContent = yo.empresa ? `${yo.empresa.razonSocial} · ${yo.empresa.ruc}` : '';
   limitarFechaVenta();
   $('#sin-permiso').hidden = yo.puedeEmitir;
   if (!yo.puedeEmitir) $('#venta-rapida').hidden = true;
@@ -160,6 +183,7 @@ async function cargarPanel() {
   // pestañas y había que bajar para encontrarlas). Quien solo vende entra directo a Vender.
   $('#boton-inicio').hidden = false;
   dibujarAccesos();
+  avisoConfiguracion().catch(() => { $('#aviso-configuracion').hidden = true; });
   await abrirPestana(yo.puedeEmitir && !yo.puedeAdministrar ? 'vender' : 'inicio');
   await Promise.all([cargarTablero(), cargarLista(), cargarVentaRapida().catch(() => undefined), cargarCotizaciones().catch(() => undefined)]);
 }
