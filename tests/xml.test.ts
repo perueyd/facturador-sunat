@@ -7,7 +7,7 @@ import { nombreArchivoComprobante } from '../src/xml/nombres.js';
 import { generarXmlComunicacionBaja, generarXmlResumenDiario, idResumen } from '../src/xml/resumenes.js';
 import { Afectacion, TipoComprobante, type Comprobante } from '../src/tipos.js';
 import { TipoDocIdentidad } from '../src/validaciones/documentos.js';
-import { RUC_EMPRESA, contextoPrueba, empresaPrueba, item, solicitudBoleta, solicitudFactura, validarContraXsd } from './ayudantes.js';
+import { RUC_EMPRESA, contextoPrueba, empresaPrueba, item, boletaFija as solicitudBoleta, facturaFija as solicitudFactura, validarContraXsd } from './ayudantes.js';
 
 function armar(s: SolicitudComprobante, numero = 1, ctx = contextoPrueba): Comprobante {
   const r = prepararComprobante(s, ctx);

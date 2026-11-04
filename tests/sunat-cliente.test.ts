@@ -12,7 +12,7 @@ import { comprimirXml, extraerXml } from '../src/sunat/zip.js';
 import { generarXmlComprobante } from '../src/xml/comprobante.js';
 import { nombreArchivoComprobante } from '../src/xml/nombres.js';
 import { generarXmlComunicacionBaja } from '../src/xml/resumenes.js';
-import { RUC_EMPRESA, contextoPrueba, empresaPrueba, solicitudBoleta } from './ayudantes.js';
+import { RUC_EMPRESA, contextoPrueba, empresaPrueba, boletaFija as solicitudBoleta } from './ayudantes.js';
 import { crearPfxPrueba } from './certificado-prueba.js';
 import { SunatSimulado } from './sunat-simulado.js';
 

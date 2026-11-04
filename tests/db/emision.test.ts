@@ -1,6 +1,7 @@
 /**
  * Pruebas con PostgreSQL real: correlativos, duplicados, transacciones y protecciones.
  */
+import { ahoraLima, sumarDias } from '../../src/fechas.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { emitirComprobante, type PedidoEmision, type ResultadoEmision } from '../../src/comprobantes/emitir.js';
 import { cargarComprobante } from '../../src/comprobantes/repositorio.js';
@@ -79,6 +80,21 @@ describe.skipIf(!URL_PRUEBAS)('emisión con base de datos', () => {
     )).rows[0].dias;
     expect(await limite(emitido(await emitirComprobante(db, pedido())).id)).toBe(7);
     expect(await limite(emitido(await emitirComprobante(db, pedido({ solicitud: solicitudFactura() }))).id)).toBe(3);
+  });
+
+  it('venta de otro día: dentro del plazo de SUNAT se emite con esa fecha; fuera, se frena sin gastar número', async () => {
+    // SUNAT rechaza (2108/2600/4347) lo que llega fuera de plazo, y el número ya quedaba gastado.
+    const hoy = ahoraLima().fecha;
+    const boleta = emitido(await emitirComprobante(db, pedido({ solicitud: solicitudBoleta({ fechaEmision: sumarDias(hoy, -7) }) })));
+    expect(boleta.comprobante.fechaEmision).toBe(sumarDias(hoy, -7));
+    const tarde = await emitirComprobante(db, pedido({ solicitud: solicitudBoleta({ fechaEmision: sumarDias(hoy, -8) }) }));
+    expect(tarde).toMatchObject({ resultado: 'ERROR_VALIDACION', errores: [expect.stringMatching(/boletas hasta 7 días/)] });
+    expect(emitido(await emitirComprobante(db, pedido({ solicitud: solicitudFactura({ fechaEmision: sumarDias(hoy, -3) }) }))).comprobante.numero).toBe(1);
+    expect(await emitirComprobante(db, pedido({ solicitud: solicitudFactura({ fechaEmision: sumarDias(hoy, -4) }) })))
+      .toMatchObject({ resultado: 'ERROR_VALIDACION', errores: [expect.stringMatching(/facturas hasta 3 días/)] });
+    // Los rechazos no gastaron número.
+    expect(await ultimoNumero('B001')).toBe(1);
+    expect(await ultimoNumero('F001')).toBe(1);
   });
 
   it('el XML del comprobante guardado es idéntico al calculado y cumple UBL 2.1', async () => {

@@ -120,6 +120,7 @@ async function cargarPanel() {
 
   $('#canal').replaceChildren(...yo.canales.map((c) => new Option(c, c)));
   $('#form-emitir').hidden = !yo.puedeEmitir;
+  limitarFechaVenta();
   $('#sin-permiso').hidden = yo.puedeEmitir;
   if (!yo.puedeEmitir) $('#venta-rapida').hidden = true;
   $('#caja-exportar').hidden = !tiene('exportar');

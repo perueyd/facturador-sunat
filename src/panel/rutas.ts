@@ -392,6 +392,13 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       `SELECT valor::text FROM parametros_tributarios WHERE codigo = 'IGV_TASA' AND regimen IS NULL
          AND vigente_desde <= current_date AND (vigente_hasta IS NULL OR vigente_hasta >= current_date) ORDER BY vigente_desde DESC LIMIT 1`,
     )).rows[0]?.valor as string | undefined;
+    // Cuántos días atrás se puede fechar una venta (plazo de envío a SUNAT, parámetro con vigencia).
+    // Solo para el formulario: el facturador lo vuelve a revisar al emitir.
+    const plazo = async (codigo: string) => Number((await d.db.query(
+      `SELECT valor::text FROM parametros_tributarios WHERE codigo = $1 AND regimen IS NULL
+         AND vigente_desde <= current_date AND (vigente_hasta IS NULL OR vigente_hasta >= current_date) ORDER BY vigente_desde DESC LIMIT 1`, [codigo],
+    )).rows[0]?.valor ?? 0);
+    const diasAtras = { BOLETA: await plazo('PLAZO_RESUMEN_BOLETAS_DIAS'), FACTURA: await plazo('PLAZO_ENVIO_FACTURA_DIAS') };
     // Plan del cliente: el dueño y el administrador ven todo; los demás, solo si pueden emitir.
     const sus = s.empresa ? await suscripcionDe(d.db, s.empresa.id) : undefined;
     const plan = !sus ? null : ROLES_CORRIGEN.includes(s.empresa!.rol) ? sus : { puedeEmitir: sus.puedeEmitir, ...(sus.motivo ? { motivo: sus.motivo } : {}) };
@@ -405,7 +412,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       : [];
     return c.json({
       plan, bloqueadas,
-      nombre: s.nombre, email: s.email, codigosRespaldo: await codigosRespaldoRestantes(d.db, s.usuarioId), empresas: s.empresas, empresa: s.empresa ?? null, canales, igvTasa: igv ?? null,
+      nombre: s.nombre, email: s.email, codigosRespaldo: await codigosRespaldoRestantes(d.db, s.usuarioId), empresas: s.empresas, empresa: s.empresa ?? null, canales, igvTasa: igv ?? null, diasAtras,
       puedeEmitir: Boolean(s.empresa && ROLES_EMISORES.includes(s.empresa.rol)),
       puedeCorregir: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol) && s.empresa.modulos.includes('notas')),
       puedeAdministrar: Boolean(s.empresa && ROLES_CORRIGEN.includes(s.empresa.rol)),

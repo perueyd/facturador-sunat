@@ -178,6 +178,8 @@ async function alEmitir(e) {
     pedido: pedidoActual,
     canal: f.get('canal'),
     tipo: f.get('tipo'),
+    // Vacío o igual a hoy: el facturador pone la fecha de hoy.
+    ...(f.get('fecha') && f.get('fecha') !== hoyLima() ? { fecha: f.get('fecha') } : {}),
     items,
     ...(tipoDocumento !== 'NINGUNO' || f.get('nombre')
       ? { cliente: { tipoDocumento, numero: String(f.get('numero')).trim(), nombre: String(f.get('nombre')).trim() } }

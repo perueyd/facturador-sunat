@@ -3,6 +3,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ahoraLima } from '../src/fechas.js';
 import { Decimal } from '../src/dinero.js';
 import type { ContextoEmpresa, SolicitudComprobante } from '../src/comprobantes/preparar.js';
 import { Afectacion, TipoComprobante, type Empresa, type ItemEntrada } from '../src/tipos.js';
@@ -46,11 +47,16 @@ export function item(precio: string, cantidad = '1', extra: Partial<ItemEntrada>
   };
 }
 
+/** Fecha fija para las pruebas que comparan el XML o el PDF texto por texto. */
+export const FECHA_FIJA = '2026-10-20';
+
+// Por defecto, hoy en Lima: el facturador no deja emitir con una fecha más antigua que el plazo
+// de envío a SUNAT (3 días factura, 7 boleta), así que una fecha fija dejaría de servir con el tiempo.
 export function solicitudBoleta(extra: Partial<SolicitudComprobante> = {}): SolicitudComprobante {
   return {
     tipo: TipoComprobante.BOLETA,
     serie: 'B001',
-    fechaEmision: '2026-10-20',
+    fechaEmision: ahoraLima().fecha,
     horaEmision: '10:30:00',
     cliente: { tipoDoc: TipoDocIdentidad.DNI, numeroDoc: '12345678', nombre: 'JUAN PÉREZ' },
     items: [item('350.00')],
@@ -63,7 +69,7 @@ export function solicitudFactura(extra: Partial<SolicitudComprobante> = {}): Sol
   return {
     tipo: TipoComprobante.FACTURA,
     serie: 'F001',
-    fechaEmision: '2026-10-20',
+    fechaEmision: ahoraLima().fecha,
     horaEmision: '11:00:00',
     cliente: { tipoDoc: TipoDocIdentidad.RUC, numeroDoc: RUC_CLIENTE, nombre: 'CLIENTE EMPRESA S.A.C.', direccion: 'JR. CLIENTE 456' },
     items: [item('1180.00'), item('59.90', '2', { codigo: 'ACC-010', descripcion: 'Almohada & funda "premium"' })],
@@ -91,3 +97,7 @@ export function validarContraXsd(xml: string, esquema: 'UBL-Invoice-2.1.xsd' | '
     throw new Error(`El XML no cumple el esquema UBL 2.1:\n${err.stderr?.toString() ?? String(e)}`);
   }
 }
+
+/** Las mismas solicitudes con FECHA_FIJA, para las pruebas sin base que comparan fechas exactas. */
+export const boletaFija = (extra: Partial<SolicitudComprobante> = {}) => solicitudBoleta({ fechaEmision: FECHA_FIJA, ...extra });
+export const facturaFija = (extra: Partial<SolicitudComprobante> = {}) => solicitudFactura({ fechaEmision: FECHA_FIJA, ...extra });

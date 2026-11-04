@@ -1,6 +1,7 @@
 /**
  * Pruebas de firma con PostgreSQL real: certificado cifrado, firma única e inmutable.
  */
+import { ahoraLima } from '../../src/fechas.js';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -109,7 +110,7 @@ describe.skipIf(!URL_PRUEBAS)('firma con base de datos', () => {
       const id = await emitirBoleta();
       const r = await firmarComprobante(db, servicios, id);
       expect(r.yaFirmado).toBe(false);
-      expect(r.ruta).toMatch(/^20\d{9}\/2026\/10\/20\d{9}-03-B001-1-[0-9a-f]{12}\.xml$/);
+      expect(r.ruta).toMatch(new RegExp(`^20\\d{9}/${ahoraLima().fecha.slice(0, 7).replace('-', '/')}/20\\d{9}-03-B001-1-[0-9a-f]{12}\\.xml$`));
 
       const c = await db.query(`SELECT hash_firma, firmado_con_certificado, firma_algoritmo, firmado_en, estado FROM comprobantes WHERE id = $1`, [id]);
       expect(c.rows[0].hash_firma).toBe(r.hashFirma);

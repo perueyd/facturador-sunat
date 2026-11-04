@@ -12,7 +12,7 @@ import { anularPago, estadoCobro, registrarPago, revisarVencimientos, type Nuevo
 import { procesarCola, type ServiciosEnvio } from '../../src/cola/procesar.js';
 import { emitirComprobante } from '../../src/comprobantes/emitir.js';
 import type { Db } from '../../src/db/conexion.js';
-import { ahoraLima } from '../../src/fechas.js';
+import { ahoraLima, sumarDias } from '../../src/fechas.js';
 import { guardarCertificado } from '../../src/firma/repositorio-certificados.js';
 import { resumenDelDia } from '../../src/reportes/resumen-dia.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
@@ -132,20 +132,23 @@ describe.skipIf(!URL_PRUEBAS)('cobros', () => {
   });
 
   it('cuotas: los pagos cubren las cuotas en orden y se avisa de vencimientos', async () => {
+    // Fechas relativas a hoy: el facturador no emite con una fecha más antigua que el plazo de SUNAT.
+    const hoyLima = ahoraLima().fecha;
+    const vence2 = sumarDias(hoyLima, 60);
     const id = await emitir(solicitudFactura({
-      fechaEmision: '2026-01-10', items: [item('1000.00')],
-      formaPago: { tipo: 'CREDITO', cuotas: [{ monto: '600.00', fechaVencimiento: '2026-02-10' }, { monto: '400.00', fechaVencimiento: '2026-03-10' }] },
+      fechaEmision: hoyLima, items: [item('1000.00')],
+      formaPago: { tipo: 'CREDITO', cuotas: [{ monto: '600.00', fechaVencimiento: sumarDias(hoyLima, 30) }, { monto: '400.00', fechaVencimiento: vence2 }] },
     }));
-    await pagar(id, { monto: '700.00', fecha: '2026-02-01' });
+    await pagar(id, { monto: '700.00', fecha: hoyLima });
     const q = await db.query(`SELECT numero_cuota, monto_pagado, pagada FROM comprobante_cuotas WHERE comprobante_id = $1 ORDER BY numero_cuota`, [id]);
     expect(q.rows).toEqual([{ numero_cuota: 1, monto_pagado: '600.00', pagada: true }, { numero_cuota: 2, monto_pagado: '100.00', pagada: false }]);
 
-    expect(await revisarVencimientos(db, '2026-03-08')).toBe(1); // cuota 2 vence en 2 días
-    expect(await revisarVencimientos(db, '2026-03-11')).toBe(1); // ya venció
+    expect(await revisarVencimientos(db, sumarDias(vence2, -2))).toBe(1); // cuota 2 vence en 2 días
+    expect(await revisarVencimientos(db, sumarDias(vence2, 1))).toBe(1); // ya venció
     const a = await db.query(`SELECT tipo, severidad, mensaje FROM alertas WHERE empresa_id = $1 ORDER BY id`, [f.empresaId]);
     expect(a.rows.map((x) => [x.tipo, x.severidad])).toEqual([['CUOTA_POR_VENCER', 'AMARILLO'], ['CUOTA_VENCIDA', 'ROJO']]);
     expect(a.rows[1].mensaje).toMatch(/cuota 2 de F001-00000001 .* faltan S\/ 300\.00/);
-    await revisarVencimientos(db, '2026-03-12');
+    await revisarVencimientos(db, sumarDias(vence2, 2));
     expect((await db.query(`SELECT count(*)::int AS n FROM alertas WHERE empresa_id = $1`, [f.empresaId])).rows[0].n).toBe(2); // sin duplicar
   });
 
