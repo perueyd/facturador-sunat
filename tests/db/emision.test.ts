@@ -73,22 +73,30 @@ describe.skipIf(!URL_PRUEBAS)('emisión con base de datos', () => {
     expect(aud.rows[0]?.accion).toBe('EMITIR');
   });
 
-  it('plazo legal de envío según el tipo: factura 3 días, boleta 7 (parámetros, no fijos en el código)', async () => {
-    // Antes todo comprobante llevaba 3 días fijos: una boleta, que tiene 7, avisaba "vence" antes de tiempo.
+  it('plazo legal de envío según el tipo: cada uno con su parámetro, no fijo en el código', async () => {
+    // Antes el plazo estaba fijo en el código. La boleta enviada sola usa PLAZO_ENVIO_BOLETA_DIAS
+    // (provisional 3, migración 038); se comprueba cambiándolo con una fila nueva con vigencia.
     const limite = async (id: string) => (await db.query(
       `SELECT (fecha_limite_legal - c.fecha_emision)::int AS dias FROM cola_envios k JOIN comprobantes c ON c.id = k.referencia_id WHERE k.referencia_id = $1`, [id],
     )).rows[0].dias;
-    expect(await limite(emitido(await emitirComprobante(db, pedido())).id)).toBe(7);
+    expect(await limite(emitido(await emitirComprobante(db, pedido())).id)).toBe(3);
     expect(await limite(emitido(await emitirComprobante(db, pedido({ solicitud: solicitudFactura() }))).id)).toBe(3);
+    // Si SUNAT confirma otro plazo para boletas, basta una fila nueva con su vigencia.
+    await db.query(`INSERT INTO parametros_tributarios (codigo, regimen, valor, vigente_desde, fuente) VALUES ('PLAZO_ENVIO_BOLETA_DIAS', NULL, 5, current_date - 1, 'prueba')`);
+    try {
+      expect(await limite(emitido(await emitirComprobante(db, pedido({ solicitud: solicitudBoleta({ serie: 'B001' }) }))).id)).toBe(5);
+    } finally {
+      await db.query(`DELETE FROM parametros_tributarios WHERE codigo = 'PLAZO_ENVIO_BOLETA_DIAS' AND fuente = 'prueba'`);
+    }
   });
 
   it('venta de otro día: dentro del plazo de SUNAT se emite con esa fecha; fuera, se frena sin gastar número', async () => {
     // SUNAT rechaza (2108/2600/4347) lo que llega fuera de plazo, y el número ya quedaba gastado.
     const hoy = ahoraLima().fecha;
-    const boleta = emitido(await emitirComprobante(db, pedido({ solicitud: solicitudBoleta({ fechaEmision: sumarDias(hoy, -7) }) })));
-    expect(boleta.comprobante.fechaEmision).toBe(sumarDias(hoy, -7));
-    const tarde = await emitirComprobante(db, pedido({ solicitud: solicitudBoleta({ fechaEmision: sumarDias(hoy, -8) }) }));
-    expect(tarde).toMatchObject({ resultado: 'ERROR_VALIDACION', errores: [expect.stringMatching(/boletas hasta 7 días/)] });
+    const boleta = emitido(await emitirComprobante(db, pedido({ solicitud: solicitudBoleta({ fechaEmision: sumarDias(hoy, -3) }) })));
+    expect(boleta.comprobante.fechaEmision).toBe(sumarDias(hoy, -3));
+    const tarde = await emitirComprobante(db, pedido({ solicitud: solicitudBoleta({ fechaEmision: sumarDias(hoy, -4) }) }));
+    expect(tarde).toMatchObject({ resultado: 'ERROR_VALIDACION', errores: [expect.stringMatching(/boletas hasta 3 días/)] });
     expect(emitido(await emitirComprobante(db, pedido({ solicitud: solicitudFactura({ fechaEmision: sumarDias(hoy, -3) }) }))).comprobante.numero).toBe(1);
     expect(await emitirComprobante(db, pedido({ solicitud: solicitudFactura({ fechaEmision: sumarDias(hoy, -4) }) })))
       .toMatchObject({ resultado: 'ERROR_VALIDACION', errores: [expect.stringMatching(/facturas hasta 3 días/)] });

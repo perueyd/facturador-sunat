@@ -91,7 +91,7 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
   // el bien o al cobrar, lo que ocurra primero). Plazos: parámetros con vigencia (ver más abajo).
   const hoy = ahoraLima().fecha;
   const deBoleta = s.tipo === TipoComprobante.BOLETA || s.notaCredito?.referencia.tipo === TipoComprobante.BOLETA;
-  const plazo = (await parametro(tx, deBoleta ? 'PLAZO_RESUMEN_BOLETAS_DIAS' : 'PLAZO_ENVIO_FACTURA_DIAS', ctx.empresa.regimen, s.fechaEmision)).toNumber();
+  const plazo = (await parametro(tx, deBoleta ? 'PLAZO_ENVIO_BOLETA_DIAS' : 'PLAZO_ENVIO_FACTURA_DIAS', ctx.empresa.regimen, s.fechaEmision)).toNumber();
   if (diasEntre(s.fechaEmision, hoy) > plazo) {
     const minimo = sumarDias(hoy, -plazo).split('-').reverse().join('/');
     throw new ErrorValidacion([
@@ -246,8 +246,8 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
   if (referenciaId) await recalcularCobro(tx, referenciaId);
 
   // Plazo legal para que llegue a SUNAT (parámetros con vigencia, no fijos aquí). Contado desde el
-  // día siguiente a la emisión: factura y su nota, 3 días; boleta y su nota, 7 días (lo que permite
-  // el resumen diario). Fuente: R.S. 097-2012/SUNAT arts. 12.1 y 14.2, con el texto de la
+  // día siguiente a la emisión. Factura y su nota: 3 días. Boleta y su nota enviadas una por una:
+  // PLAZO_ENVIO_BOLETA_DIAS (provisional 3, ver migración 038; el resumen diario tiene 7). Fuente: R.S. 097-2012/SUNAT arts. 12.1 y 14.2, con el texto de la
   // R.S. 000048-2026/SUNAT (vigente desde el 1-ene-2027 según la R.S. 000143-2026/SUNAT),
   // consultadas el 03/11/2026 en sunat.gob.pe y elperuano.pe.
   await tx.query(

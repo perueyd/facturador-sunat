@@ -76,7 +76,7 @@ Cabecera en todos (salvo `salud`): `Authorization: Bearer fk_xxxxxxxxxxxx_…`
 | `pedido` | sí | Número de pedido de tu tienda (máx. 100 caracteres) |
 | `tipo` | sí | `BOLETA`, `FACTURA`, `NOTA_CREDITO` |
 | `serie` | no | Por defecto `B001` / `F001` / `BC01` / `FC01` |
-| `fecha` | no | `AAAA-MM-DD` (por defecto, hoy en Lima). Debe ser la fecha REAL de la venta. Se acepta hasta 3 días atrás para facturas y 7 para boletas (plazo de envío a SUNAT, parámetros con vigencia); más atrás responde 422 sin gastar número |
+| `fecha` | no | `AAAA-MM-DD` (por defecto, hoy en Lima). Debe ser la fecha REAL de la venta. Se acepta hasta 3 días atrás para facturas y boletas (plazo de envío a SUNAT, parámetros con vigencia; el de boletas es provisional, ver migración 038); más atrás responde 422 sin gastar número |
 | `marca` | no | Nombre de la marca (por defecto, la del canal) |
 | `cliente.tipoDocumento` | no | `DNI`, `RUC`, `CE`, `PASAPORTE`, `NINGUNO` (por defecto `NINGUNO`: boletas de hasta S/ 700) |
 | `cliente.numero`, `cliente.nombre`, `cliente.direccion` | según el caso | Factura: RUC y razón social obligatorios |

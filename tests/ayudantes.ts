@@ -51,7 +51,7 @@ export function item(precio: string, cantidad = '1', extra: Partial<ItemEntrada>
 export const FECHA_FIJA = '2026-10-20';
 
 // Por defecto, hoy en Lima: el facturador no deja emitir con una fecha más antigua que el plazo
-// de envío a SUNAT (3 días factura, 7 boleta), así que una fecha fija dejaría de servir con el tiempo.
+// de envío a SUNAT (parámetros PLAZO_ENVIO_*), así que una fecha fija dejaría de servir con el tiempo.
 export function solicitudBoleta(extra: Partial<SolicitudComprobante> = {}): SolicitudComprobante {
   return {
     tipo: TipoComprobante.BOLETA,
