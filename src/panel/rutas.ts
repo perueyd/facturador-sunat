@@ -398,7 +398,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       `SELECT valor::text FROM parametros_tributarios WHERE codigo = $1 AND regimen IS NULL
          AND vigente_desde <= current_date AND (vigente_hasta IS NULL OR vigente_hasta >= current_date) ORDER BY vigente_desde DESC LIMIT 1`, [codigo],
     )).rows[0]?.valor ?? 0);
-    const diasAtras = { BOLETA: await plazo('PLAZO_RESUMEN_BOLETAS_DIAS'), FACTURA: await plazo('PLAZO_ENVIO_FACTURA_DIAS') };
+    const diasAtras = { BOLETA: await plazo('PLAZO_ENVIO_BOLETA_DIAS'), FACTURA: await plazo('PLAZO_ENVIO_FACTURA_DIAS') };
     // Plan del cliente: el dueño y el administrador ven todo; los demás, solo si pueden emitir.
     const sus = s.empresa ? await suscripcionDe(d.db, s.empresa.id) : undefined;
     const plan = !sus ? null : ROLES_CORRIGEN.includes(s.empresa!.rol) ? sus : { puedeEmitir: sus.puedeEmitir, ...(sus.motivo ? { motivo: sus.motivo } : {}) };

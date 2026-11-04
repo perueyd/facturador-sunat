@@ -199,7 +199,8 @@ empresa Corporación Agamenón") ese día; producción se activa solo cuando tod
       y un correo. Texto oficial leído el 03/11/2026 en sunat.gob.pe/legislacion/superin/2017/287-2017.pdf)
 - [x] Revisado el impacto de R.S. 000048-2026 (texto oficial y R.S. 000143-2026 leídos el 03/11/2026:
       rige desde el **1-ene-2027**. Para este facturador: factura y su nota se envían hasta 3 días
-      después de emitidas; comunicación de baja y resumen diario de boletas hasta el 7.º día; una nota
+      después de emitidas; comunicación de baja y resumen diario de boletas hasta el 7.º día
+      (la boleta enviada SOLA usa provisionalmente 3 días, migración 038, hasta confirmar su plazo); una nota
       de crédito modifica UN comprobante. Todo eso ya se cumple (parámetros PLAZO_* y una sola
       referencia por nota). Contingencia: si no se puede emitir electrónicamente, solo comprobantes
       impresos por imprenta autorizada (ya no tickets ni otros documentos autorizados) — el plan B
