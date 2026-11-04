@@ -14,7 +14,7 @@ import { Decimal } from '../src/dinero.js';
 import { ErrorPdf, contenidoQr, formatearMonto, generarPdf, type DatosPdf, type FormatoPdf } from '../src/pdf/representacion.js';
 import { Afectacion, TipoComprobante, type Comprobante } from '../src/tipos.js';
 import { TipoDocIdentidad } from '../src/validaciones/documentos.js';
-import { contextoPrueba, item, solicitudBoleta, solicitudFactura } from './ayudantes.js';
+import { contextoPrueba, item, boletaFija as solicitudBoleta, facturaFija as solicitudFactura } from './ayudantes.js';
 
 // La librería exporta la función por defecto; sus tipos no lo reflejan con NodeNext.
 const jsQR = jsQRModulo as unknown as (datos: Uint8ClampedArray, ancho: number, alto: number) => { data: string } | null;

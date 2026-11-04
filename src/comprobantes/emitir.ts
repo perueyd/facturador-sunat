@@ -10,7 +10,7 @@
 import { dec, sumar, type Decimal } from '../dinero.js';
 import { recalcularCobro } from '../cobros/pagos.js';
 import { codigoErrorPg, enTransaccion, restriccionPg, type Db, type Tx } from '../db/conexion.js';
-import { ahoraLima } from '../fechas.js';
+import { ahoraLima, diasEntre, sumarDias } from '../fechas.js';
 import { TipoComprobante, idComprobanteLegible } from '../tipos.js';
 import { TipoDocIdentidad } from '../validaciones/documentos.js';
 import { moverStockPorComprobante, productosPorSku } from '../inventario/stock.js';
@@ -83,6 +83,22 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
   if (!canal.rows[0].activo) throw new ErrorValidacion(['El canal está desactivado.']);
 
   const ctx = await cargarContexto(tx, p.empresaId, s.fechaEmision);
+
+  // Fecha pasada (la venta fue otro día y no se emitió a tiempo, por ejemplo porque se cayó el
+  // sistema): SUNAT solo la recibe dentro del plazo de envío contado desde esa fecha, y la rechaza
+  // después (errores 2108 / 2600 / 4347) con el número ya gastado. Por eso se frena aquí, antes de
+  // tomar el correlativo. La fecha debe ser la REAL de la venta (R.C.P. art. 5: se emite al entregar
+  // el bien o al cobrar, lo que ocurra primero). Plazos: parámetros con vigencia (ver más abajo).
+  const hoy = ahoraLima().fecha;
+  const deBoleta = s.tipo === TipoComprobante.BOLETA || s.notaCredito?.referencia.tipo === TipoComprobante.BOLETA;
+  const plazo = (await parametro(tx, deBoleta ? 'PLAZO_RESUMEN_BOLETAS_DIAS' : 'PLAZO_ENVIO_FACTURA_DIAS', ctx.empresa.regimen, s.fechaEmision)).toNumber();
+  if (diasEntre(s.fechaEmision, hoy) > plazo) {
+    const minimo = sumarDias(hoy, -plazo).split('-').reverse().join('/');
+    throw new ErrorValidacion([
+      `SUNAT solo recibe ${deBoleta ? 'boletas' : 'facturas'} hasta ${plazo} días después de su fecha de emisión. `
+      + `La fecha más antigua que se puede usar hoy es el ${minimo}.`,
+    ]);
+  }
 
   // Nota de crédito: el comprobante original debe existir y estar vigente; el cliente es el mismo.
   let referenciaId: string | undefined;
@@ -234,12 +250,10 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
   // el resumen diario). Fuente: R.S. 097-2012/SUNAT arts. 12.1 y 14.2, con el texto de la
   // R.S. 000048-2026/SUNAT (vigente desde el 1-ene-2027 según la R.S. 000143-2026/SUNAT),
   // consultadas el 03/11/2026 en sunat.gob.pe y elperuano.pe.
-  const deBoleta = c.tipo === TipoComprobante.BOLETA || s.notaCredito?.referencia.tipo === TipoComprobante.BOLETA;
-  const plazo = await parametro(tx, deBoleta ? 'PLAZO_RESUMEN_BOLETAS_DIAS' : 'PLAZO_ENVIO_FACTURA_DIAS', ctx.empresa.regimen, c.fechaEmision);
   await tx.query(
     `INSERT INTO cola_envios (empresa_id, tipo, referencia_id, fecha_limite_legal)
      VALUES ($1, 'COMPROBANTE', $2, $3::date + $4::int)`,
-    [p.empresaId, id, c.fechaEmision, plazo.toNumber()],
+    [p.empresaId, id, c.fechaEmision, plazo],
   );
 
   await tx.query(

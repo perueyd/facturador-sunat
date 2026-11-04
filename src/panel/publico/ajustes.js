@@ -20,6 +20,27 @@ function mostrarEnlace(caja, r, nombre) {
   caja.hidden = false;
 }
 
+// ---------- Fecha de la venta (si fue otro día) ----------
+
+// hoyLima() está en cobros.js (los archivos del panel comparten sus funciones).
+const restarDias = (iso, dias) => new Date(Date.parse(`${iso}T12:00:00Z`) - dias * 86_400_000).toISOString().slice(0, 10);
+
+/** Fecha mínima según el tipo (plazo de SUNAT que manda el facturador) y aviso si cae en el mes anterior. */
+function limitarFechaVenta() {
+  const tipo = $('#form-emitir').tipo.value === 'FACTURA' ? 'FACTURA' : 'BOLETA';
+  const dias = yo?.diasAtras?.[tipo] ?? 0;
+  const hoy = hoyLima();
+  const campo = $('#fecha-venta');
+  campo.max = hoy;
+  campo.min = restarDias(hoy, dias);
+  $('#dias-atras').textContent = `${dias} días después (${tipo === 'FACTURA' ? 'facturas' : 'boletas'}): la fecha más antigua hoy es el ${campo.min.split('-').reverse().join('/')}`;
+  const fecha = campo.value;
+  const otroMes = fecha && fecha.slice(0, 7) !== hoy.slice(0, 7);
+  $('#aviso-mes-anterior').hidden = !otroMes;
+  $('#aviso-mes-anterior').textContent = otroMes
+    ? '⚠️ Esta venta cuenta para la declaración del mes anterior. Si ya la declaraste, avisa a tu contador para que la corrija.' : '';
+}
+
 // ---------- "Más" ordenado por grupos y Mis sesiones ----------
 
 /** Un grupo de "Más" sin nada visible para este usuario (ej. "Mi empresa" para un vendedor) no se muestra. */
@@ -296,6 +317,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('#agregar-cuota').addEventListener('click', agregarCuota);
   // El crédito en cuotas solo existe para facturas (lo valida también el facturador).
+  $('#form-emitir').tipo.addEventListener('change', limitarFechaVenta);
+  $('#fecha-venta').addEventListener('change', limitarFechaVenta);
   $('#form-emitir').tipo.addEventListener('change', (e) => {
     const factura = e.target.value === 'FACTURA';
     $('#opcion-credito').disabled = !factura;

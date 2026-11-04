@@ -9,7 +9,7 @@ import { cifrar, descifrar, generarLlaveMaestra, llaveMaestraDesdeEntorno } from
 import { TipoComprobante, type Comprobante } from '../src/tipos.js';
 import { generarXmlComprobante } from '../src/xml/comprobante.js';
 import { generarXmlComunicacionBaja, generarXmlResumenDiario } from '../src/xml/resumenes.js';
-import { contextoPrueba, empresaPrueba, item, solicitudBoleta, solicitudFactura, validarContraXsd } from './ayudantes.js';
+import { contextoPrueba, empresaPrueba, item, boletaFija as solicitudBoleta, facturaFija as solicitudFactura, validarContraXsd } from './ayudantes.js';
 import { crearPfxPrueba } from './certificado-prueba.js';
 
 const VERIFICADOR = fileURLToPath(new URL('./verificador_independiente.py', import.meta.url));

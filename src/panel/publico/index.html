@@ -222,6 +222,13 @@
             <select name="tipo"><option value="BOLETA">Boleta</option><option value="FACTURA">Factura</option></select></label>
           <label>Venta por <select name="canal" id="canal"></select></label>
         </div>
+        <details class="ajustes" id="caja-fecha-venta">
+          <summary>¿La venta fue otro día?</summary>
+          <p class="nota">Solo si la venta (entrega o cobro) fue en un día anterior y no se emitió a tiempo, por ejemplo
+            porque se cayó el sistema. Pon la fecha REAL de la venta. SUNAT la recibe hasta <span id="dias-atras"></span>.</p>
+          <label>Fecha de la venta <input name="fecha" type="date" id="fecha-venta"></label>
+          <p class="aviso" id="aviso-mes-anterior" hidden></p>
+        </details>
 
         <fieldset>
           <legend>Cliente</legend>
