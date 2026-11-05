@@ -137,6 +137,27 @@ Todo se ve también en el panel → **Plataforma → Salud de la plataforma**.
   5 años. La vigilancia avisa al 80 %.
 - Más allá: un servidor más grande y guardar los archivos en un almacenamiento aparte.
 
+### Prueba de carga (05/11/2026)
+
+Servidor limitado a medio procesador y 400 MB (como Render Starter), base de datos local y SUNAT
+simulado que tarda 0,8 s. Cada persona mira el panel y, 1 de cada 4 acciones, emite una boleta;
+entre acción y acción piensa 1 a 3 segundos.
+
+| Personas a la vez | Panel (mediana) | Emitir boleta (mediana) | Errores |
+|---|---|---|---|
+| 50  | 0,02 s | 1,0 s  | 0 |
+| 100 | 0,06 s | 1,2 s  | 0 |
+| 200 | 1,1 s  | 5,3 s  | 0 |
+| 500 | 5,7 s  | 17,7 s | 0 |
+
+- Cómodo hasta **unas 100 personas a la vez** (≈ 10 boletas por segundo). Desde 200 se pone lento
+  pero no pierde nada. Memoria usada: ~230 MB de 512 MB.
+- Con Supabase real cada consulta viaja por internet: espera algo más lento que la tabla.
+- La prueba encontró un error grave, ya corregido: con 200 personas el servidor **se colgaba para
+  siempre** (al guardar el XML firmado y la constancia de SUNAT se pedía una segunda conexión a la
+  base teniendo la primera abierta). Ahora las pruebas fallan si alguien repite ese error
+  (`exigirFueraDeTransaccion` en `src/db/conexion.ts`).
+
 ## Proyectos pendientes (no empezados)
 
 | Proyecto | Por qué espera |

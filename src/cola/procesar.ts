@@ -182,7 +182,7 @@ async function registrarEnvio(
 async function guardarCdr(tx: Tx, s: ServiciosEnvio, empresaId: string, entidad: string, entidadId: string, ruc: string, nombre: string, cdr: Cdr): Promise<void> {
   const sha256 = createHash('sha256').update(cdr.zip).digest('hex');
   const ruta = `${ruc}/cdr/R-${nombre}-${sha256.slice(0, 12)}.zip`;
-  await s.almacen.guardar(ruta, cdr.zip);
+  await s.almacen.guardar(ruta, cdr.zip, tx);
   await tx.query(
     `INSERT INTO archivos (empresa_id, entidad, entidad_id, tipo, ruta_almacenamiento, sha256, tamano, conservar_hasta)
      VALUES ($1, $2, $3, 'CDR', $4, $5, $6, (current_date + interval '6 years')::date)`,
@@ -360,7 +360,7 @@ async function xmlFirmadoResumen(db: Db, s: ServiciosEnvio, d: DocumentoResumen,
     await tx.query(`SELECT 1 FROM ${d.tabla} WHERE id = $1 FOR UPDATE`, [d.id]);
     const ya = await tx.query(`SELECT ruta_almacenamiento, sha256 FROM archivos WHERE entidad = $1 AND entidad_id = $2 AND tipo = 'XML_FIRMADO'`, [d.tabla, d.id]);
     if (ya.rows[0]) {
-      const contenido = await s.almacen.leer(ya.rows[0].ruta_almacenamiento);
+      const contenido = await s.almacen.leer(ya.rows[0].ruta_almacenamiento, tx);
       if (createHash('sha256').update(contenido).digest('hex') !== ya.rows[0].sha256) throw new Error('El XML firmado del resumen fue alterado.');
       return contenido.toString('utf8');
     }
@@ -386,7 +386,7 @@ async function xmlFirmadoResumen(db: Db, s: ServiciosEnvio, d: DocumentoResumen,
     const sha256 = createHash('sha256').update(contenido).digest('hex');
     const nombre = nombreArchivoResumen(empresa.ruc, idResumen(d.prefijo, d.fechaGeneracion, d.correlativo));
     const ruta = `${empresa.ruc}/${d.fechaGeneracion.slice(0, 4)}/${d.fechaGeneracion.slice(5, 7)}/${nombre}-${sha256.slice(0, 12)}.xml`;
-    await s.almacen.guardar(ruta, contenido);
+    await s.almacen.guardar(ruta, contenido, tx);
     await tx.query(
       `INSERT INTO archivos (empresa_id, entidad, entidad_id, tipo, ruta_almacenamiento, sha256, tamano, conservar_hasta)
        VALUES ($1, $2, $3, 'XML_FIRMADO', $4, $5, $6, (current_date + interval '6 years')::date)`,
