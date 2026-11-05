@@ -51,7 +51,7 @@ export async function firmarComprobante(db: Db, s: ServiciosFirma, comprobanteId
     );
     const a = existente.rows[0];
     if (a) {
-      const contenido = await s.almacen.leer(a.ruta_almacenamiento);
+      const contenido = await s.almacen.leer(a.ruta_almacenamiento, tx);
       if (createHash('sha256').update(contenido).digest('hex') !== a.sha256) {
         throw new Error(`El XML firmado guardado en "${a.ruta_almacenamiento}" fue alterado (su huella no coincide).`);
       }
@@ -75,7 +75,7 @@ export async function firmarComprobante(db: Db, s: ServiciosFirma, comprobanteId
 
     // Primero el archivo, luego el registro: si la base falla, queda un archivo huérfano
     // inofensivo; nunca un registro que apunte a un archivo inexistente.
-    await s.almacen.guardar(ruta, contenido);
+    await s.almacen.guardar(ruta, contenido, tx);
     await tx.query(
       `INSERT INTO archivos (empresa_id, entidad, entidad_id, tipo, ruta_almacenamiento, sha256, tamano, conservar_hasta)
        VALUES ($1, 'comprobantes', $2, 'XML_FIRMADO', $3, $4, $5, (current_date + interval '6 years')::date)`,

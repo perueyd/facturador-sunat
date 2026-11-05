@@ -10,12 +10,16 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
-import type { Db } from '../db/conexion.js';
+import { exigirFueraDeTransaccion, type Db, type Tx } from '../db/conexion.js';
 
+/**
+ * Dentro de una transacción, pasa su `tx`: el almacén de producción guarda en la base
+ * y debe usar esa misma conexión (ver `exigirFueraDeTransaccion`).
+ */
 export interface Almacen {
   /** Guarda el archivo. Falla si ya existe un archivo distinto en esa ruta. */
-  guardar(ruta: string, contenido: Buffer): Promise<void>;
-  leer(ruta: string): Promise<Buffer>;
+  guardar(ruta: string, contenido: Buffer, tx?: Tx): Promise<void>;
+  leer(ruta: string, tx?: Tx): Promise<Buffer>;
 }
 
 export class ErrorAlmacen extends Error {}
@@ -42,7 +46,10 @@ export class AlmacenLocal implements Almacen {
     return abs;
   }
 
-  async guardar(ruta: string, contenido: Buffer): Promise<void> {
+  async guardar(ruta: string, contenido: Buffer, tx?: Tx): Promise<void> {
+    // La carpeta no usa la base, pero se exige lo mismo que en producción para que las
+    // pruebas descubran un guardado sin "tx" (con la base, colgaría el servidor).
+    if (!tx) exigirFueraDeTransaccion('almacen.guardar sin tx');
     const abs = this.absoluta(ruta);
     await mkdir(dirname(abs), { recursive: true });
     try {
@@ -55,7 +62,8 @@ export class AlmacenLocal implements Almacen {
     }
   }
 
-  async leer(ruta: string): Promise<Buffer> {
+  async leer(ruta: string, tx?: Tx): Promise<Buffer> {
+    if (!tx) exigirFueraDeTransaccion('almacen.leer sin tx');
     return readFile(this.absoluta(ruta));
   }
 }
@@ -63,22 +71,23 @@ export class AlmacenLocal implements Almacen {
 export class AlmacenPostgres implements Almacen {
   constructor(private readonly db: Db) {}
 
-  async guardar(ruta: string, contenido: Buffer): Promise<void> {
+  async guardar(ruta: string, contenido: Buffer, tx?: Tx): Promise<void> {
     validarRuta(ruta);
+    const q = tx ?? this.db;
     const sha256 = createHash('sha256').update(contenido).digest('hex');
-    const r = await this.db.query(
+    const r = await q.query(
       `INSERT INTO archivos_contenido (ruta, contenido, sha256) VALUES ($1, $2, $3) ON CONFLICT (ruta) DO NOTHING`,
       [ruta, contenido, sha256],
     );
     if (r.rowCount) return;
     // Ya existía (reintento tras un fallo): solo es válido si es el mismo contenido.
-    const existente = await this.db.query(`SELECT sha256 FROM archivos_contenido WHERE ruta = $1`, [ruta]);
+    const existente = await q.query(`SELECT sha256 FROM archivos_contenido WHERE ruta = $1`, [ruta]);
     if (existente.rows[0]?.sha256 !== sha256) throw new ErrorAlmacen(`Ya existe un archivo distinto en "${ruta}"; no se sobrescribe.`);
   }
 
-  async leer(ruta: string): Promise<Buffer> {
+  async leer(ruta: string, tx?: Tx): Promise<Buffer> {
     validarRuta(ruta);
-    const r = await this.db.query(`SELECT contenido FROM archivos_contenido WHERE ruta = $1`, [ruta]);
+    const r = await (tx ?? this.db).query(`SELECT contenido FROM archivos_contenido WHERE ruta = $1`, [ruta]);
     if (!r.rows[0]) throw new ErrorAlmacen(`No existe el archivo "${ruta}".`);
     return r.rows[0].contenido as Buffer;
   }
