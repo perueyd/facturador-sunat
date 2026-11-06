@@ -700,6 +700,31 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   resumen, certificado, cobros, notas, productos, exportar, compras, avisos, estadisticas. Sin "panel", la empresa ni aparece
   en el panel y sigue solo por API.
 
+## 21. Vender sin internet — fase 0: lo que dice SUNAT (consultado el 06/11/2026)
+
+Fuentes oficiales leídas:
+- R.S. N.° 113-2018/SUNAT (modifica la R.S. 300-2014), www.sunat.gob.pe/legislacion/superin/2018/113-2018.pdf
+- R.S. N.° 252-2019/SUNAT y N.° 000048-2026/SUNAT (mismo régimen: "por causas no imputables" + plazo de 7 días)
+- Búsqueda en cpe.sunat.gob.pe: "Resumen de comprobantes impresos" (contingencia), plazo de 7 días.
+
+Lo que dice la norma:
+1. Si el emisor electrónico **por determinación de la SUNAT** no puede emitir electrónicamente
+   **por causas no imputables a él**, puede usar boletas/facturas **impresas por imprenta
+   autorizada** (se piden antes en SUNAT; la primera vez, hasta 100 por establecimiento).
+2. Esas boletas llevan impreso "Comprobante de pago emitido en contingencia" y
+   "Emisor electrónico obligado".
+3. Se informan a SUNAT con una **declaración jurada informativa** el mismo día o, a más tardar,
+   hasta el **sétimo día calendario** siguiente. En el SEE - Del contribuyente, por el medio del
+   anexo 6 de la R.S. 097-2012 (el resumen diario BVE-NE puede servir para eso).
+4. **No encontré** ninguna norma que permita entregar un "ticket de venta" y emitir la boleta
+   electrónica después. El comprobante se entrega al pagar o entregar (RCP art. 5). Por eso esa
+   idea **se descarta**.
+
+Por confirmar con el contador antes de programar:
+- Si Agamenón y el RUC 10 son emisores "por determinación de la SUNAT" (la contingencia es para ellos).
+- Si "se cortó el internet de la tienda" cuenta como causa no imputable.
+- El formato exacto (anexo 6 de la R.S. 097-2012; el PDF oficial es una imagen escaneada).
+
 ## 19. Decisiones que siguen abiertas
 
 Mientras no respondas, se usan las decisiones provisionales de la sección 7.
