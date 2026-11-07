@@ -10,7 +10,7 @@
  */
 import { createHash } from 'node:crypto';
 import { DOMParser } from '@xmldom/xmldom';
-import { strFromU8, unzipSync } from 'fflate';
+import { Unzip, UnzipInflate, strFromU8 } from 'fflate';
 import type { Almacen } from '../almacen/almacen.js';
 import { codigoErrorPg, enTransaccion, type Db } from '../db/conexion.js';
 import { aTexto2, dec } from '../dinero.js';
@@ -101,6 +101,43 @@ export function leerXmlAntiguo(xml: string): DatosAntiguo {
   };
 }
 
+/**
+ * Abre los .xml de un ZIP (como los descarga SUNAT) parando apenas uno pasa de 1 MB. No se
+ * confía en el tamaño que el ZIP DICE tener: uno que miente (dice 10 bytes y trae gigas de ceros)
+ * hacía descomprimir todo antes de descartarlo y dejaba al servidor ocupado varios segundos.
+ */
+function abrirZip(contenido: Buffer): Record<string, Uint8Array> {
+  const archivos: Record<string, Uint8Array> = {};
+  let abiertos = 0;
+  const zip = new Unzip((f) => {
+    if (!f.name.toLowerCase().endsWith('.xml') || f.name.endsWith('/') || abiertos >= MAXIMO_XML_POR_ZIP + 5) return;
+    abiertos++;
+    const partes: Uint8Array[] = [];
+    let total = 0;
+    f.ondata = (err, datos, fin) => {
+      if (err) throw err;
+      total += datos.length;
+      if (total > MAXIMO_XML) {
+        f.terminate();
+        throw new ErrorAntiguo(`"${f.name}" pesa más de 1 MB: no parece el XML de un comprobante.`);
+      }
+      partes.push(datos);
+      if (fin) {
+        const unido = new Uint8Array(total);
+        let i = 0;
+        for (const p of partes) { unido.set(p, i); i += p.length; }
+        archivos[f.name] = unido;
+      }
+    };
+    f.start();
+  });
+  zip.register(UnzipInflate);
+  // En pedazos de 16 KB: así cada paso descomprime poco y se puede cortar a tiempo.
+  const datos = new Uint8Array(contenido);
+  for (let i = 0; i < datos.length; i += 16 * 1024) zip.push(datos.subarray(i, i + 16 * 1024), i + 16 * 1024 >= datos.length);
+  return archivos;
+}
+
 /** Los XML que trae lo subido: un XML suelto o un ZIP (como los descarga SUNAT). */
 function xmlsDe(nombre: string, contenido: Buffer): { archivo: string; xml: string }[] {
   if (contenido.subarray(0, 2).toString('latin1') !== 'PK') {
@@ -109,11 +146,9 @@ function xmlsDe(nombre: string, contenido: Buffer): { archivo: string; xml: stri
   }
   let archivos: Record<string, Uint8Array>;
   try {
-    archivos = unzipSync(new Uint8Array(contenido), {
-      filter: (f) => f.name.toLowerCase().endsWith('.xml') && f.originalSize <= MAXIMO_XML,
-    });
-  } catch {
-    throw new ErrorAntiguo('El ZIP está dañado o no se puede abrir.');
+    archivos = abrirZip(contenido);
+  } catch (e) {
+    throw e instanceof ErrorAntiguo ? e : new ErrorAntiguo('El ZIP está dañado o no se puede abrir.');
   }
   const xmls = Object.entries(archivos)
     // Las constancias de SUNAT (R-...xml) no son el comprobante: se omiten.

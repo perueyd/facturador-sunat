@@ -123,6 +123,7 @@ describe.skipIf(!URL_PRUEBAS)('vender sin internet (contingencia)', () => {
     const e = await estadisticas(db, g.empresaId, { hoy });
     expect(e.hoy).toMatchObject({ ventas: '700.00', comprobantes: 1 });
     expect(e.canales).toEqual([expect.objectContaining({ canal: 'Sin internet', ventas: '700.00' })]);
+    expect(e.productos).toEqual([expect.objectContaining({ descripcion: 'Tarima', cantidad: '2', ventas: '700.00' })]);
   });
 
   it('el tablero avisa lo que falta informar', async () => {

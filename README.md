@@ -22,11 +22,15 @@ de baja directamente a SUNAT (SEE - Del Contribuyente), sin proveedores externos
 | Revisión de seguridad completa | ✅ Hecha (`docs/SEGURIDAD.md`) |
 | 12. Plataforma para otros negocios (planes, invitaciones, vigilancia, secciones por plan) | ✅ Hecha (`docs/PLATAFORMA.md`) |
 | 13. Caja, cuentas, cierre de caja, clientes frecuentes y WhatsApp, inventario (Kardex, reposición), app instalable y escáner | ✅ Hecha |
+| 14. Panel simple (estilo Emprende), cotizaciones y devoluciones desde Vender, "ya declaré", cierre de caja con suma | ✅ Hecha |
+| 15. Vender sin internet (boletas impresas de contingencia + archivo para SUNAT) | ✅ Hecha (`docs/PLAN.md` §21 y §23) |
+| 16. Padrón de SUNAT (razón social de RUC 20), comprobantes emitidos en SUNAT, productos desde Excel, conexiones | ✅ Hecha |
+| Prueba de carga y revisión de seguridad (07/11/2026) | ✅ Hecha (`docs/PLATAFORMA.md`, `docs/SEGURIDAD.md`) |
 | Próximos módulos y lo que espera a SUNAT o al contador | 📋 `docs/PLATAFORMA.md` → Proyectos pendientes |
 
 Hoy el sistema valida, calcula el IGV, numera sin saltos, guarda en PostgreSQL, genera
 el XML, lo firma y lo envía a SUNAT **beta** con reintentos automáticos. Producción está
-bloqueada hasta tu autorización.
+bloqueada hasta tu autorización y la lista "Antes de pasar a producción" de `docs/PLAN.md`.
 
 ## Cómo funciona (resumen)
 
@@ -38,7 +42,12 @@ bloqueada hasta tu autorización.
 6. Lo firma con el Certificado Digital Tributario de la empresa (guardado cifrado) y guarda el XML firmado.
 7. Lo envía a SUNAT y guarda la constancia (CDR). Si SUNAT no responde, lo reintenta solo.
 8. Genera el PDF con QR en A4 o ticket de 80 mm (a elección).
-9. La tienda y otros canales emiten por la API, cada uno con su llave (ver `docs/API.md`).
+9. Otros sistemas pueden emitir por la API, cada uno con su llave (ver `docs/API.md`); el dueño las
+   ve y las desconecta en el panel (Más → Conexiones). Hoy la tienda web va independiente.
+10. Sin internet se anota la boleta IMPRESA de contingencia en el celular; al volver la señal llega
+    sola al facturador, que arma el archivo para informarla a SUNAT en 7 días.
+11. Todas las pantallas (Inicio, Estadísticas, Caja, Excel del contador) suman lo emitido aquí, lo
+    vendido sin internet y lo emitido en SUNAT y subido como XML (vista `ventas_todas`).
 
 ## Cómo usarlo (para desarrollo)
 
@@ -130,6 +139,13 @@ Detalles y formato del JSON en el encabezado de `scripts/inventario.ts` y `scrip
 npm run cola:procesar     # una vuelta; en producción se programa cada minuto
 ```
 
+### Padrón de SUNAT (empresas)
+
+```bash
+curl -o padron.zip https://www2.sunat.gob.pe/padron_reducido_ruc.zip
+unzip -p padron.zip | npm run padron     # en producción lo hace solo .github/workflows/padron.yml
+```
+
 ## Publicarlo en internet
 
 Guía paso a paso (Supabase + Render + GitHub Actions): [`docs/PUBLICAR.md`](docs/PUBLICAR.md).
@@ -154,7 +170,13 @@ Publicar NO es pasar a producción en SUNAT: sigue en BETA hasta tu autorizació
 | `src/cobros/` | Pagos, saldo, cuotas y vencimientos |
 | `src/inventario/` | Productos, stock y compras a proveedores |
 | `src/devoluciones/` | Devoluciones: nota de crédito, stock y reembolso |
-| `src/reportes/` | Resumen del día, margen semanal e historial de clientes |
+| `src/reportes/` | Tablero, estadísticas, resultado del mes, venta rápida y clientes |
+| `src/contingencia/` | Ventas sin internet (boletas impresas) y su archivo RF para SUNAT |
+| `src/antiguos/` | Comprobantes emitidos en SUNAT (SOL, Emprende) subidos como XML |
+| `src/padron/` | Padrón de SUNAT de empresas (razón social, estado y condición) |
+| `src/cotizaciones/` | Cotizaciones (proformas) con su PDF |
+| `src/panel/` | Panel web: rutas y la página (`publico/`) |
+| `src/plataforma/` | Planes, suscripciones, aliados y vigilancia |
 | `db/migraciones/` | Estructura de la base de datos (SQL) |
 | `tests/` | Pruebas automáticas |
 | `docs/` | Plan, diseño de la base de datos y ejemplos de XML |
@@ -168,4 +190,8 @@ Publicar NO es pasar a producción en SUNAT: sigue en BETA hasta tu autorizació
 - [`docs/BASE_DE_DATOS.md`](docs/BASE_DE_DATOS.md) — diseño de la base de datos.
 - [`docs/GUIA_CERTIFICADO.md`](docs/GUIA_CERTIFICADO.md) — cómo obtener el certificado digital en SUNAT.
 - [`docs/PRUEBA_BETA.md`](docs/PRUEBA_BETA.md) — cómo hacer la prueba real en SUNAT beta.
+- [`docs/PUBLICAR.md`](docs/PUBLICAR.md) — publicar en Supabase + Render + GitHub Actions.
+- [`docs/SEGURIDAD.md`](docs/SEGURIDAD.md) — qué está protegido y qué queda pendiente.
+- [`docs/PLATAFORMA.md`](docs/PLATAFORMA.md) — el facturador como servicio, capacidad y prueba de carga.
+- [`docs/REVISION_CONTADOR.md`](docs/REVISION_CONTADOR.md) — lo que debe revisar el contador antes de producción.
 - [`docs/ejemplos/`](docs/ejemplos/) — XML y PDF de ejemplo con datos ficticios.

@@ -1,6 +1,7 @@
 # Revisión de seguridad
 
-Revisión completa antes de publicar el facturador (23/10/2026). Se repite al cerrar cada fase.
+Revisión completa antes de publicar el facturador (23/10/2026). Se repite al cerrar cada fase
+(última: 07/11/2026).
 
 ## Lo que se revisó y está bien
 
@@ -46,6 +47,47 @@ Corregido:
    empresa que la pide (antes lo revisaba solo la ruta).
 
 Sigue pendiente lo de la tabla de abajo (RLS y usuario de base con permisos mínimos).
+
+## Revisión del 07/11/2026
+
+Todo lo agregado desde el 02/11: comprobantes subidos de SUNAT (XML/ZIP), ventas sin internet,
+padrón de SUNAT, productos desde Excel, conexiones (llaves de API), "ya declaré", devoluciones con
+reembolso, cierre de caja y la prueba de carga.
+
+Revisado y bien:
+
+| Tema | Resultado |
+|---|---|
+| Una empresa viendo datos de otra | Prueba nueva `tests/db/aislamiento-nuevo.test.ts`: el dueño de otra empresa no puede ver ni tocar comprobantes subidos, ventas sin internet, su archivo para SUNAT, llaves, declaraciones ni sugerencias. |
+| Permisos por rol | Subir comprobantes, importar productos y devolver: dueño o administrador. Archivo para SUNAT y "ya declaré": dueño, administrador o contador. Desconectar sistemas y prender funciones: solo el dueño. Cada uno con su prueba. |
+| XML subidos | El lector no expande entidades de ningún tipo (probado: ni externas —sin XXE— ni internas —sin "billion laughs"—). |
+| Inyección en pantalla | El panel no usa `innerHTML`: nombres de archivos, clientes y productos se muestran como texto. |
+| Excel exportado | Los nombres importados pasan por el filtro anti-fórmulas de los CSV (`csvParaExcel`). |
+| Llaves de API | El panel muestra solo el prefijo público; el secreto nunca sale (probado). Desconectar es inmediato (401). |
+| Padrón de SUNAT | Datos públicos de SUNAT; se carga con consultas con parámetros y un archivo cortado no borra el padrón. |
+| Dependencias | `npm audit`: 0 vulnerabilidades; `hono`, `node-forge` y otras actualizadas (07/11). |
+| Historial de Git | Sin llaves, claves ni certificados desde el 02/11 (búsqueda de patrones). |
+
+Corregido:
+
+1. **Cuelgue con muchos envíos a la vez** (prueba de carga, 05/11): el XML firmado y la constancia
+   se guardaban con una segunda conexión teniendo una transacción abierta. Ahora las pruebas fallan
+   si alguien pide otra conexión dentro de una transacción (`exigirFueraDeTransaccion`).
+2. **Devoluciones**: el candado ocupaba una conexión del grupo; ahora usa una propia (07/11).
+3. **ZIP que miente sobre su tamaño** (comprobantes subidos): se descomprimía entero antes de
+   descartarlo y dejaba al servidor ocupado. Ahora se abre en pedazos y se corta al pasar 1 MB.
+4. **"Traer de mi tienda"** se quitó (el dueño quiere tienda y facturador independientes); con eso
+   desaparece la única función que hacía que el servidor descargara una dirección dada por el usuario.
+
+A tener en cuenta (no son fallas, pero conviene saberlo):
+
+- **Firma de los comprobantes subidos**: "firma válida" significa que el XML no se modificó después de
+  firmarse con el certificado que trae adentro; no comprueba que ese certificado sea de SUNAT. Quien
+  sube los XML es el dueño o un administrador de la propia empresa.
+- **Ventas sin internet en el celular**: mientras no se envían, quedan en el navegador del aparato
+  (incluido el DNI y nombre del cliente). Al salir del panel se borran los datos de la empresa, pero
+  las ventas pendientes se conservan para no perderlas. No usar un celular compartido para vender sin
+  internet, y no borrar los datos del navegador con ventas pendientes.
 
 ## Panel web (`/panel`)
 
