@@ -286,6 +286,7 @@ async function abrirPestana(nombre) {
     if (nombre === 'mas') {
       await cargarUsuarios(); mostrarAntiguos(); ordenarMas();
       cargarSesiones().catch(() => {}); cargarAntiguos().catch(() => {}); cargarContingencia().then(ordenarMas).catch(() => {});
+      cargarConexiones().then(ordenarMas).catch(() => { $('#caja-conexiones').hidden = true; });
     }
     if (nombre === 'plataforma') await cargarPlataforma();
     if (nombre === 'aliado') await cargarAliado();

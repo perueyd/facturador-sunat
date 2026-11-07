@@ -18,7 +18,7 @@ import type { Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Almacen } from '../almacen/almacen.js';
-import { autenticarLlave } from '../api/llaves.js';
+import { autenticarLlave, listarLlaves, revocarLlave } from '../api/llaves.js';
 import { ErrorInvitacion, aceptarInvitacion, activarInvitacion, invitar, nuevoEnlace, verInvitacion } from './invitaciones.js';
 import { ErrorConfiguracionSunat, guardarCredencialesSol } from '../sunat/configuracion.js';
 import type { EnviarCorreo } from '../avisos/avisos.js';
@@ -385,6 +385,25 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   });
 
   // Mis sesiones: en qué aparatos está abierto el panel, y cerrar uno.
+  // Conexiones con otros sistemas (ej. la tienda web): sus llaves de API y desconectarlas.
+  // Solo el dueño: una llave activa puede emitir comprobantes a nombre de la empresa.
+  app.get('/panel/api/llaves', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño ve las conexiones.');
+    return c.json({ llaves: await listarLlaves(d.db, s.empresa.id) });
+  });
+  app.post('/panel/api/llaves/:prefijo/desactivar', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño desconecta otros sistemas.');
+    const prefijo = c.req.param('prefijo');
+    if (!/^[0-9a-f]{12}$/.test(prefijo) || !(await revocarLlave(d.db, s.empresa.id, prefijo, s.usuarioId))) {
+      return d.error(c, 404, 'NO_ENCONTRADO', 'Esa conexión no existe o ya estaba desconectada.');
+    }
+    return c.json({ ok: true });
+  });
+
   app.get('/panel/api/sesiones', async (c) => {
     const s = await conSesion(c);
     if (s instanceof Response) return s;

@@ -495,13 +495,9 @@
         </div>
         <ul id="lista-stock" class="lista"></ul>
         <details class="ajustes" id="caja-importar">
-          <summary>📥 Traer tus productos de tu tienda web o de un Excel</summary>
-          <p class="nota"><strong>De tu tienda web:</strong> pega la dirección de su catálogo (la misma que usan Facebook e
-            Instagram) y toca "Traer". Si ya estaban, se actualizan su nombre y precio; puedes repetirlo cuando cambies precios.</p>
-          <label>Dirección del catálogo <input id="direccion-catalogo" type="url" inputmode="url" placeholder="https://eydperu.vercel.app/api/feed?formato=csv"></label>
-          <button type="button" id="importar-tienda" class="secundario">Traer de mi tienda</button>
-          <p class="nota"><strong>De un Excel:</strong> columnas <em>código</em>, <em>nombre</em> y <em>precio</em> (con IGV);
-            guárdalo como "CSV" y elígelo aquí.</p>
+          <summary>📥 Cargar tus productos desde un Excel</summary>
+          <p class="nota">Columnas <em>código</em>, <em>nombre</em> y <em>precio</em> (con IGV); guárdalo como "CSV" y elígelo aquí.
+            Si un producto ya estaba (mismo código), se actualizan su nombre y precio.</p>
           <input type="file" id="archivo-catalogo" accept=".csv,text/csv">
           <p id="mensaje-importar" role="status"></p>
         </details>
@@ -682,6 +678,13 @@
           <button type="submit" class="secundario">Agregar cuenta</button>
           <p id="mensaje-cuenta" role="status"></p>
         </form>
+      </details>
+      <details class="ajustes" id="caja-conexiones">
+        <summary>Conexiones con otros sistemas (tienda web…)</summary>
+        <p class="nota">Cada sistema que emite comprobantes a tu nombre (por ejemplo, tu tienda web al cobrar) usa una "llave".
+          Si la desconectas, ese sistema ya no puede emitir: todo lo emites tú desde aquí. No se puede volver a activar
+          (si un día quieres reconectar, se crea una llave nueva).</p>
+        <ul id="lista-llaves" class="lista"></ul>
       </details>
       <details class="ajustes" id="caja-logo">
         <summary>Logo de la empresa (sale en el PDF)</summary>

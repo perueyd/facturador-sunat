@@ -321,7 +321,7 @@ function mensaje(selector, texto, error = false) {
   p.textContent = texto;
 }
 
-// ---------- Importar productos (tienda web o Excel en CSV) ----------
+// ---------- Importar productos (Excel en CSV) ----------
 async function importarProductos(cuerpo) {
   const msg = $('#mensaje-importar');
   msg.className = '';
@@ -334,14 +334,6 @@ async function importarProductos(cuerpo) {
     msg.className = 'error';
     msg.textContent = err.message;
   }
-}
-
-async function importarDesdeTienda() {
-  const direccion = $('#direccion-catalogo').value.trim();
-  if (!direccion) { mensaje('#mensaje-importar', 'Pega primero la dirección del catálogo de tu tienda.', true); return; }
-  // Se recuerda para la próxima vez (solo en este aparato).
-  localStorage.setItem(`catalogo-${yo.empresa.id}`, direccion);
-  await importarProductos({ direccion });
 }
 
 async function importarDesdeArchivo(e) {
