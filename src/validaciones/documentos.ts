@@ -33,7 +33,7 @@ export function digitoVerificadorRuc(diezDigitos: string): number {
 
 /** Catálogo 06 de SUNAT: tipos de documento de identidad usados aquí. */
 export const TipoDocIdentidad = {
-  SIN_DOCUMENTO: '0', // ⚠️ confirmar en beta el valor exacto aceptado para "clientes varios"
+  SIN_DOCUMENTO: '0', // "clientes varios": SUNAT beta lo aceptó (prueba 15/15, docs/PRUEBA_BETA.md)
   DNI: '1',
   CARNET_EXTRANJERIA: '4',
   RUC: '6',

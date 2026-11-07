@@ -24,7 +24,7 @@ const guardarCola = (cola) => localStorage.setItem(CLAVE_COLA, JSON.stringify(co
 function recordarParaSinConexion() {
   if (!yo?.empresa) return;
   localStorage.setItem(CLAVE_DATOS, JSON.stringify({
-    yo: { nombre: yo.nombre, empresa: yo.empresa, empresas: [], canales: yo.canales, puedeEmitir: yo.puedeEmitir, bloqueadas: [], diasAtras: yo.diasAtras },
+    yo: { nombre: yo.nombre, empresa: yo.empresa, empresas: [], canales: yo.canales, puedeEmitir: yo.puedeEmitir, bloqueadas: [], diasAtras: yo.diasAtras, montoBoletaIdentificar: yo.montoBoletaIdentificar },
     productos: productos.map((p) => ({ nombre: p.nombre, sku: p.sku, precio: p.precio })),
     vendidos,
     guardado: new Date().toISOString(),
@@ -112,6 +112,12 @@ function anotarSinConexion(cuerpo) {
   if (doc === 'DNI' && !/^\d{8}$/.test(num)) throw new Error('El DNI tiene 8 números.');
   if (doc === 'RUC' && !rucValido(num)) throw new Error('El RUC no es válido: revisa los 11 números.');
   if (cuerpo.tipo === 'FACTURA' && (doc !== 'RUC' || !cuerpo.cliente?.nombre)) throw new Error('La factura necesita el RUC y la razón social del cliente.');
+  // Boleta grande sin cliente identificado: SUNAT pide su documento y nombre (el límite se guardó con señal).
+  const limite = yo.montoBoletaIdentificar ? aCentimos(yo.montoBoletaIdentificar) : null;
+  const total = cuerpo.items.reduce((t, x) => t + (aCentimos(x.precio) ?? 0n) * BigInt(/^\d+$/.test(String(x.cantidad)) ? x.cantidad : 1), 0n);
+  if (cuerpo.tipo === 'BOLETA' && limite !== null && total > limite && (!cuerpo.cliente || doc === 'NINGUNO' || !cuerpo.cliente.nombre)) {
+    throw new Error(`La boleta pasa de ${textoSoles(limite)}: escribe el DNI y el nombre del cliente.`);
+  }
   if (!cuerpo.items.length || cuerpo.items.some((x) => !x.descripcion || !/^\d+(\.\d{1,2})?$/.test(x.precio))) throw new Error('Revisa los productos: cada uno con descripción y precio.');
   const cola = colaSinConexion();
   if (colaDeLaEmpresa().some((x) => x.cuerpo.contingencia.serie === serie && x.cuerpo.contingencia.numero === numero && x.cuerpo.tipo === cuerpo.tipo)) {

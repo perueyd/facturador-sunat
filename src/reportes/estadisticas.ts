@@ -3,8 +3,10 @@
  * mes anterior, ticket promedio, clientes, gráficos (6 meses y 30 días), de qué canal vienen
  * las ventas y qué productos se venden más.
  *
- * Todo sale de los comprobantes: boletas y facturas suman, sus notas de crédito restan, y los
- * rechazados o anulados no cuentan. Los montos viajan como texto con 2 decimales. Para dibujar,
+ * Todo sale de la vista ventas_todas (migración 044): lo emitido aquí, las boletas impresas sin
+ * internet y lo emitido en SUNAT y subido. Boletas y facturas suman, sus notas de crédito restan,
+ * y los rechazados o anulados no cuentan. "Lo más vendido" sale del detalle de los comprobantes
+ * del facturador (de lo emitido en SUNAT solo se guarda el total). Los montos viajan como texto con 2 decimales. Para dibujar,
  * el alto de cada barra (0 a 100) lo calcula PostgreSQL con NUMERIC: el navegador no hace
  * cuentas de dinero.
  */
@@ -71,7 +73,7 @@ export async function estadisticas(
        -- haría que a inicio de mes siempre se viera una caída.
        coalesce(sum(${CON_SIGNO}) FILTER (WHERE fecha_emision >= date_trunc('month', $2::date) - interval '1 month'
                                           AND fecha_emision <= $2::date - interval '1 month'), 0)::text AS anterior
-     FROM comprobantes
+     FROM ventas_todas
      WHERE empresa_id = $1 AND ${VALIDO} AND fecha_emision >= date_trunc('month', $2::date) - interval '1 month' AND fecha_emision <= $2::date`,
     p,
   )).rows[0];
@@ -80,12 +82,12 @@ export async function estadisticas(
 
   const cl = (await db.query(
     `WITH del_mes AS (
-       SELECT DISTINCT cliente_numero_doc AS doc FROM comprobantes
+       SELECT DISTINCT cliente_numero_doc AS doc FROM ventas_todas
         WHERE empresa_id = $1 AND ${VALIDO} AND tipo_comprobante <> '07' AND ${CLIENTE_IDENTIFICADO}
           AND fecha_emision >= date_trunc('month', $2::date) AND fecha_emision <= $2::date)
      SELECT count(*)::int AS mes,
             count(*) FILTER (WHERE NOT EXISTS (
-              SELECT 1 FROM comprobantes c WHERE c.empresa_id = $1 AND c.cliente_numero_doc = d.doc
+              SELECT 1 FROM ventas_todas c WHERE c.empresa_id = $1 AND c.cliente_numero_doc = d.doc
                 AND c.${VALIDO} AND c.fecha_emision < date_trunc('month', $2::date)))::int AS nuevos
        FROM del_mes d`,
     p,
@@ -96,7 +98,7 @@ export async function estadisticas(
        SELECT to_char(d, 'YYYY-MM') AS periodo
          FROM generate_series(date_trunc('month', $2::date) - interval '5 months', date_trunc('month', $2::date), interval '1 month') d),
      v AS (
-       SELECT to_char(fecha_emision, 'YYYY-MM') AS periodo, sum(${CON_SIGNO}) AS monto FROM comprobantes
+       SELECT to_char(fecha_emision, 'YYYY-MM') AS periodo, sum(${CON_SIGNO}) AS monto FROM ventas_todas
         WHERE empresa_id = $1 AND ${VALIDO} AND fecha_emision >= date_trunc('month', $2::date) - interval '5 months' AND fecha_emision <= $2::date
         GROUP BY 1),
      c AS (
@@ -115,7 +117,7 @@ export async function estadisticas(
   const dias = (await db.query(
     `WITH d AS (SELECT dia::date AS fecha FROM generate_series($2::date - 29, $2::date, interval '1 day') dia),
      v AS (
-       SELECT fecha_emision AS fecha, sum(${CON_SIGNO}) AS monto FROM comprobantes
+       SELECT fecha_emision AS fecha, sum(${CON_SIGNO}) AS monto FROM ventas_todas
         WHERE empresa_id = $1 AND ${VALIDO} AND fecha_emision > $2::date - 30 AND fecha_emision <= $2::date GROUP BY 1)
      SELECT d.fecha::text, coalesce(v.monto, 0)::text AS ventas,
             coalesce(round(greatest(coalesce(v.monto, 0), 0) * 100 / nullif(max(coalesce(v.monto, 0)) OVER (), 0)), 0)::int AS alto
@@ -125,7 +127,7 @@ export async function estadisticas(
 
   const canales = (await db.query(
     `WITH v AS (
-       SELECT k.nombre AS canal, sum(${CON_SIGNO}) AS monto FROM comprobantes c JOIN canales k ON k.id = c.canal_id
+       SELECT coalesce(k.nombre, CASE c.origen WHEN 'SUNAT' THEN 'Emitidas en SUNAT' ELSE 'Sin internet' END) AS canal, sum(${CON_SIGNO}) AS monto FROM ventas_todas c LEFT JOIN canales k ON k.id = c.canal_id
         WHERE c.empresa_id = $1 AND c.${VALIDO} AND c.fecha_emision >= date_trunc('month', $2::date) AND c.fecha_emision <= $2::date
         GROUP BY 1)
      SELECT canal, monto::text AS ventas,
@@ -138,14 +140,14 @@ export async function estadisticas(
   // original (no a quien hizo la devolución), para no castigar a quien corrige.
   const vendedores = (await db.query(
     `WITH v AS (
-       SELECT coalesce(coalesce(o.emitido_por_usuario, c.emitido_por_usuario)::text, 'API') AS clave,
+       SELECT coalesce(coalesce(o.emitido_por_usuario, c.emitido_por_usuario)::text, CASE c.origen WHEN 'SUNAT' THEN 'SUNAT' ELSE 'API' END) AS clave,
               count(*) FILTER (WHERE c.tipo_comprobante <> '07')::int AS n,
               sum(CASE WHEN c.tipo_comprobante = '07' THEN -c.importe_total ELSE c.importe_total END) AS monto,
               sum(CASE WHEN c.tipo_comprobante = '07' THEN -1 ELSE 1 END * (c.total_gravado + c.total_exonerado + c.total_inafecto)) AS base
-         FROM comprobantes c LEFT JOIN comprobantes o ON o.id = c.comprobante_referencia_id
+         FROM ventas_todas c LEFT JOIN comprobantes o ON o.id = c.comprobante_referencia_id
         WHERE c.empresa_id = $1 AND c.${VALIDO} AND c.fecha_emision >= date_trunc('month', $2::date) AND c.fecha_emision <= $2::date
         GROUP BY 1)
-     SELECT coalesce(u.nombre, u.email, 'Tienda / API') AS vendedor, v.n, v.monto::text AS ventas, v.base::text AS base,
+     SELECT coalesce(u.nombre, u.email, CASE v.clave WHEN 'SUNAT' THEN 'Emitidas en SUNAT' ELSE 'Tienda / API' END) AS vendedor, v.n, v.monto::text AS ventas, v.base::text AS base,
             ue.comision::text AS comision,
             coalesce(round(greatest(v.monto, 0) * 100 / nullif(max(v.monto) OVER (), 0)), 0)::int AS alto
        FROM v LEFT JOIN usuarios u ON u.id::text = v.clave

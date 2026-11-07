@@ -2,6 +2,7 @@
  * Devoluciones: nota de crédito + stock + reembolso, sin devolver nunca más de lo vendido.
  */
 import { mkdtemp } from 'node:fs/promises';
+import pg from 'pg';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -152,6 +153,22 @@ describe.skipIf(!URL_PRUEBAS)('devoluciones', () => {
     expect(fila).toMatchObject({ gastos: '354.00' });
     const linea = (await lineasParaCerrar(db, f.empresaId, hoy)).find((l) => l.cuentaId === cuenta);
     expect(linea?.esperado.startsWith('-')).toBe(true);
+  });
+
+  // Antes el candado ocupaba una conexión del grupo mientras pedía otras: con todas ocupadas,
+  // el servidor quedaba colgado para siempre. Con UNA sola conexión en el grupo se nota al tiro.
+  it('el candado no ocupa conexiones del grupo: funciona aunque el grupo tenga una sola', async () => {
+    const id = await venta();
+    const uno = new pg.Pool({ connectionString: URL_PRUEBAS, max: 1 });
+    try {
+      const r = await Promise.race([
+        registrarDevolucion(uno, { empresaId: f.empresaId, comprobanteId: id, motivo: 'Cliente desistió', items: [{ orden: 1, cantidad: '1' }] }),
+        new Promise<never>((_, falla) => setTimeout(() => falla(new Error('Se colgó: el candado ocupó la única conexión.')), 4000)),
+      ]);
+      expect(r.tipo).toBe('PARCIAL');
+    } finally {
+      await uno.end();
+    }
   });
 
   it('solo sobre comprobantes aceptados por SUNAT', async () => {

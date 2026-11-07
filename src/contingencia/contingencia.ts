@@ -21,6 +21,7 @@ import { leerPedido } from '../api/solicitud.js';
 import { prepararComprobante } from '../comprobantes/preparar.js';
 import { cargarContexto, parametro } from '../comprobantes/repositorio.js';
 import { codigoErrorPg, enTransaccion, restriccionPg, type Db } from '../db/conexion.js';
+import { revisarStock } from '../inventario/stock.js';
 import { aTexto2 } from '../dinero.js';
 import { ahoraLima, diasEntre, esFecha, sumarDias } from '../fechas.js';
 import { TipoComprobante } from '../tipos.js';
@@ -86,23 +87,37 @@ export async function registrarContingencia(
   const t = p.comprobante.totales;
 
   try {
-    const r = await db.query(
-      `INSERT INTO ventas_contingencia (empresa_id, origen, tipo, serie, numero, fecha_emision, hora_emision, cliente_tipo_doc, cliente_doc, cliente_nombre,
-                                        total_gravado, total_exonerado, total_inafecto, total_igv, importe_total, items, medio_pago, canal_id, registrado_por, anotado_en)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-       ON CONFLICT (empresa_id, origen) DO NOTHING RETURNING id`,
-      [
-        d.empresaId, origen, s.tipo, serie, numero, fecha, hora, s.cliente.tipoDoc, s.cliente.numeroDoc, s.cliente.nombre,
-        aTexto2(t.gravado), aTexto2(t.exonerado), aTexto2(t.inafecto), aTexto2(t.igv), aTexto2(t.importeTotal),
-        JSON.stringify(p.comprobante.items.map((x) => ({ descripcion: x.descripcion, cantidad: x.cantidad.toString(), codigo: x.codigo ?? null, precio: x.precioUnitario.toString(), total: aTexto2(x.total) }))),
-        leido.valor.pago?.medio ?? null, d.canalId ?? null, d.usuarioId ?? null, anotadoEn,
-      ],
-    );
-    if (r.rowCount) {
-      await db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'VENTA_CONTINGENCIA', 'ventas_contingencia', $3, $4)`, [
+    await enTransaccion(db, async (tx) => {
+      const r = await tx.query(
+        `INSERT INTO ventas_contingencia (empresa_id, origen, tipo, serie, numero, fecha_emision, hora_emision, cliente_tipo_doc, cliente_doc, cliente_nombre,
+                                          total_gravado, total_exonerado, total_inafecto, total_igv, importe_total, items, medio_pago, canal_id, registrado_por, anotado_en)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+         ON CONFLICT (empresa_id, origen) DO NOTHING RETURNING id`,
+        [
+          d.empresaId, origen, s.tipo, serie, numero, fecha, hora, s.cliente.tipoDoc, s.cliente.numeroDoc, s.cliente.nombre,
+          aTexto2(t.gravado), aTexto2(t.exonerado), aTexto2(t.inafecto), aTexto2(t.igv), aTexto2(t.importeTotal),
+          JSON.stringify(p.comprobante.items.map((x) => ({ descripcion: x.descripcion, cantidad: x.cantidad.toString(), codigo: x.codigo ?? null, precio: x.precioUnitario.toString(), total: aTexto2(x.total) }))),
+          leido.valor.pago?.medio ?? null, d.canalId ?? null, d.usuarioId ?? null, anotadoEn,
+        ],
+      );
+      if (!r.rowCount) return; // ya había llegado (dos envíos a la vez): no se descuenta dos veces
+      await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'VENTA_CONTINGENCIA', 'ventas_contingencia', $3, $4)`, [
         d.empresaId, d.usuarioId ?? null, r.rows[0].id, JSON.stringify({ serie, numero, fecha, total: aTexto2(t.importeTotal) }),
       ]);
-    }
+      // Lo vendido sale del stock igual que en una venta normal (si el producto controla stock).
+      const salieron: string[] = [];
+      for (const it of p.comprobante.items) {
+        if (!it.codigo) continue;
+        const prod = (await tx.query(`SELECT id FROM productos WHERE empresa_id = $1 AND sku = $2 AND controla_stock`, [d.empresaId, it.codigo.toUpperCase()])).rows[0];
+        if (!prod) continue;
+        await tx.query(
+          `INSERT INTO movimientos_stock (empresa_id, producto_id, tipo, cantidad, motivo, usuario_id) VALUES ($1, $2, 'VENTA', $3, $4, $5)`,
+          [d.empresaId, prod.id, it.cantidad.neg().toString(), `Venta sin internet (${s.tipo === '01' ? 'factura' : 'boleta'} impresa ${serie}-${numero})`, d.usuarioId ?? null],
+        );
+        salieron.push(prod.id as string);
+      }
+      await revisarStock(tx, d.empresaId, salieron);
+    });
   } catch (e) {
     if (codigoErrorPg(e) === '23505' && restriccionPg(e) === 'ventas_contingencia_empresa_id_tipo_serie_numero_key') {
       throw new ErrorContingencia([`La ${s.tipo === '01' ? 'factura' : 'boleta'} impresa ${serie}-${numero} ya está registrada. Revisa el número.`]);
