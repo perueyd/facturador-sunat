@@ -214,3 +214,7 @@ button.sumar { margin-top: 4px; padding: 0 14px; font-size: 20px; font-weight: 7
 #lista-cierres > li { flex-wrap: wrap; cursor: pointer; }
 .detalle-cierre { flex-basis: 100%; margin: 8px 0 0; padding-left: 18px; font-size: 14px; }
 .lista .detalle-cierre li { display: list-item; padding: 2px 0; margin: 0; border: 0; background: none; cursor: auto; }
+/* Ventanas (devolución, escáner). */
+dialog { width: min(520px, calc(100% - 32px)); border: 0; border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
+dialog::backdrop { background: rgba(0, 0, 0, .4); }
+dialog button[type=submit].peligro { color: #fff; background: var(--rojo); }

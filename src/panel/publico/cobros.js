@@ -86,7 +86,7 @@ async function cargarCaja(periodo = 'hoy') {
   const c = await api(`/caja?desde=${desde}&hasta=${hasta}`);
   $('#kpis-caja').replaceChildren(
     kpi('verde', 'Total cobrado', soles(c.totales.total), `${c.totales.cobros} cobro(s)`),
-    kpi(c.totales.gastos !== '0.00' ? 'rosa' : 'gris', 'Gastos', soles(c.totales.gastos), `queda ${soles(c.totales.neto)}`),
+    kpi(c.totales.gastos !== '0.00' ? 'rosa' : 'gris', 'Salió', soles(c.totales.gastos), `gastos, pagos y devoluciones · queda ${soles(c.totales.neto)}`),
     kpi('azul', 'Cuentas de la empresa', soles(c.totales.empresa), 'lo que entró a la empresa'),
     kpi(c.totales.terceros !== '0.00' ? 'ambar' : 'gris', 'Cuentas de otras personas', soles(c.totales.terceros), 'por rendir a la empresa'),
     kpi('morado', 'Vendido', soles(c.vendido), 'boletas y facturas del período'),

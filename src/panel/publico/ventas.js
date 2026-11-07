@@ -417,6 +417,40 @@ async function abrirArchivo(ruta) {
   if (ventana) ventana.location.href = url; else window.location.href = url;
 }
 
+// ---------- Devolución total ----------
+let devolucionDe = null;
+function abrirDevolucion(c) {
+  devolucionDe = c;
+  const f = $('#form-devolucion');
+  f.reset();
+  $('#titulo-devolucion').textContent = `Devolución de ${c.numero} (S/ ${c.total})`;
+  llenarMedios(f.medio, 'No le devolví dinero (todavía)');
+  $('#error-devolucion').textContent = '';
+  $('#dialogo-devolucion').showModal();
+}
+
+async function alDevolver(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const b = e.target.querySelector('button[type=submit]');
+  b.disabled = true;
+  try {
+    const r = await api(`/comprobantes/${devolucionDe.id}/devolucion`, {
+      cuerpo: {
+        motivo: f.get('motivo'),
+        ...(f.get('medio') ? { reembolso: { ...leerMedio(f.get('medio')), ...(f.get('referencia') ? { referencia: f.get('referencia') } : {}) } } : {}),
+      },
+    });
+    $('#dialogo-devolucion').close();
+    mostrarResultado(r);
+    await cargarPanel();
+  } catch (err) {
+    $('#error-devolucion').textContent = err.message;
+  } finally {
+    b.disabled = false;
+  }
+}
+
 function mostrarResultado(c) {
   const caja = $('#resultado');
   const titulo = document.createElement('p');
@@ -451,12 +485,7 @@ function mostrarResultado(c) {
   }
   // Corregir: devolución total (nota de crédito) o anulación. Solo dueño/administrador.
   if (yo?.puedeCorregir && c.tipo !== '07' && (c.estado === 'ACEPTADO' || c.estado === 'ACEPTADO_OBS')) {
-    const corregir = boton('Devolución total (nota de crédito)', async () => {
-      const motivo = prompt('Motivo de la devolución (lo verá SUNAT):', 'Devolución del cliente');
-      if (!motivo) return;
-      try { mostrarResultado(await api(`/comprobantes/${c.id}/devolucion`, { cuerpo: { motivo } })); await cargarPanel(); }
-      catch (err) { alert(err.message); }
-    });
+    const corregir = boton('Devolución total (nota de crédito)', () => abrirDevolucion(c));
     corregir.classList.add('peligro');
     const anular = boton('Anular (error al emitir)', async () => {
       const motivo = prompt('¿Por qué se anula? (máx. 100 caracteres)', 'Error en la emisión');

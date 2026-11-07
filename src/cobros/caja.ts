@@ -111,7 +111,11 @@ export async function caja(db: Db, empresaId: string, desde: string, hasta: stri
        UNION ALL
        -- Pagos a proveedores por compras al crédito: también es dinero que sale de la cuenta.
        SELECT cuenta_id, medio, 0, monto, 0 FROM pagos_compra
-        WHERE empresa_id = $1 AND anulado_en IS NULL AND fecha BETWEEN $2::date AND $3::date)
+        WHERE empresa_id = $1 AND anulado_en IS NULL AND fecha BETWEEN $2::date AND $3::date
+       UNION ALL
+       -- Dinero devuelto a clientes (devoluciones): sale de la cuenta como un gasto.
+       SELECT cuenta_id, medio, 0, monto, 0 FROM reembolsos
+        WHERE empresa_id = $1 AND fecha BETWEEN $2::date AND $3::date)
      -- Una línea por cuenta (aunque la cuenta haya cambiado de medio: vale el medio actual) y,
      -- para lo que no dijo cuenta, una línea por medio.
      SELECT k.id AS cuenta_id, coalesce(k.nombre, initcap(min(m.medio::text))) AS nombre,

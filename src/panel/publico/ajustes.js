@@ -385,6 +385,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   $('#archivo-logo').addEventListener('change', subirLogo);
+  $('#form-devolucion').addEventListener('submit', alDevolver);
+  $('#cancelar-devolucion').addEventListener('click', () => $('#dialogo-devolucion').close());
   $('#importar-tienda').addEventListener('click', importarDesdeTienda);
   $('#archivo-catalogo').addEventListener('change', importarDesdeArchivo);
   $('#activar-antiguos').addEventListener('click', () => cambiarAntiguos(true));

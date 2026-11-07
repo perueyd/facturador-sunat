@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AlmacenLocal } from '../../src/almacen/almacen.js';
+import { caja, guardarCuenta, lineasParaCerrar } from '../../src/cobros/caja.js';
 import { estadoCobro } from '../../src/cobros/pagos.js';
 import { procesarCola, type ServiciosEnvio } from '../../src/cola/procesar.js';
 import { emitirComprobante } from '../../src/comprobantes/emitir.js';
@@ -137,6 +138,20 @@ describe.skipIf(!URL_PRUEBAS)('devoluciones', () => {
     const q = await db.query(`SELECT monto::text, medio::text, referencia FROM reembolsos WHERE devolucion_id = $1`, [r.devolucionId]);
     expect(q.rows[0]).toEqual({ monto: '354.00', medio: 'YAPE', referencia: 'OP-9' });
     await expect(db.query(`DELETE FROM reembolsos WHERE devolucion_id = $1`, [r.devolucionId])).rejects.toThrow();
+  });
+
+  // El dueño vio que las devoluciones no se restaban en la Caja: el dinero devuelto sale de
+  // la cuenta (la elegida o la predeterminada del medio) como un gasto, y el cierre lo descuenta.
+  it('reembolso: la Caja y el cierre lo restan de la cuenta de donde salió', async () => {
+    const u = (await db.query(`INSERT INTO usuarios (email, nombre, password_hash) VALUES ($1, 'Caja', 'x') RETURNING id`, [`caja${Date.now()}@prueba.pe`])).rows[0].id as string;
+    const cuenta = await guardarCuenta(db, f.empresaId, { nombre: `Cajón ${Date.now()}`, medio: 'EFECTIVO', deLaEmpresa: true, predeterminada: true }, u);
+    const id = await venta();
+    await devolver(id, { reembolso: { medio: 'EFECTIVO' } });
+    const hoy = ahoraLima().fecha;
+    const fila = (await caja(db, f.empresaId, hoy, hoy)).cuentas.find((x) => x.cuentaId === cuenta);
+    expect(fila).toMatchObject({ gastos: '354.00' });
+    const linea = (await lineasParaCerrar(db, f.empresaId, hoy)).find((l) => l.cuentaId === cuenta);
+    expect(linea?.esperado.startsWith('-')).toBe(true);
   });
 
   it('solo sobre comprobantes aceptados por SUNAT', async () => {
