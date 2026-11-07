@@ -45,7 +45,7 @@ describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
     // Sin cuenta elegida: va a la predeterminada del medio.
     expect((await registrarPago(db, { empresaId: f.empresaId, comprobanteId: await venta('100.00'), medio: 'YAPE', referencia: 'Y1' })).resultado).toBe('REGISTRADO');
     expect((await registrarPago(db, { empresaId: f.empresaId, comprobanteId: await venta('40.00'), medio: 'YAPE', cuentaId: yapeMaria, referencia: 'Y2' })).resultado).toBe('REGISTRADO');
-    // Efectivo sin cuenta creada: queda como "Sin cuenta: Efectivo" (de la empresa).
+    // Efectivo sin cuenta creada: queda como "Efectivo" (de la empresa).
     expect((await registrarPago(db, { empresaId: f.empresaId, comprobanteId: await venta('25.50'), medio: 'EFECTIVO' })).resultado).toBe('REGISTRADO');
     // Pago parcial: se vendió 200 y solo entraron 50.
     expect((await registrarPago(db, { empresaId: f.empresaId, comprobanteId: await venta('200.00'), medio: 'YAPE', monto: '50.00', referencia: 'Y3' })).resultado).toBe('REGISTRADO');
@@ -60,7 +60,7 @@ describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
     expect(c.cuentas).toEqual([
       { cuentaId: yapeEmpresa, nombre: 'Yape de la empresa', medio: 'YAPE', titular: null, deLaEmpresa: true, cobros: 2, monto: '150.00', gastos: '0.00', neto: '150.00' },
       { cuentaId: yapeMaria, nombre: 'Yape de María', medio: 'YAPE', titular: 'María Quispe', deLaEmpresa: false, cobros: 1, monto: '40.00', gastos: '0.00', neto: '40.00' },
-      { cuentaId: null, nombre: 'Sin cuenta: Efectivo', medio: 'EFECTIVO', titular: null, deLaEmpresa: true, cobros: 1, monto: '25.50', gastos: '0.00', neto: '25.50' },
+      { cuentaId: null, nombre: 'Efectivo', medio: 'EFECTIVO', titular: null, deLaEmpresa: true, cobros: 1, monto: '25.50', gastos: '0.00', neto: '25.50' },
     ]);
     expect(c.totales).toEqual({ empresa: '175.50', terceros: '40.00', total: '215.50', cobros: 4, gastos: '0.00', neto: '215.50' });
     expect(c.vendido).toBe('375.50');
@@ -133,6 +133,19 @@ describe.skipIf(!URL_PRUEBAS)('caja y cuentas de cobro', () => {
     expect(p.total).toBe('30.00');
     expect(p.porCategoria).toEqual([{ categoria: 'SERVICIOS', nombre: 'Luz, agua, internet', monto: '30.00', ancho: 100 }]);
     expect(p.gastos.find((g) => g.id === pasaje)?.anulado).toMatchObject({ motivo: 'Lo pagó el cliente', por: 'Caja' });
+  });
+
+  // El dueño preguntó por qué en el cierre solo salían Yape y Plin: ahora salen todos los
+  // medios, y los que no se usaron (y empezaron en 0) pueden quedar sin contar: cuentan 0.
+  it('cierre: salen todos los medios aunque no se usaran; los vacíos sin dinero cuentan 0', async () => {
+    const g = await crearEmpresa(db, `2060000009${digitoVerificadorRuc('2060000009')}`);
+    const hoy = ahoraLima().fecha;
+    const lineas = await lineasParaCerrar(db, g.empresaId, hoy);
+    expect(lineas.map((l) => l.nombre)).toEqual(['Efectivo', 'Yape', 'Plin', 'Transferencia', 'Tarjeta']);
+    const u = (await db.query(`INSERT INTO usuarios (email, nombre, password_hash) VALUES ('cierre@prueba.pe', 'Caja', 'x') RETURNING id`)).rows[0].id as string;
+    const c = await cerrarCaja(db, g.empresaId, hoy, { 'SIN:EFECTIVO': '15.00' }, null, u, hoy);
+    expect(c.lineas.map((l) => [l.nombre, l.contado])).toEqual([['Efectivo', '15.00'], ['Yape', '0.00'], ['Plin', '0.00'], ['Transferencia', '0.00'], ['Tarjeta', '0.00']]);
+    expect(c.totales.diferencia).toBe('15.00');
   });
 
   it('fondo inicial: el cajón empieza con lo que quedó en el último cierre; se puede corregir', async () => {
