@@ -65,6 +65,9 @@ async function cargarCotizaciones() {
   if (!yo?.puedeEmitir) return;
   const { cotizaciones } = await api('/cotizaciones');
   const hoy = hoyLima();
+  // Sin cotizaciones no se muestra la sección (menos cosas en Vender).
+  $('#titulo-cotizaciones').hidden = !cotizaciones.length;
+  $('#lista-cotizaciones').hidden = !cotizaciones.length;
   $('#lista-cotizaciones').replaceChildren(...(cotizaciones.length ? cotizaciones.map((k) => {
     const vencida = k.estado === 'VIGENTE' && k.validaHasta < hoy;
     const estado = k.estado === 'CONVERTIDA' ? `vendida (${k.comprobante})` : vencida ? 'vencida' : ESTADO_COTIZACION[k.estado];
@@ -101,8 +104,8 @@ async function cargarCotizaciones() {
 // y el plan permiten (si la pestaña o la sección están ocultas, el acceso tampoco sale).
 // Solo lo que se HACE en el día (los lugares ya están en las pestañas de arriba). El último
 // valor dice quién lo ve; la configuración no va aquí: si falta algo, sale el aviso de arriba.
+// "Nueva venta" no va aquí: arriba están los botones grandes "Emitir boleta" y "Emitir factura".
 const ACCESOS = [
-  ['🧾', 'Nueva venta', 'Boleta o factura', 'vender', null, () => yo.puedeEmitir],
   ['💸', 'Registrar un gasto', 'Dinero que sale de la caja', 'cobrar', '#caja-registrar-gasto', () => yo.puedeEmitir && tiene('cobros')],
   ['🔒', 'Cerrar la caja', 'Contar el dinero del día', 'cobrar', '#caja-cierre', () => yo.verCaja],
   ['📊', 'Para tu contador', 'Ventas, compras y gastos en Excel', 'mas', '#caja-exportar', () => tiene('exportar')],
@@ -209,7 +212,11 @@ async function cargarTablero() {
     tarjetas.push(tarjeta('Por pagar a proveedores', `S/ ${t.porPagar.saldo}`,
       t.porPagar.vencido !== '0.00' ? `⚠️ vencido S/ ${t.porPagar.vencido}` : t.porPagar.vencePronto !== '0.00' ? `vence en 7 días S/ ${t.porPagar.vencePronto}` : 'al día', urgente ? 'urgente' : ''));
   }
-  $('#tablero').replaceChildren(...tarjetas);
+  // Lo urgente (certificado, rechazos, plazos que vencen) queda a la vista en el Inicio;
+  // lo demás va plegado en "Ver cómo va tu negocio" para no llenar la pantalla.
+  const urgentes = tarjetas.filter((x) => x.classList.contains('urgente'));
+  $('#alertas-inicio').replaceChildren(...urgentes);
+  $('#tablero').replaceChildren(...tarjetas.filter((x) => !urgentes.includes(x)));
   $('#nota-estimado').hidden = !r;
 }
 

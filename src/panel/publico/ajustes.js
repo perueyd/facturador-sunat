@@ -394,8 +394,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-cierre').addEventListener('submit', alCerrarCaja);
   $('#condicion-compra').addEventListener('change', (e) => { $('#caja-vence-compra').hidden = e.target.value !== 'CREDITO'; $('#form-compra').vence.required = e.target.value === 'CREDITO'; });
   $('#admin-alta').addEventListener('click', async () => { await abrirPestana('mas'); $('#caja-empresa-nueva').open = true; $('#caja-empresa-nueva').scrollIntoView({ behavior: 'smooth' }); });
+  for (const b of document.querySelectorAll('#emitir-grande button')) {
+    b.addEventListener('click', async () => { await abrirPestana('vender'); elegirTipo(b.dataset.tipo); $('#form-emitir').scrollIntoView({ behavior: 'smooth' }); });
+  }
+  for (const b of document.querySelectorAll('#herramientas-mas [data-abre]')) b.addEventListener('click', () => abrirPestana(b.dataset.abre));
   $('#aviso-configuracion').addEventListener('click', async () => {
     await abrirPestana('mas');
+    $('#caja-configuracion').open = true;
     $('#caja-configuracion').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   $('#aliado-alta').addEventListener('click', async () => { await abrirPestana('mas'); $('#caja-empresa-nueva').open = true; $('#caja-empresa-nueva').scrollIntoView({ behavior: 'smooth' }); });
