@@ -720,10 +720,34 @@ Lo que dice la norma:
    electrónica después. El comprobante se entrega al pagar o entregar (RCP art. 5). Por eso esa
    idea **se descarta**.
 
-Por confirmar con el contador antes de programar:
-- Si Agamenón y el RUC 10 son emisores "por determinación de la SUNAT" (la contingencia es para ellos).
-- Si "se cortó el internet de la tienda" cuenta como causa no imputable.
-- El formato exacto (anexo 6 de la R.S. 097-2012; el PDF oficial es una imagen escaneada).
+Revisión del 07/11/2026 (fuentes oficiales):
+- **Internet caído sí cuenta**: la guía SUNAT "Resumen de comprobantes impresos" v1.1 y el Anexo II de la
+  R.S. 254-2018/SUNAT listan como motivo de contingencia "1. Conexión a internet".
+- **Cómo se informa**: archivo `RUC-RF-DDMMAAAA-NN.TXT` (DDMMAAAA = fecha de emisión) dentro de un ZIP
+  con el mismo nombre, campos separados por "|", un comprobante por línea (26 campos del Anexo II de la
+  R.S. 254-2018). Se carga en SOL → Comprobantes de pago → Contingencia de Comprobantes de Pago → Envío
+  de archivo de contingencia; SUNAT da un ticket. Un archivo nuevo de la misma fecha reemplaza al anterior.
+- **Ojo, PEI - WEB (R.S. 000049-2026, vigente desde el 01/08/2026)**: su Anexo I solo trae el motivo
+  "8. Baja o nula conexión a Internet" y es para emisores ubicados en zonas de baja conectividad (literal c)
+  del numeral 4.1 de la R.S. 300-2014). La contingencia por causa no imputable (literal a) sigue con el
+  archivo RF de arriba. **Confirmar con el contador en el primer envío.**
+
+## 23. Vender sin internet (resultado)
+
+- **Sin señal**, Vender pide la serie y el número de la boleta o factura IMPRESA de contingencia que se
+  entrega (ej. 0001-15) y guarda la venta EN EL CELULAR (sugiere el número siguiente). La app instalada
+  abre aunque no haya internet, solo con Vender, con los productos y precios de la última vez.
+- **Al volver la señal** se envían solas (cada una una sola vez: código único por venta). El facturador
+  las valida y calcula igual que una boleta electrónica (IGV por fecha, DNI/RUC, factura con RUC).
+- **Son ventas de verdad**: suman en el IGV estimado del Inicio y salen en el Excel de ventas del contador
+  ("Boleta impresa (contingencia)"). Tabla aparte `ventas_contingencia`, solo inserción.
+- **Para SUNAT**: Más → Para tu contador → Ventas sin internet: un botón por día descarga el ZIP RF. El
+  Inicio avisa lo que falta informar y cuántos días quedan (parámetro `PLAZO_INFORMAR_CONTINGENCIA_DIAS` = 7).
+- **Antes de usarlo**: pedir a SUNAT la autorización de impresión de boletas de contingencia (imprenta
+  autorizada, hasta 100 por local la primera vez) con las leyendas "Comprobante de pago emitido en
+  contingencia" y "Emisor electrónico obligado".
+- **Aún no**: no descuentan stock, no entran en Caja ni en Estadísticas, y no tienen notas de crédito
+  (si hay que corregir una, se ve con el contador).
 
 ## 22. Comprobantes antiguos (opcional, resultado)
 

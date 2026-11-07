@@ -167,14 +167,27 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
         WHERE co.empresa_id = $1 AND to_char(co.fecha_emision, 'YYYY-MM') = $2 ORDER BY co.fecha_emision, co.serie, co.numero`,
       [s.empresa.id, mes],
     );
+    // Boletas y facturas IMPRESAS de contingencia (ventas sin internet): también van al registro de ventas.
+    const impresas = await d.db.query(
+      `SELECT v.fecha_emision::text AS fecha, v.tipo, v.serie, v.numero, v.cliente_doc, v.cliente_nombre,
+              (v.total_gravado + v.total_exonerado + v.total_inafecto)::text AS base, v.total_igv::text AS igv, v.importe_total::text AS total,
+              coalesce(ca.nombre, '') AS canal
+         FROM ventas_contingencia v LEFT JOIN canales ca ON ca.id = v.canal_id
+        WHERE v.empresa_id = $1 AND to_char(v.fecha_emision, 'YYYY-MM') = $2`,
+      [s.empresa.id, mes],
+    );
     const TIPOS: Record<string, string> = { '01': 'Factura', '03': 'Boleta', '07': 'Nota de crédito' };
-    const lineas = [
-      ['Fecha', 'Tipo', 'Número', 'Doc. cliente', 'Cliente', 'Base imponible', 'IGV', 'Total', 'Estado SUNAT', 'Pago', 'Canal'],
+    const filas = [
       ...r.rows.map((x) => [
         x.fecha, TIPOS[x.tipo_comprobante] ?? x.tipo_comprobante, idComprobanteLegible(x.serie, Number(x.numero)), x.cliente_numero_doc,
         x.cliente_nombre, x.base, x.igv, x.total, x.estado, x.pago, x.canal,
       ]),
-    ];
+      ...impresas.rows.map((x) => [
+        x.fecha, `${TIPOS[x.tipo]} impresa (contingencia)`, `${x.serie}-${x.numero}`, x.cliente_doc, x.cliente_nombre, x.base, x.igv, x.total,
+        'IMPRESA: informar con archivo RF', 'PAGADO', x.canal,
+      ]),
+    ].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    const lineas = [['Fecha', 'Tipo', 'Número', 'Doc. cliente', 'Cliente', 'Base imponible', 'IGV', 'Total', 'Estado SUNAT', 'Pago', 'Canal'], ...filas];
     return csv('ventas', lineas);
   });
 

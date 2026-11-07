@@ -16,6 +16,7 @@
   <script src="/panel/plataforma.js" defer></script>
   <script src="/panel/cobros.js" defer></script>
   <script src="/panel/compras.js" defer></script>
+  <script src="/panel/sinconexion.js" defer></script>
   <script src="/panel/ajustes.js" defer></script>
 </head>
 <body>
@@ -160,6 +161,9 @@
     <section id="vista-panel" hidden>
       <p id="aviso-plan" class="aviso" hidden></p>
       <p id="aviso-beta" class="aviso" hidden>Ambiente de PRUEBA (beta): los comprobantes no tienen valor legal.</p>
+      <p id="aviso-sin-conexion" class="aviso urgente" role="status" hidden>📵 <strong>Sin internet.</strong> Entrega una boleta IMPRESA de
+        contingencia y anota aquí su número: la venta se guarda en este celular y se envía sola cuando vuelva la señal.</p>
+      <button type="button" id="ventas-por-enviar" class="aviso" hidden></button>
       <label id="caja-empresa">Empresa <select id="empresa"></select></label>
 
       <nav class="pestanas" id="pestanas">
@@ -232,6 +236,15 @@
           <select name="tipo" hidden><option value="BOLETA">Boleta</option><option value="FACTURA">Factura</option></select>
           <label>¿Por dónde fue la venta? <select name="canal" id="canal"></select></label>
         </fieldset>
+        <fieldset id="caja-contingencia" hidden>
+          <legend>Boleta impresa que entregas</legend>
+          <p class="nota">Usa tus boletas o facturas impresas de contingencia (autorizadas por SUNAT, con la leyenda
+            "Comprobante de pago emitido en contingencia"). Escribe la serie y el número que tiene impresos.</p>
+          <div class="fila">
+            <label>Serie <input id="serie-impresa" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="0001"></label>
+            <label>Número <input id="numero-impresa" inputmode="numeric" maxlength="8" pattern="[0-9]{1,8}" placeholder="123"></label>
+          </div>
+        </fieldset>
         <details class="ajustes" id="caja-fecha-venta">
           <summary>¿La venta fue otro día?</summary>
           <p class="nota">Solo si la venta (entrega o cobro) fue en un día anterior y no se emitió a tiempo, por ejemplo
@@ -293,7 +306,7 @@
 
         <p class="aviso" id="aviso-cotizacion" hidden></p>
         <button type="submit" id="boton-emitir" class="boton-fijo">Emitir boleta</button>
-        <details class="ajustes">
+        <details class="ajustes" id="caja-cotizar">
           <summary>¿Solo un presupuesto? Guardar como cotización</summary>
           <p class="nota">No es comprobante de pago: no va a SUNAT ni cuenta como venta. Cuando el cliente acepte, la vendes con un toque.</p>
           <div class="fila">
@@ -306,6 +319,11 @@
       </form>
 
       <div id="resultado" class="resultado" hidden></div>
+      <section id="caja-por-enviar" hidden>
+        <h2>📵 Ventas sin internet en este celular</h2>
+        <p class="nota">Se envían solas cuando hay señal. No borres los datos del navegador ni desinstales la app hasta que esta lista quede vacía.</p>
+        <ul id="lista-por-enviar" class="lista"></ul>
+      </section>
 
       <h2>Últimos comprobantes</h2>
       <ul id="lista" class="lista"></ul>
@@ -645,6 +663,13 @@
           <button type="button" id="exportar" class="secundario">Descargar (Excel)</button>
         </div>
       </section>
+      <details class="ajustes" id="caja-informar-contingencia" hidden>
+        <summary>Ventas sin internet (boletas impresas)</summary>
+        <p class="nota">Las boletas o facturas impresas de contingencia se informan a SUNAT <strong>hasta 7 días</strong> después de la venta.
+          Descarga el archivo de cada día y cárgalo en SUNAT Operaciones en Línea: Comprobantes de pago → Contingencia de
+          Comprobantes de Pago → Envío de archivo de contingencia. Guarda el número de ticket que te da SUNAT.</p>
+        <ul id="lista-contingencia" class="lista"></ul>
+      </details>
       <details class="ajustes" id="caja-antiguos">
         <summary>Comprobantes antiguos (opcional)</summary>
         <div id="antiguos-apagado">
