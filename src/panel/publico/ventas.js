@@ -417,6 +417,43 @@ async function abrirArchivo(ruta) {
   if (ventana) ventana.location.href = url; else window.location.href = url;
 }
 
+// ---------- Paso 1 de Vender: venta, cotización o devolución ----------
+// Cotización: los mismos datos de cliente y productos, sin "cómo pagó"; se guarda como proforma.
+// Devolución: se elige la boleta o factura que se devuelve y se abre la ventana de la nota de crédito.
+let comprobantesParaDevolver = [];
+function elegirModo(modo) {
+  const f = $('#form-emitir');
+  f.classList.toggle('modo-cotizacion', modo === 'COTIZACION');
+  f.classList.toggle('modo-devolucion', modo === 'DEVOLUCION');
+  for (const b of document.querySelectorAll('#elegir-tipo button[data-modo]')) b.classList.toggle('activa', b.dataset.modo === modo);
+  if (modo === 'VENTA') return;
+  for (const b of document.querySelectorAll('#elegir-tipo button[data-tipo]')) b.classList.remove('activa');
+  if (modo === 'COTIZACION') {
+    $('#caja-cotizar').open = true;
+    $('#caja-cotizar').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else {
+    $('#buscar-devolucion').value = '';
+    cargarParaDevolver().catch((err) => { $('#lista-devolucion').replaceChildren(linea(err.message, '')); });
+  }
+}
+
+async function cargarParaDevolver() {
+  const { comprobantes } = await api('/comprobantes');
+  // Solo boletas y facturas aceptadas por SUNAT se pueden devolver.
+  comprobantesParaDevolver = comprobantes.filter((c) => ['01', '03'].includes(c.tipo) && ['ACEPTADO', 'ACEPTADO_OBS'].includes(c.estado));
+  dibujarParaDevolver();
+}
+
+function dibujarParaDevolver() {
+  const q = $('#buscar-devolucion').value.trim().toLowerCase();
+  const lista = comprobantesParaDevolver.filter((c) => !q || c.numero.toLowerCase().includes(q) || (c.cliente || '').toLowerCase().includes(q));
+  $('#lista-devolucion').replaceChildren(...(lista.length ? lista.map((c) => {
+    const li = linea(`${c.fecha} · ${c.numero} · ${c.cliente}`, `S/ ${c.total}`);
+    li.addEventListener('click', () => abrirDevolucion(c));
+    return li;
+  }) : [linea('No hay boletas o facturas aceptadas por SUNAT para devolver (entre las últimas 30).', '')]));
+}
+
 // ---------- Devolución total ----------
 let devolucionDe = null;
 function abrirDevolucion(c) {

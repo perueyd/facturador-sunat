@@ -86,6 +86,7 @@ function textoBotonEmitir() {
 function elegirTipo(tipo) {
   const select = $('#form-emitir').tipo;
   select.value = tipo;
+  elegirModo('VENTA');
   for (const b of document.querySelectorAll('#elegir-tipo button')) b.classList.toggle('activa', b.dataset.tipo === tipo);
   $('#caja-forma-pago').hidden = tipo !== 'FACTURA';
   select.dispatchEvent(new Event('change'));
@@ -203,6 +204,8 @@ async function cargarPanel() {
   $('#herramientas-mas').hidden = [...document.querySelectorAll('#herramientas-mas [data-abre]')].every((b) => b.hidden);
   $('#saludo').textContent = `Hola, ${yo.nombre.split(' ')[0]}`;
   $('#emitir-grande').hidden = !yo.puedeEmitir;
+  // Devolver (nota de crédito) solo el dueño o un administrador.
+  document.querySelector('#elegir-tipo [data-modo="DEVOLUCION"]').hidden = !yo.puedeCorregir;
   $('#caja-producto').hidden = !yo.puedeAdministrar;
   $('#caja-importar').hidden = !yo.puedeAdministrar;
   $('#direccion-catalogo').value = (yo.empresa && localStorage.getItem(`catalogo-${yo.empresa.id}`)) || '';

@@ -242,9 +242,17 @@
           <div class="eleccion" id="elegir-tipo">
             <button type="button" data-tipo="BOLETA" class="activa">🧾 Boleta<small>a personas (DNI o sin documento)</small></button>
             <button type="button" data-tipo="FACTURA">📄 Factura<small>a empresas (con RUC)</small></button>
+            <button type="button" data-modo="COTIZACION">📋 Cotización<small>presupuesto (no es comprobante)</small></button>
+            <button type="button" data-modo="DEVOLUCION">↩️ Devolución<small>nota de crédito de una venta</small></button>
           </div>
           <select name="tipo" hidden><option value="BOLETA">Boleta</option><option value="FACTURA">Factura</option></select>
         </fieldset>
+        <section id="elegir-devolucion">
+          <p class="nota">Elige la boleta o factura que te devolvieron. Se emite una nota de crédito por todo el comprobante y,
+            si devolviste el dinero, la Caja lo resta.</p>
+          <label>Buscar <input id="buscar-devolucion" placeholder="Número (B001-15) o nombre del cliente" maxlength="60"></label>
+          <ul id="lista-devolucion" class="lista"></ul>
+        </section>
         <fieldset id="caja-contingencia" hidden>
           <legend>Boleta impresa que entregas</legend>
           <p class="nota">Usa tus boletas o facturas impresas de contingencia (autorizadas por SUNAT, con la leyenda
@@ -294,7 +302,7 @@
           <p class="total">Total: <strong id="total">S/ 0.00</strong></p>
         </fieldset>
 
-        <fieldset>
+        <fieldset id="caja-pago">
           <legend>4. ¿Cómo pagó?</legend>
           <div class="fila">
             <label>Medio
