@@ -137,7 +137,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   // Comprobantes antiguos: un ZIP de SUNAT con varios XML (en base64 pesa un tercio más).
   const limiteAntiguos = bodyLimit({ maxSize: 3 * 1024 * 1024, onError: (c) => d.error(c, 413, 'DEMASIADO_GRANDE', 'El archivo pesa más de 2 MB: súbelo en partes.') });
   app.use('/panel/api/*', (c, next) =>
-    (/^\/panel\/api\/gastos\/[^/]+\/foto$/.test(c.req.path) ? limiteFoto : c.req.path === '/panel/api/antiguos' ? limiteAntiguos : limite)(c, next));
+    (/^\/panel\/api\/gastos\/[^/]+\/foto$|^\/panel\/api\/productos\/importar$/.test(c.req.path) ? limiteFoto : c.req.path === '/panel/api/antiguos' ? limiteAntiguos : limite)(c, next));
   app.use('/panel/api/*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     if (c.req.method !== 'GET') {

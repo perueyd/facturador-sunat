@@ -167,6 +167,7 @@ async function alEntrar(e) {
 /** Deja el formulario de Vender listo para la siguiente venta (otro pedido). */
 function limpiarVenta(form) {
   pedidoActual = nuevoPedido();
+  $('#aviso-documento').hidden = true;
   const serie = $('#serie-impresa').value;
   const numero = $('#numero-impresa').value;
   form.reset();

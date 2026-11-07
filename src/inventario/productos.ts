@@ -21,9 +21,15 @@ export interface DatosProducto {
 export class ErrorInventario extends Error {}
 
 /** Crea o actualiza un producto por su SKU. El costo promedio solo lo cambian las compras. */
+/** SKU en mayúsculas, o undefined si no es válido (letras, números, punto, guion o guion bajo; máx. 40). */
+export function normalizarSku(texto: string): string | undefined {
+  const sku = texto.trim().toUpperCase();
+  return /^[A-Z0-9][A-Z0-9._-]{0,39}$/.test(sku) ? sku : undefined;
+}
+
 export async function guardarProducto(db: Db, empresaId: string, p: DatosProducto): Promise<string> {
-  const sku = p.sku.trim().toUpperCase();
-  if (!/^[A-Z0-9][A-Z0-9._-]{0,39}$/.test(sku)) throw new ErrorInventario('SKU inválido: letras, números, punto, guion o guion bajo (máx. 40).');
+  const sku = normalizarSku(p.sku);
+  if (!sku) throw new ErrorInventario('SKU inválido: letras, números, punto, guion o guion bajo (máx. 40).');
   if (!p.nombre.trim()) throw new ErrorInventario('Falta el nombre del producto.');
   const precio = dec(p.precio);
   if (precio.isNegative()) throw new ErrorInventario('El precio no puede ser negativo.');

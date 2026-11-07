@@ -275,6 +275,7 @@
               </select></label>
             <label>Número <input name="numero" inputmode="numeric" maxlength="15"></label>
           </div>
+          <p class="aviso" id="aviso-documento" role="status" hidden></p>
           <label>Nombre o razón social <input name="nombre" maxlength="200"></label>
           <small>Factura: RUC y razón social obligatorios. Boleta sin documento: solo hasta el límite vigente.</small>
         </fieldset>
@@ -485,6 +486,17 @@
           </details>
         </div>
         <ul id="lista-stock" class="lista"></ul>
+        <details class="ajustes" id="caja-importar">
+          <summary>📥 Traer tus productos de tu tienda web o de un Excel</summary>
+          <p class="nota"><strong>De tu tienda web:</strong> pega la dirección de su catálogo (la misma que usan Facebook e
+            Instagram) y toca "Traer". Si ya estaban, se actualizan su nombre y precio; puedes repetirlo cuando cambies precios.</p>
+          <label>Dirección del catálogo <input id="direccion-catalogo" type="url" inputmode="url" placeholder="https://eydperu.vercel.app/api/feed?formato=csv"></label>
+          <button type="button" id="importar-tienda" class="secundario">Traer de mi tienda</button>
+          <p class="nota"><strong>De un Excel:</strong> columnas <em>código</em>, <em>nombre</em> y <em>precio</em> (con IGV);
+            guárdalo como "CSV" y elígelo aquí.</p>
+          <input type="file" id="archivo-catalogo" accept=".csv,text/csv">
+          <p id="mensaje-importar" role="status"></p>
+        </details>
         <details class="ajustes" id="caja-producto">
           <summary>Nuevo producto o cambiar precio</summary>
           <form id="form-producto">

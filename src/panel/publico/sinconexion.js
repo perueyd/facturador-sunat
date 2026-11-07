@@ -26,6 +26,7 @@ function recordarParaSinConexion() {
   localStorage.setItem(CLAVE_DATOS, JSON.stringify({
     yo: { nombre: yo.nombre, empresa: yo.empresa, empresas: [], canales: yo.canales, puedeEmitir: yo.puedeEmitir, bloqueadas: [], diasAtras: yo.diasAtras },
     productos: productos.map((p) => ({ nombre: p.nombre, sku: p.sku, precio: p.precio })),
+    vendidos,
     guardado: new Date().toISOString(),
   }));
 }
@@ -46,7 +47,8 @@ function abrirSinConexion() {
   $('#empresa-actual').hidden = false;
   $('#empresa-actual').textContent = `${yo.empresa.razonSocial} · ${yo.empresa.ruc}`;
   $('#canal').replaceChildren(...(yo.canales ?? []).map((c) => new Option(c, c)));
-  $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
+  vendidos = datos.vendidos ?? [];
+  llenarSugerencias();
   // Sin señal solo se vende: las demás pestañas necesitan al facturador.
   for (const b of document.querySelectorAll('#pestanas button')) b.hidden = b.dataset.pestana !== 'vender';
   abrirPestana('vender').catch(() => {});
