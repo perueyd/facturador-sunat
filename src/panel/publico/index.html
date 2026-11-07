@@ -829,6 +829,24 @@
   <datalist id="lista-skus"></datalist>
 
   <!-- Escáner con la cámara (si el navegador lo permite) -->
+  <!-- Devolución total: la nota de crédito y, si se devolvió el dinero, de dónde salió (la Caja lo resta). -->
+  <dialog id="dialogo-devolucion">
+    <form id="form-devolucion" method="dialog">
+      <h2 id="titulo-devolucion">Devolución</h2>
+      <label>Motivo (lo verá SUNAT) <input name="motivo" maxlength="200" value="Devolución del cliente" required></label>
+      <label>¿Le devolviste el dinero? ¿De dónde salió?
+        <select name="medio"></select></label>
+      <label>Nº de operación (opcional) <input name="referencia" maxlength="60"></label>
+      <p class="nota">Se emite una nota de crédito por todo el comprobante. Si le devolviste el dinero, la Caja y el
+        cierre lo restan de esa cuenta.</p>
+      <p class="error" id="error-devolucion" role="alert"></p>
+      <div class="fila">
+        <button type="button" id="cancelar-devolucion" class="secundario">Cancelar</button>
+        <button type="submit" class="peligro">Emitir nota de crédito</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="escaner">
     <p>Apunta la cámara al código de barras.</p>
     <video id="video-escaner" playsinline muted></video>

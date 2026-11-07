@@ -2,8 +2,8 @@
  * Rutas del panel · Ventas: cotizaciones, venta rápida, clientes, exportar, devoluciones y anulaciones.
  * Se registran desde rutas.ts, que arma la sesión y los ayudantes comunes (ver comun-rutas.ts).
  */
-import { sqlDelMes } from '../db/conexion.js';
 import type { Context, Hono } from 'hono';
+import { sqlDelMes } from '../db/conexion.js';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
 import { ahoraLima } from '../fechas.js';
@@ -16,6 +16,7 @@ import { idComprobanteLegible } from '../tipos.js';
 import { ROLES_EMISORES } from './usuarios.js';
 import { ROLES_COMPRAS, ROLES_CORRIGEN, UUID, csvParaExcel, origenPropio } from './comun-rutas.js';
 import { CATEGORIAS_GASTO, type CategoriaGasto } from '../cobros/gastos.js';
+import { MEDIOS_PAGO, type MedioPago } from '../cobros/pagos.js';
 import type { Comun } from './comun-rutas.js';
 
 export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, sinModulo, texto }: Comun): void {
@@ -236,7 +237,16 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
     const items = lineas.rows.filter((x) => Number.parseFloat(x.queda) > 0).map((x) => ({ orden: Number(x.orden), cantidad: x.queda as string }));
     if (!items.length) return d.error(c, 409, 'YA_DEVUELTO', 'Este comprobante ya fue devuelto por completo.');
     try {
-      const r = await registrarDevolucion(d.db, { empresaId: s.empresa.id, comprobanteId: id, motivo: texto(b.motivo, 200), items, usuarioId: s.usuarioId });
+      // Si se devolvió el dinero: por qué medio y de qué cuenta salió (la Caja lo resta).
+      const re = (typeof b.reembolso === 'object' && b.reembolso) ? b.reembolso as Record<string, unknown> : undefined;
+      const medio = texto(re?.medio, 20).toUpperCase() as MedioPago;
+      if (re && !MEDIOS_PAGO.includes(medio)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Elige por qué medio devolviste el dinero.');
+      const cuenta = texto(re?.cuenta, 36);
+      if (cuenta && !UUID.test(cuenta)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Cuenta inválida.');
+      const r = await registrarDevolucion(d.db, {
+        empresaId: s.empresa.id, comprobanteId: id, motivo: texto(b.motivo, 200), items, usuarioId: s.usuarioId,
+        ...(re ? { reembolso: { medio, ...(texto(re.referencia, 60) ? { referencia: texto(re.referencia, 60) } : {}), ...(cuenta ? { cuentaId: cuenta } : {}) } } : {}),
+      });
       return c.json(await d.respuestaComprobante(c, r.notaCreditoId), 201);
     } catch (e) {
       if (e instanceof ErrorDevolucion) return d.error(c, 422, 'NO_SE_PUEDE_DEVOLVER', e.message);

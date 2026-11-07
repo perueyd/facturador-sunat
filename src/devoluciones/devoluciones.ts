@@ -28,7 +28,7 @@ export interface DatosDevolucion {
   /** `orden` es el número de línea del comprobante (1, 2, …). */
   items: { orden: number; cantidad: string; danado?: boolean }[];
   /** Dinero devuelto al cliente. Sin `monto`, el total de la nota de crédito. */
-  reembolso?: { medio: MedioPago; monto?: string; referencia?: string };
+  reembolso?: { medio: MedioPago; monto?: string; referencia?: string; cuentaId?: string };
   usuarioId?: string;
 }
 
@@ -203,9 +203,17 @@ async function registrarConCandado(db: Db, d: DatosDevolucion): Promise<Devoluci
     }
     await revisarStock(tx, d.empresaId, danados);
     if (d.reembolso && reembolso) {
+      // De qué cuenta salió: la elegida (manda su medio) o la predeterminada del medio, como los cobros.
+      const cuenta = (await tx.query(
+        d.reembolso.cuentaId
+          ? `SELECT id, medio::text FROM cuentas_cobro WHERE empresa_id = $1 AND id = $2::uuid AND activa`
+          : `SELECT id, medio::text FROM cuentas_cobro WHERE empresa_id = $1 AND medio = $2 AND predeterminada AND activa`,
+        [d.empresaId, d.reembolso.cuentaId ?? d.reembolso.medio],
+      )).rows[0];
+      if (d.reembolso.cuentaId && !cuenta) throw new ErrorDevolucion('La cuenta de la que salió el dinero no existe o está desactivada.');
       await tx.query(
-        `INSERT INTO reembolsos (empresa_id, devolucion_id, monto, medio, referencia, fecha, usuario_id) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [d.empresaId, id, reembolso.toFixed(2), d.reembolso.medio, d.reembolso.referencia ?? null, hoy.fecha, d.usuarioId ?? null],
+        `INSERT INTO reembolsos (empresa_id, devolucion_id, monto, medio, referencia, fecha, usuario_id, cuenta_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [d.empresaId, id, reembolso.toFixed(2), cuenta?.medio ?? d.reembolso.medio, d.reembolso.referencia ?? null, hoy.fecha, d.usuarioId ?? null, cuenta?.id ?? null],
       );
     }
     await tx.query(
