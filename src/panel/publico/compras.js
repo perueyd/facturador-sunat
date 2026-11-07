@@ -243,8 +243,7 @@ async function alGuardarProducto(e) {
     msg.textContent = '✔ Producto guardado.';
     e.target.reset();
     await cargarStock();
-    productos = (await api('/productos')).productos;
-    $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
+    await cargarProductos();
   } catch (err) {
     msg.className = 'error';
     msg.textContent = err.message;
@@ -320,6 +319,37 @@ function mensaje(selector, texto, error = false) {
   const p = $(selector);
   p.className = error ? 'error' : '';
   p.textContent = texto;
+}
+
+// ---------- Importar productos (tienda web o Excel en CSV) ----------
+async function importarProductos(cuerpo) {
+  const msg = $('#mensaje-importar');
+  msg.className = '';
+  msg.textContent = 'Trayendo productos…';
+  try {
+    const r = await api('/productos/importar', { cuerpo });
+    msg.textContent = `✔ ${r.nuevos} producto(s) nuevo(s) y ${r.actualizados} actualizado(s). Ya te salen al escribir en Vender.${r.errores.length ? ` No se pudieron leer ${r.errores.length} fila(s): ${r.errores.slice(0, 3).join(' ')}` : ''}`;
+    await Promise.all([cargarStock(), cargarProductos()]);
+  } catch (err) {
+    msg.className = 'error';
+    msg.textContent = err.message;
+  }
+}
+
+async function importarDesdeTienda() {
+  const direccion = $('#direccion-catalogo').value.trim();
+  if (!direccion) { mensaje('#mensaje-importar', 'Pega primero la dirección del catálogo de tu tienda.', true); return; }
+  // Se recuerda para la próxima vez (solo en este aparato).
+  localStorage.setItem(`catalogo-${yo.empresa.id}`, direccion);
+  await importarProductos({ direccion });
+}
+
+async function importarDesdeArchivo(e) {
+  const archivo = e.target.files?.[0];
+  if (!archivo) return;
+  if (archivo.size > 350 * 1024) { mensaje('#mensaje-importar', 'El archivo es muy grande (máximo 350 KB). Divídelo en partes.', true); return; }
+  await importarProductos({ csv: await archivo.text() });
+  e.target.value = '';
 }
 
 const leerBase64 = (archivo) => new Promise((ok, falla) => {

@@ -102,7 +102,7 @@ function agregarItem() {
   // Producto guardado: al elegirlo de la lista se pone su precio y su código (así descuenta stock).
   nodo.querySelector('[name=descripcion]').addEventListener('change', (e) => {
     const fila = e.target.closest('.item');
-    const p = productos.find((x) => x.nombre === e.target.value);
+    const p = productos.find((x) => x.nombre === e.target.value) || vendidos.find((x) => x.nombre === e.target.value);
     fila.querySelector('[name=codigo]').value = p ? p.sku : '';
     if (p) {
       fila.querySelector('[name=precio]').value = p.precio;
@@ -139,6 +139,25 @@ function nuevoPedido() {
 
 let yo = null;
 let productos = [];
+// Lo vendido antes que no es un producto guardado: también se sugiere al escribir.
+let vendidos = [];
+
+/** Lista que aparece al escribir un producto en Vender: catálogo + lo vendido antes. */
+function llenarSugerencias() {
+  $('#lista-productos').replaceChildren(...[...productos, ...vendidos].map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
+}
+
+async function cargarProductos() {
+  const [cat, ven] = await Promise.all([
+    tiene('productos') ? api('/productos').catch(() => ({ productos: [] })) : { productos: [] },
+    api('/vendidos').catch(() => ({ vendidos: [] })),
+  ]);
+  productos = cat.productos;
+  vendidos = ven.vendidos.map((v) => ({ nombre: v.descripcion, precio: v.precio, sku: v.codigo ?? '' }));
+  llenarSugerencias();
+  // El campo del código de barras solo sirve si hay productos guardados.
+  $('#caja-codigo-venta').hidden = !productos.length;
+}
 const tiene = (modulo) => Boolean(yo?.empresa?.modulos?.includes(modulo));
 
 async function cargarPanel() {
@@ -185,6 +204,8 @@ async function cargarPanel() {
   $('#saludo').textContent = `Hola, ${yo.nombre.split(' ')[0]}`;
   $('#emitir-grande').hidden = !yo.puedeEmitir;
   $('#caja-producto').hidden = !yo.puedeAdministrar;
+  $('#caja-importar').hidden = !yo.puedeAdministrar;
+  $('#direccion-catalogo').value = (yo.empresa && localStorage.getItem(`catalogo-${yo.empresa.id}`)) || '';
   $('#caja-logo').hidden = !yo.puedeAdministrar;
   $('#caja-usuarios').hidden = !yo.esDueno;
   $('#caja-certificado').hidden = !yo.esDueno;
@@ -203,10 +224,7 @@ async function cargarPanel() {
     : '⚠️ No tienes códigos de respaldo: genéralos ahora por si pierdes el celular.';
   $('#caja-ajuste').hidden = !yo.puedeAdministrar;
   if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
-  productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
-  $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
-  // El campo del código de barras solo sirve si hay productos guardados.
-  $('#caja-codigo-venta').hidden = !productos.length;
+  await cargarProductos();
   // Para poder seguir vendiendo si se corta el internet (y mandar lo que quedó guardado).
   recordarParaSinConexion();
   ponerModoSinConexion(!navigator.onLine);

@@ -45,6 +45,8 @@ export interface Tablero {
     rentaPagoCuenta?: { monto: string; tasa: string; porVerificar: boolean };
     estimado: true;
   };
+  /** El mes en curso, cuando no es el que toca declarar (lo acumulado hasta hoy). */
+  mesActual?: Tablero['resumen'];
   certificado?: { vence: string; dias: number } | { falta: true };
   sunat?: { pendientes: number; rechazados: number };
   cobros?: { comprobantes: number; saldo: string };
@@ -74,52 +76,10 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
   }
 
   if (activo('resumen')) {
-    // Ventas del período: boletas y facturas suman; sus notas de crédito restan.
-    // También las boletas impresas de contingencia (ventas sin internet): son ventas del mes.
-    const ventas = (await db.query(
-      `SELECT coalesce(sum(total), 0)::text AS total, coalesce(sum(base), 0)::text AS base, coalesce(sum(igv), 0)::text AS igv FROM (
-         SELECT CASE WHEN tipo_comprobante = '07' THEN -importe_total ELSE importe_total END AS total,
-                CASE WHEN tipo_comprobante = '07' THEN -(total_gravado + total_exonerado + total_inafecto) ELSE total_gravado + total_exonerado + total_inafecto END AS base,
-                CASE WHEN tipo_comprobante = '07' THEN -total_igv ELSE total_igv END AS igv
-           FROM comprobantes
-          WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')} AND estado NOT IN ('RECHAZADO', 'ANULADO')
-         UNION ALL
-         SELECT importe_total, total_gravado + total_exonerado + total_inafecto, total_igv
-           FROM ventas_contingencia WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')}) v`,
-      [empresaId, periodo],
-    )).rows[0];
-    const compras = (await db.query(
-      `SELECT coalesce(sum(igv), 0)::text AS igv FROM compras WHERE empresa_id = $1 AND periodo = $2 AND anulada_en IS NULL`,
-      [empresaId, periodo],
-    )).rows[0];
-    const igvVentas = dec(ventas.igv);
-    const igvCompras = dec(compras.igv);
-    const diferencia = igvVentas.minus(igvCompras);
-    const fechaParametros = `${periodo}-01`;
-    const renta = (await db.query(
-      `SELECT p.valor::text AS tasa, p.fuente
-         FROM empresa_regimen er
-         JOIN parametros_tributarios p ON p.codigo = 'RMT_PAGO_CUENTA_TASA' AND p.regimen = er.regimen
-          AND p.vigente_desde <= $2::date AND (p.vigente_hasta IS NULL OR p.vigente_hasta >= $2::date)
-        WHERE er.empresa_id = $1 AND er.vigente_desde <= $2::date AND (er.vigente_hasta IS NULL OR er.vigente_hasta >= $2::date)
-        ORDER BY er.vigente_desde DESC, p.vigente_desde DESC LIMIT 1`,
-      [empresaId, fechaParametros],
-    )).rows[0];
-    t.resumen = {
-      periodo,
-      nombre: nombrePeriodo(periodo),
-      ventas: dec(ventas.total).toFixed(2),
-      baseImponible: dec(ventas.base).toFixed(2),
-      igvVentas: igvVentas.toFixed(2),
-      igvCompras: igvCompras.toFixed(2),
-      igvPorPagar: (diferencia.isNegative() ? dec('0') : diferencia).toFixed(2),
-      saldoAFavor: (diferencia.isNegative() ? diferencia.negated() : dec('0')).toFixed(2),
-      // Solo MYPE Tributario tiene esta tasa configurada; el límite de 300 UIT lo revisa el contador.
-      ...(renta
-        ? { rentaPagoCuenta: { monto: dec(ventas.base).times(dec(renta.tasa)).toFixed(2), tasa: dec(renta.tasa).times(100).toString(), porVerificar: /POR VERIFICAR/i.test(renta.fuente) } }
-        : {}),
-      estimado: true,
-    };
+    t.resumen = await resumenDelPeriodo(db, empresaId, periodo);
+    // En noviembre se DECLARA octubre, pero también se quiere ver cómo va noviembre: el mes en
+    // curso va aparte (cuando pasa el vencimiento, el Inicio pasa solo al mes siguiente).
+    if (hoy.slice(0, 7) !== periodo) t.mesActual = await resumenDelPeriodo(db, empresaId, hoy.slice(0, 7));
   }
 
   if (activo('certificado')) {
@@ -158,4 +118,54 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
     if (r.total !== '0.00') t.porPagar = { saldo: r.total, vencido: r.vencido, vencePronto: r.vencePronto };
   }
   return t;
+}
+
+/** Ventas, IGV y pago a cuenta ESTIMADOS de un mes (AAAA-MM). */
+async function resumenDelPeriodo(db: Db, empresaId: string, periodo: string): Promise<NonNullable<Tablero['resumen']>> {
+  // Ventas del período: boletas y facturas suman; sus notas de crédito restan.
+  // También las boletas impresas de contingencia (ventas sin internet): son ventas del mes.
+  const ventas = (await db.query(
+    `SELECT coalesce(sum(total), 0)::text AS total, coalesce(sum(base), 0)::text AS base, coalesce(sum(igv), 0)::text AS igv FROM (
+       SELECT CASE WHEN tipo_comprobante = '07' THEN -importe_total ELSE importe_total END AS total,
+              CASE WHEN tipo_comprobante = '07' THEN -(total_gravado + total_exonerado + total_inafecto) ELSE total_gravado + total_exonerado + total_inafecto END AS base,
+              CASE WHEN tipo_comprobante = '07' THEN -total_igv ELSE total_igv END AS igv
+         FROM comprobantes
+        WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')} AND estado NOT IN ('RECHAZADO', 'ANULADO')
+       UNION ALL
+       SELECT importe_total, total_gravado + total_exonerado + total_inafecto, total_igv
+         FROM ventas_contingencia WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')}) v`,
+    [empresaId, periodo],
+  )).rows[0];
+  const compras = (await db.query(
+    `SELECT coalesce(sum(igv), 0)::text AS igv FROM compras WHERE empresa_id = $1 AND periodo = $2 AND anulada_en IS NULL`,
+    [empresaId, periodo],
+  )).rows[0];
+  const igvVentas = dec(ventas.igv);
+  const igvCompras = dec(compras.igv);
+  const diferencia = igvVentas.minus(igvCompras);
+  const fechaParametros = `${periodo}-01`;
+  const renta = (await db.query(
+    `SELECT p.valor::text AS tasa, p.fuente
+       FROM empresa_regimen er
+       JOIN parametros_tributarios p ON p.codigo = 'RMT_PAGO_CUENTA_TASA' AND p.regimen = er.regimen
+        AND p.vigente_desde <= $2::date AND (p.vigente_hasta IS NULL OR p.vigente_hasta >= $2::date)
+      WHERE er.empresa_id = $1 AND er.vigente_desde <= $2::date AND (er.vigente_hasta IS NULL OR er.vigente_hasta >= $2::date)
+      ORDER BY er.vigente_desde DESC, p.vigente_desde DESC LIMIT 1`,
+    [empresaId, fechaParametros],
+  )).rows[0];
+  return {
+    periodo,
+    nombre: nombrePeriodo(periodo),
+    ventas: dec(ventas.total).toFixed(2),
+    baseImponible: dec(ventas.base).toFixed(2),
+    igvVentas: igvVentas.toFixed(2),
+    igvCompras: igvCompras.toFixed(2),
+    igvPorPagar: (diferencia.isNegative() ? dec('0') : diferencia).toFixed(2),
+    saldoAFavor: (diferencia.isNegative() ? diferencia.negated() : dec('0')).toFixed(2),
+    // Solo MYPE Tributario tiene esta tasa configurada; el límite de 300 UIT lo revisa el contador.
+    ...(renta
+      ? { rentaPagoCuenta: { monto: dec(ventas.base).times(dec(renta.tasa)).toFixed(2), tasa: dec(renta.tasa).times(100).toString(), porVerificar: /POR VERIFICAR/i.test(renta.fuente) } }
+      : {}),
+    estimado: true,
+  };
 }

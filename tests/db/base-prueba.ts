@@ -37,7 +37,7 @@ export async function prepararBase(): Promise<Db> {
     throw new Error(`Por seguridad, las pruebas solo corren en bases "*_pruebas" (recibí "${nombre}").`);
   }
   const db = crearPool(URL_PRUEBAS);
-  await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+  await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS padron CASCADE;');
   await migrar(db, () => undefined);
   return db;
 }

@@ -1,0 +1,33 @@
+# Cada día baja el padrón de SUNAT (empresas, RUC 20) y lo carga en la base: así, al
+# escribir un RUC en Vender sale la razón social oficial y un aviso si la empresa está de
+# baja o no habida. Solo se reescriben los RUC que cambiaron (ver src/padron/padron.ts).
+#
+# Usa el mismo secreto DATABASE_URL que el respaldo. Si no está, no hace nada.
+# Fuente: https://www2.sunat.gob.pe/padron_reducido_ruc.zip (SUNAT lo publica a diario).
+name: padron
+on:
+  schedule:
+    - cron: '41 9 * * *' # 4:41 am en Lima (SUNAT lo actualiza de madrugada)
+  workflow_dispatch:
+
+jobs:
+  cargar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Cargar el padrón de SUNAT
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "Sin DATABASE_URL: no se hace nada."; exit 0; fi
+          set -o pipefail
+          npm ci --no-audit --no-fund
+          curl -fsS --retry 3 --max-time 600 -o padron.zip https://www2.sunat.gob.pe/padron_reducido_ruc.zip
+          FECHA=$(unzip -Z -T padron.zip | awk 'NR==3 {print substr($7,1,8)}')
+          unzip -p padron.zip | npx tsx scripts/padron.ts "${FECHA:0:4}-${FECHA:4:2}-${FECHA:6:2}T12:00:00Z"

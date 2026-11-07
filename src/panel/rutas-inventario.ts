@@ -4,6 +4,7 @@
  */
 import type { Context, Hono } from 'hono';
 import { registrarCompra } from '../inventario/compras.js';
+import { ErrorImportar, descargarCatalogo, importarProductos, leerCatalogo } from '../inventario/importar.js';
 import { ErrorInventario, ajustarStock, guardarProducto, listarStock } from '../inventario/productos.js';
 import { asignarProveedor, guardarDiasEntrega, kardex, reposicion } from '../inventario/reposicion.js';
 import { ErrorPorPagar, anularPagoCompra, pagarCompra, porPagar } from '../inventario/por-pagar.js';
@@ -25,6 +26,23 @@ export function registrarInventario(app: Hono<any>, { d, conEmpresa, sinModulo, 
     if (s instanceof Response) return s;
     if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
     return c.json({ stock: await listarStock(d.db, s.empresa.id) });
+  });
+
+  // Traer los productos de la tienda web (su catálogo público) o de un Excel guardado como CSV.
+  app.post('/panel/api/productos/importar', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador importa productos.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      const csv = typeof b.csv === 'string' && b.csv ? b.csv : await descargarCatalogo(texto(b.direccion, 500));
+      const { productos, errores } = leerCatalogo(csv);
+      return c.json({ ...(await importarProductos(d.db, s.empresa.id, productos, s.usuarioId)), errores: errores.slice(0, 20) });
+    } catch (e) {
+      if (e instanceof ErrorImportar) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
   });
 
   app.post('/panel/api/productos', async (c) => {

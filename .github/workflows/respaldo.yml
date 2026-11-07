@@ -43,7 +43,8 @@ jobs:
           # Cuántas filas tenía cada tabla ANTES del respaldo, para comprobarlo después.
           # Si el conteo fallara, el respaldo se hace igual (la prueba de abajo avisará).
           bash scripts/probar-respaldo.sh --contar "$DATABASE_URL" > conteos-antes.txt || echo "No se pudo contar la base."
-          docker run --rm -e DATABASE_URL postgres:17 sh -c 'pg_dump --no-owner --no-privileges "$DATABASE_URL"' \
+          # El padrón de SUNAT (esquema "padron") no se copia: se vuelve a bajar de SUNAT cada día.
+          docker run --rm -e DATABASE_URL postgres:17 sh -c 'pg_dump --no-owner --no-privileges --exclude-table-data="padron.*" "$DATABASE_URL"' \
             | gzip -9 \
             | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:RESPALDO_CLAVE -out respaldo.sql.gz.enc
           test -s respaldo.sql.gz.enc

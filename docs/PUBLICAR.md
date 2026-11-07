@@ -111,6 +111,12 @@ En GitHub → repositorio **facturador-sunat** → **Settings → Secrets and va
 Luego, en la pestaña **Actions**, abre **cola** y **respaldo** y pulsa **Run workflow** una
 vez para comprobar que salen en verde ✅.
 
+**Padrón de SUNAT (razón social al escribir un RUC 20):** la tarea **padron** baja cada día el
+padrón de SUNAT y lo carga en la base (usa el mismo secreto `DATABASE_URL`). La primera vez
+pulsa **Run workflow** en **padron**: tarda unos 2 minutos y ocupa ~110 MB de los 500 MB del plan
+gratis de Supabase (solo empresas que no están de baja). El respaldo no lo copia: se vuelve a
+bajar de SUNAT.
+
 ## Paso 5b — Mantener despierto el servidor (cron-job.org)
 
 1. Crea una cuenta gratis en https://console.cron-job.org/signup y confirma el correo.

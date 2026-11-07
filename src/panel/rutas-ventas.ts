@@ -8,7 +8,8 @@ import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
 import { ahoraLima } from '../fechas.js';
 import { clientesFrecuentes, guardarCelular, normalizarCelular } from '../reportes/cliente.js';
-import { masVendidos } from '../reportes/venta-rapida.js';
+import { masVendidos, vendidosAntes } from '../reportes/venta-rapida.js';
+import { buscarRuc } from '../padron/padron.js';
 import { ErrorCotizacion, anularCotizacion, cargarCotizacion, crearCotizacion, listarCotizaciones, marcarConvertida, pdfCotizacion, type Cotizacion } from '../cotizaciones/cotizaciones.js';
 import { tokenCotizacion } from '../api/enlaces.js';
 import { idComprobanteLegible } from '../tipos.js';
@@ -86,14 +87,38 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
     return c.json({ productos: await masVendidos(d.db, s.empresa.id, ahoraLima().fecha) });
   });
 
-  // Cliente ya conocido: con el DNI o RUC se completa el nombre.
+  // Sugerencias al escribir un producto en Vender: lo vendido antes, con su último precio.
+  app.get('/panel/api/vendidos', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    return c.json({ vendidos: await vendidosAntes(d.db, s.empresa.id, ahoraLima().fecha) });
+  });
+
+  // Con el DNI o RUC se completa el nombre: de los clientes a los que ya se vendió y, si es
+  // una empresa (RUC 20), del padrón de SUNAT, que además dice si está activa y habida.
   app.get('/panel/api/clientes', async (c) => {
     const s = await conEmpresa(c);
     if (s instanceof Response) return s;
     const doc = c.req.query('doc') ?? '';
     if (!/^[0-9A-Za-z]{4,15}$/.test(doc)) return d.error(c, 400, 'DOCUMENTO_INVALIDO', 'Documento inválido.');
     const r = await d.db.query(`SELECT nombre_razon_social AS nombre FROM clientes WHERE empresa_id = $1 AND numero_doc = $2 LIMIT 1`, [s.empresa.id, doc]);
-    return r.rows[0] ? c.json({ nombre: r.rows[0].nombre }) : d.error(c, 404, 'NO_ENCONTRADO', 'Cliente nuevo.');
+    const conocido = r.rows[0]?.nombre as string | undefined;
+    const sunat = await buscarRuc(d.db, doc);
+    if (sunat === undefined) {
+      return c.json({
+        ...(conocido ? { nombre: conocido } : {}),
+        aviso: 'Este RUC no figura como empresa activa en SUNAT (puede estar de baja o mal escrito). Revísalo antes de emitir la factura.',
+      });
+    }
+    if (sunat) {
+      const problema = sunat.estado !== 'ACTIVO' || sunat.condicion !== 'HABIDO';
+      // Para la factura vale la razón social oficial de SUNAT.
+      return c.json({
+        nombre: sunat.nombre, fuente: `SUNAT (padrón del ${sunat.al})`,
+        ...(problema ? { aviso: `Según SUNAT esta empresa está ${sunat.estado} y ${sunat.condicion}. Consúltalo con tu contador antes de facturarle.` } : {}),
+      });
+    }
+    return conocido ? c.json({ nombre: conocido }) : d.error(c, 404, 'NO_ENCONTRADO', 'Cliente nuevo.');
   });
 
   // Clientes frecuentes y su celular (para mandarles un WhatsApp con el mensaje listo).

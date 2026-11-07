@@ -86,6 +86,13 @@ describe.skipIf(!URL_PRUEBAS)('tablero', () => {
     expect(t.cobros).toMatchObject({ comprobantes: 1, saldo: '236.00' });
     expect(t.sunat).toMatchObject({ pendientes: 1, rechazados: 1 });
     expect(t.certificado).toEqual({ falta: true });
+    // Mismo mes que se declara: no hay tarjeta aparte.
+    expect(t.mesActual).toBeUndefined();
+    // Ya en el mes siguiente (antes del vencimiento): se declara el mes pasado y, aparte,
+    // se ve cómo va el mes en curso (el dueño preguntó por qué "sale octubre y no noviembre").
+    const despues = await tablero(db, f.empresaId, { hoy: siguiente });
+    expect(despues.resumen).toMatchObject({ periodo: mes, igvPorPagar: '27.00' });
+    expect(despues.mesActual).toMatchObject({ periodo: siguiente.slice(0, 7), ventas: '0.00', estimado: true });
 
     // Funciones desactivadas: no se calculan.
     const solo = await tablero(db, f.empresaId, { hoy: ultimoDia, modulos: ['panel', 'vencimientos'] });

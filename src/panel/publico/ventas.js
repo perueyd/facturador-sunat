@@ -170,21 +170,27 @@ async function cargarTablero() {
       `Según el último dígito de tu RUC (${v.grupo}). Fuente: cronograma oficial SUNAT.`, `ancha ${v.dias <= 3 ? 'urgente' : ''}`));
   }
   const r = t.resumen;
-  if (r) {
+  /** Tabla de un mes: ventas, IGV y renta (todo estimado). */
+  const tablaDelMes = (m) => {
     const tabla = document.createElement('table');
     const filas = [
-      ['Ventas del mes (con IGV)', r.ventas],
-      ['IGV cobrado en ventas', r.igvVentas],
-      ['IGV de tus compras', r.igvCompras],
-      ...(r.saldoAFavor !== '0.00' ? [['Saldo a favor (estimado)', r.saldoAFavor]] : []),
-      ...(r.rentaPagoCuenta ? [[`Renta, pago a cuenta ${r.rentaPagoCuenta.tasa}% (estimado)`, r.rentaPagoCuenta.monto]] : []),
+      ['Ventas del mes (con IGV)', m.ventas],
+      ['IGV cobrado en ventas', m.igvVentas],
+      ['IGV de tus compras', m.igvCompras],
+      ...(m.saldoAFavor !== '0.00' ? [['Saldo a favor (estimado)', m.saldoAFavor]] : []),
+      ...(m.rentaPagoCuenta ? [[`Renta, pago a cuenta ${m.rentaPagoCuenta.tasa}% (estimado)`, m.rentaPagoCuenta.monto]] : []),
     ];
     for (const [a, b] of filas) {
       const tr = tabla.insertRow();
       tr.insertCell().textContent = a;
       tr.insertCell().textContent = `S/ ${b}`;
     }
-    tarjetas.push(tarjeta(`${r.nombre}: IGV estimado a pagar`, `S/ ${r.igvPorPagar}`, tabla, 'ancha'));
+    return tabla;
+  };
+  // El mes que se DECLARA (el anterior) y, aparte, cómo va el mes en curso.
+  if (r) tarjetas.push(tarjeta(`${r.nombre} (el que declaras ahora): IGV estimado a pagar`, `S/ ${r.igvPorPagar}`, tablaDelMes(r), 'ancha'));
+  if (t.mesActual) {
+    tarjetas.push(tarjeta(`${t.mesActual.nombre} (mes en curso, hasta hoy): IGV acumulado`, `S/ ${t.mesActual.igvPorPagar}`, tablaDelMes(t.mesActual), 'ancha'));
   }
   if (t.certificado?.falta) {
     tarjetas.push(tarjeta('Certificado digital', 'No cargado', 'Sin él no se puede emitir.', 'urgente'));

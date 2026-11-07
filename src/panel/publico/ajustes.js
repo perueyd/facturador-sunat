@@ -339,16 +339,21 @@ let nombreAutocompletado = '';
 async function buscarCliente() {
   const f = $('#form-emitir');
   const doc = f.numero.value.trim();
+  const aviso = $('#aviso-documento');
+  aviso.hidden = true;
   // Si cambia el documento, el nombre que se puso solo ya no corresponde: se borra (así no sale
-  // una boleta con el nombre de otra persona). Lo escrito a mano no se toca nunca.
+  // una boleta con el nombre de otra persona). Lo escrito a mano no se toca nunca, pero el
+  // aviso de SUNAT (RUC de baja, no habido) sale igual.
   const puestoSolo = Boolean(nombreAutocompletado) && f.nombre.value === nombreAutocompletado;
   if (puestoSolo) f.nombre.value = nombreAutocompletado = '';
-  else if (f.nombre.value.trim()) return;
   if (!/^\d{8}$|^\d{11}$/.test(doc)) return;
   try {
-    const { nombre } = await api(`/clientes?doc=${doc}`);
-    if (f.numero.value.trim() !== doc || f.nombre.value.trim()) return; // siguió escribiendo mientras se buscaba
-    f.nombre.value = nombreAutocompletado = nombre;
+    const r = await api(`/clientes?doc=${doc}`);
+    if (f.numero.value.trim() !== doc) return; // siguió escribiendo mientras se buscaba
+    // RUC de baja, no habido…: se avisa (no se bloquea: lo decide la persona con su contador).
+    aviso.textContent = r.aviso ? `⚠️ ${r.aviso}` : '';
+    aviso.hidden = !r.aviso;
+    if (r.nombre && !f.nombre.value.trim()) f.nombre.value = nombreAutocompletado = r.nombre;
   } catch { /* cliente nuevo: se escribe el nombre */ }
 }
 
@@ -380,6 +385,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   $('#archivo-logo').addEventListener('change', subirLogo);
+  $('#importar-tienda').addEventListener('click', importarDesdeTienda);
+  $('#archivo-catalogo').addEventListener('change', importarDesdeArchivo);
   $('#activar-antiguos').addEventListener('click', () => cambiarAntiguos(true));
   $('#apagar-antiguos').addEventListener('click', () => {
     if (confirm('¿Ocultar los comprobantes antiguos? Lo ya subido se conserva y vuelve a verse si la activas de nuevo.')) cambiarAntiguos(false);
