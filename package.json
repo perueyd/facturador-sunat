@@ -18,6 +18,7 @@
     "certificado:cargar": "tsx --env-file-if-exists=.env scripts/cargar-certificado.ts",
     "certificado:exportar-cer": "tsx --env-file-if-exists=.env scripts/exportar-cer.ts",
     "sunat:beta": "tsx --env-file-if-exists=.env scripts/prueba-beta.ts",
+    "padron": "tsx --env-file-if-exists=.env scripts/padron.ts",
     "cola:procesar": "tsx --env-file-if-exists=.env scripts/procesar-cola.ts",
     "servidor": "tsx --env-file-if-exists=.env src/servidor.ts",
     "empresa:configurar": "tsx --env-file-if-exists=.env scripts/empresa.ts",

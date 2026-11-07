@@ -6,7 +6,8 @@
  * Todo sale de la vista ventas_todas (migración 044): lo emitido aquí, las boletas impresas sin
  * internet y lo emitido en SUNAT y subido. Boletas y facturas suman, sus notas de crédito restan,
  * y los rechazados o anulados no cuentan. "Lo más vendido" sale del detalle de los comprobantes
- * del facturador (de lo emitido en SUNAT solo se guarda el total). Los montos viajan como texto con 2 decimales. Para dibujar,
+ * del facturador y de las boletas impresas sin internet (de lo emitido en SUNAT solo se guarda
+ * el total). Los montos viajan como texto con 2 decimales. Para dibujar,
  * el alto de cada barra (0 a 100) lo calcula PostgreSQL con NUMERIC: el navegador no hace
  * cuentas de dinero.
  */
@@ -159,12 +160,18 @@ export async function estadisticas(
   // Productos: solo boletas y facturas (una nota de crédito no dice qué producto se devolvió
   // con la misma descripción siempre).
   const productos = (await db.query(
-    `WITH v AS (
-       SELECT i.descripcion, sum(i.cantidad) AS cantidad, sum(i.total) AS monto
+    // Detalle de lo emitido aquí y de las boletas impresas sin internet (guardan sus productos);
+    // de lo emitido en SUNAT y subido solo se conoce el total, así que no entra en este ranking.
+    `WITH lineas AS (
+       SELECT i.descripcion, i.cantidad, i.total
          FROM comprobante_items i JOIN comprobantes c ON c.id = i.comprobante_id
         WHERE c.empresa_id = $1 AND c.${VALIDO} AND c.tipo_comprobante <> '07'
           AND c.fecha_emision >= date_trunc('month', $2::date) AND c.fecha_emision <= $2::date
-        GROUP BY 1 ORDER BY 3 DESC LIMIT 5)
+       UNION ALL
+       SELECT x->>'descripcion', (x->>'cantidad')::numeric, (x->>'total')::numeric
+         FROM ventas_contingencia k, jsonb_array_elements(k.items) x
+        WHERE k.empresa_id = $1 AND k.fecha_emision >= date_trunc('month', $2::date) AND k.fecha_emision <= $2::date),
+     v AS (SELECT descripcion, sum(cantidad) AS cantidad, sum(total) AS monto FROM lineas GROUP BY 1 ORDER BY 3 DESC LIMIT 5)
      SELECT descripcion, cantidad::text, monto::text AS ventas,
             coalesce(round(monto * 100 / nullif(max(monto) OVER (), 0)), 0)::int AS alto
        FROM v ORDER BY monto DESC`,

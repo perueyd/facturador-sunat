@@ -92,6 +92,20 @@ describe.skipIf(!URL_PRUEBAS)('comprobantes antiguos', () => {
     expect(await listarAntiguos(db, f.empresaId, { buscar: '%' })).toEqual([]);
   });
 
+  // Revisión de seguridad 07/11/2026: un ZIP que miente sobre su tamaño (dice 10 bytes y trae
+  // 20 MB de ceros) se descomprimía entero antes de descartarlo. Ahora se corta al pasar 1 MB.
+  it('un ZIP "bomba" se corta al pasar 1 MB, aunque mienta sobre su tamaño', async () => {
+    const zip = Buffer.from(zipSync({ 'bomba.xml': new Uint8Array(20 * 1024 * 1024) }, { level: 9 }));
+    for (let i = 0; i < zip.length - 4; i++) {
+      const firma = zip.readUInt32LE(i);
+      if (firma === 0x04034b50) zip.writeUInt32LE(10, i + 22);
+      if (firma === 0x02014b50) zip.writeUInt32LE(10, i + 24);
+    }
+    const inicio = Date.now();
+    await expect(subir('bomba.zip', zip)).rejects.toThrow(/pesa más de 1 MB/);
+    expect(Date.now() - inicio).toBeLessThan(2000);
+  });
+
   it('nunca toca ventas ni correlativos; avisa si la serie es una del facturador', async () => {
     const antes = (await db.query(`SELECT count(*)::int AS n, (SELECT sum(ultimo_numero)::int FROM series WHERE empresa_id = $1) AS s FROM comprobantes WHERE empresa_id = $1`, [f.empresaId])).rows[0];
     expect((await subir('B001-5.xml', xmlDeSunat('B001', 5)))[0]).toMatchObject({ resultado: 'GUARDADO', mensaje: expect.stringMatching(/serie B001 también la usa este facturador/) });
