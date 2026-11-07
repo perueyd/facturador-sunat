@@ -8,6 +8,7 @@ import type { Db } from '../../src/db/conexion.js';
 import { ahoraLima } from '../../src/fechas.js';
 import { registrarCompra } from '../../src/inventario/compras.js';
 import { guardarProducto } from '../../src/inventario/productos.js';
+import { estadisticas } from '../../src/reportes/estadisticas.js';
 import { grupoCronograma, tablero } from '../../src/reportes/tablero.js';
 import { digitoVerificadorRuc } from '../../src/validaciones/documentos.js';
 import { RUC_CLIENTE, item, solicitudBoleta } from '../ayudantes.js';
@@ -81,6 +82,11 @@ describe.skipIf(!URL_PRUEBAS)('tablero', () => {
     }
     const t = await tablero(db, f.empresaId, { hoy: '2026-11-07' });
     expect(t.mesActual).toMatchObject({ periodo: '2026-11', ventas: '118.00', baseImponible: '100.00', igvVentas: '18.00' });
+    // Y también en las Estadísticas (antes solo el Inicio y el Excel las contaban).
+    const e = await estadisticas(db, f.empresaId, { hoy: '2026-11-07' });
+    expect(e.mes.ventas).toBe('118.00');
+    expect(e.canales).toEqual([expect.objectContaining({ canal: 'Emitidas en SUNAT' })]);
+    expect(e.vendedores).toEqual([expect.objectContaining({ vendedor: 'Emitidas en SUNAT', ventas: '118.00' })]);
   });
 
   it('buen contribuyente usa su propia columna', async () => {

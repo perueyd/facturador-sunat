@@ -14,6 +14,10 @@ import type { Db } from '../../src/db/conexion.js';
 import { ahoraLima, sumarDias } from '../../src/fechas.js';
 import type { Rol } from '../../src/panel/usuarios.js';
 import { tablero } from '../../src/reportes/tablero.js';
+import { estadisticas } from '../../src/reportes/estadisticas.js';
+import { caja } from '../../src/cobros/caja.js';
+import { ajustarStock, guardarProducto, listarStock } from '../../src/inventario/productos.js';
+import { digitoVerificadorRuc } from '../../src/validaciones/documentos.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
 import { RUC_CLIENTE, RUC_EMPRESA } from '../ayudantes.js';
 import { URL_PRUEBAS, crearEmpresa, panelDePrueba, prepararBase, type Fixture } from './base-prueba.js';
@@ -101,6 +105,24 @@ describe.skipIf(!URL_PRUEBAS)('vender sin internet (contingencia)', () => {
     expect((await dia()).informado).toBe(false);
     const r2 = await generarInforme(db, almacen, { empresaId: f.empresaId, fecha });
     expect(r2).toMatchObject({ nombre: `${RUC_EMPRESA}-RF-${ddmmaaaa}-02.ZIP`, ventas: 3 });
+  });
+
+  // Pendiente que el dueño pidió cerrar: antes estas ventas no tocaban el stock, ni la Caja,
+  // ni las Estadísticas (solo el Inicio y el Excel).
+  it('descuenta stock, entra a la Caja por su medio y suma en las Estadísticas', async () => {
+    const g = await crearEmpresa(db, `2060000017${digitoVerificadorRuc('2060000017')}`);
+    await guardarProducto(db, g.empresaId, { sku: 'TAR-9', nombre: 'Tarima', precio: '350.00', controlaStock: true });
+    await ajustarStock(db, g.empresaId, 'TAR-9', '5', 'conteo inicial');
+    const cuerpo = venta({ items: [{ codigo: 'TAR-9', descripcion: 'Tarima', cantidad: 2, precio: '350.00' }] }, { serie: '0005', numero: 1 });
+    await registrarContingencia(db, { empresaId: g.empresaId, cuerpo });
+    await registrarContingencia(db, { empresaId: g.empresaId, cuerpo }); // repetido: no descuenta dos veces
+    expect((await listarStock(db, g.empresaId)).find((x) => x.sku === 'TAR-9')?.stock).toBe('3');
+    const c = await caja(db, g.empresaId, hoy, hoy);
+    expect(c.cuentas).toEqual([expect.objectContaining({ medio: 'EFECTIVO', monto: '700.00', cobros: 1 })]);
+    expect(c.vendido).toBe('700.00');
+    const e = await estadisticas(db, g.empresaId, { hoy });
+    expect(e.hoy).toMatchObject({ ventas: '700.00', comprobantes: 1 });
+    expect(e.canales).toEqual([expect.objectContaining({ canal: 'Sin internet', ventas: '700.00' })]);
   });
 
   it('el tablero avisa lo que falta informar', async () => {

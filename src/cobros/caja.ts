@@ -115,7 +115,11 @@ export async function caja(db: Db, empresaId: string, desde: string, hasta: stri
        UNION ALL
        -- Dinero devuelto a clientes (devoluciones): sale de la cuenta como un gasto.
        SELECT cuenta_id, medio, 0, monto, 0 FROM reembolsos
-        WHERE empresa_id = $1 AND fecha BETWEEN $2::date AND $3::date)
+        WHERE empresa_id = $1 AND fecha BETWEEN $2::date AND $3::date
+       UNION ALL
+       -- Ventas sin internet (boleta impresa) cobradas: el dinero entró igual, por su medio.
+       SELECT NULL, medio_pago::medio_pago, importe_total, 0, 1 FROM ventas_contingencia
+        WHERE empresa_id = $1 AND medio_pago IS NOT NULL AND fecha_emision BETWEEN $2::date AND $3::date)
      -- Una línea por cuenta (aunque la cuenta haya cambiado de medio: vale el medio actual) y,
      -- para lo que no dijo cuenta, una línea por medio.
      SELECT k.id AS cuenta_id, coalesce(k.nombre, initcap(min(m.medio::text))) AS nombre,
@@ -144,7 +148,9 @@ export async function caja(db: Db, empresaId: string, desde: string, hasta: stri
   });
   const v = (await db.query(
     `SELECT coalesce(sum(CASE WHEN tipo_comprobante = '07' THEN -importe_total ELSE importe_total END), 0)::text AS total
-       FROM comprobantes WHERE empresa_id = $1 AND estado NOT IN ('RECHAZADO', 'ANULADO') AND fecha_emision BETWEEN $2::date AND $3::date`,
+       FROM ventas_todas WHERE empresa_id = $1 AND estado NOT IN ('RECHAZADO', 'ANULADO') AND fecha_emision BETWEEN $2::date AND $3::date
+        -- Lo emitido en SUNAT y subido no tiene cobros aquí: compararlo con lo cobrado confundiría.
+        AND origen <> 'SUNAT'`,
     [empresaId, desde, hasta],
   )).rows[0];
   const total = empresa.plus(terceros);

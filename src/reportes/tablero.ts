@@ -136,24 +136,14 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
 
 /** Ventas, IGV y pago a cuenta ESTIMADOS de un mes (AAAA-MM). */
 async function resumenDelPeriodo(db: Db, empresaId: string, periodo: string): Promise<NonNullable<Tablero['resumen']>> {
-  // Ventas del período: boletas y facturas suman; sus notas de crédito restan.
-  // También las boletas impresas de contingencia (ventas sin internet): son ventas del mes.
+  // Ventas del período (vista ventas_todas: lo emitido aquí, lo impreso sin internet y lo emitido
+  // en SUNAT y subido). Boletas y facturas suman; sus notas de crédito restan.
   const ventas = (await db.query(
-    `SELECT coalesce(sum(total), 0)::text AS total, coalesce(sum(base), 0)::text AS base, coalesce(sum(igv), 0)::text AS igv FROM (
-       SELECT CASE WHEN tipo_comprobante = '07' THEN -importe_total ELSE importe_total END AS total,
-              CASE WHEN tipo_comprobante = '07' THEN -(total_gravado + total_exonerado + total_inafecto) ELSE total_gravado + total_exonerado + total_inafecto END AS base,
-              CASE WHEN tipo_comprobante = '07' THEN -total_igv ELSE total_igv END AS igv
-         FROM comprobantes
-        WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')} AND estado NOT IN ('RECHAZADO', 'ANULADO')
-       UNION ALL
-       SELECT importe_total, total_gravado + total_exonerado + total_inafecto, total_igv
-         FROM ventas_contingencia WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')}
-       UNION ALL
-       -- Emitidos fuera del facturador (SUNAT SOL, Emprende) y subidos como XML: también son
-       -- ventas del mes. La base es el total menos el IGV que dice el XML.
-       SELECT CASE WHEN tipo = '07' THEN -total ELSE total END, CASE WHEN tipo = '07' THEN -(total - coalesce(igv, 0)) ELSE total - coalesce(igv, 0) END,
-              CASE WHEN tipo = '07' THEN -coalesce(igv, 0) ELSE coalesce(igv, 0) END
-         FROM comprobantes_antiguos WHERE empresa_id = $1 AND moneda = 'PEN' AND ${sqlDelMes('fecha_emision', '$2')}) v`,
+    `SELECT coalesce(sum(CASE WHEN tipo_comprobante = '07' THEN -importe_total ELSE importe_total END), 0)::text AS total,
+            coalesce(sum(CASE WHEN tipo_comprobante = '07' THEN -1 ELSE 1 END * (total_gravado + total_exonerado + total_inafecto)), 0)::text AS base,
+            coalesce(sum(CASE WHEN tipo_comprobante = '07' THEN -total_igv ELSE total_igv END), 0)::text AS igv
+       FROM ventas_todas
+      WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')} AND estado NOT IN ('RECHAZADO', 'ANULADO')`,
     [empresaId, periodo],
   )).rows[0];
   const compras = (await db.query(

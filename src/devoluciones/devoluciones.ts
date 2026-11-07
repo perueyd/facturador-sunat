@@ -15,6 +15,7 @@
 import type { MedioPago } from '../cobros/pagos.js';
 import { emitirComprobante } from '../comprobantes/emitir.js';
 import { cargarComprobante } from '../comprobantes/repositorio.js';
+import pg from 'pg';
 import { enTransaccion, type Db } from '../db/conexion.js';
 import { Decimal, dec, redondear, sumar } from '../dinero.js';
 import { ahoraLima } from '../fechas.js';
@@ -47,14 +48,18 @@ export async function registrarDevolucion(db: Db, d: DatosDevolucion): Promise<D
   if (d.items.length === 0) throw new ErrorDevolucion('Indica qué productos se devuelven.');
 
   // Un candado por comprobante: dos devoluciones del mismo comprobante a la vez no
-  // pueden pasar ambas el control de "cuánto queda por devolver".
-  const candado = await db.connect();
+  // pueden pasar ambas el control de "cuánto queda por devolver". El candado va en una
+  // conexión PROPIA, fuera del grupo compartido: antes tomaba una de las 10 del grupo y,
+  // mientras la tenía, pedía otras; con 10 devoluciones a la vez se esperaban entre sí y
+  // el servidor se colgaba (mismo error que se halló en la prueba de carga del 05/11/2026).
+  const candado = new pg.Client(db.options);
+  await candado.connect();
   try {
     await candado.query('SELECT pg_advisory_lock(hashtext($1))', [`devolucion:${d.comprobanteId}`]);
     return await registrarConCandado(db, d);
   } finally {
-    await candado.query('SELECT pg_advisory_unlock(hashtext($1))', [`devolucion:${d.comprobanteId}`]).catch(() => undefined);
-    candado.release();
+    // Cerrar la conexión suelta el candado aunque algo haya fallado.
+    await candado.end().catch(() => undefined);
   }
 }
 
