@@ -160,18 +160,46 @@ const centimosConSigno = (t) => (t.startsWith('-') ? -aCentimos(t.slice(1)) : aC
 /** Monto en céntimos con signo solo si es negativo ("S/ 30.00", "− S/ 20.00"). */
 const sinMas = (c) => conSigno(c).replace('+ ', '');
 const valorDe = (l, campo) => document.querySelector(`#cierre-lineas input[data-clave="${CSS.escape(l.clave)}"][data-campo="${campo}"]`);
+/**
+ * Para contar sin calculadora: "100+50+20" suma, y "3x100+2x50" cuenta billetes (3 de 100 y
+ * 2 de 50). La coma vale como punto decimal. Todo en céntimos enteros; null si no se entiende.
+ */
+function sumaEnCentimos(texto) {
+  const t = String(texto).trim().replace(/,/g, '.').replace(/\s+/g, '');
+  if (!t) return null;
+  let total = 0n;
+  for (const termino of t.split('+')) {
+    const m = /^(?:(\d{1,4})[x×*])?(\d+(?:\.\d{1,2})?)$/.exec(termino);
+    if (!m) return null;
+    total += BigInt(m[1] ?? '1') * aCentimos(m[2]);
+  }
+  return total;
+}
+
+/**
+ * Lo contado en una línea. Si se dejó vacía y ahí no debía haber nada (no se usó ese día y
+ * empezó en 0), cuenta como 0: así no hay que escribir "0" en cada medio que no se usó.
+ */
+function contadoDe(l) {
+  const k = sumaEnCentimos(valorDe(l, 'contado').value);
+  if (k !== null || valorDe(l, 'contado').value.trim()) return k;
+  const fondo = sumaEnCentimos(valorDe(l, 'fondo').value) ?? 0n;
+  return fondo + centimosConSigno(l.esperado) === 0n ? 0n : null;
+}
 
 function recalcularCierre() {
   let deberia = 0n;
   let contado = 0n;
   let completo = true;
   for (const l of lineasCierre) {
-    const fondo = aCentimos(valorDe(l, 'fondo').value) ?? 0n;
+    const fondo = sumaEnCentimos(valorDe(l, 'fondo').value) ?? 0n;
     const e = fondo + centimosConSigno(l.esperado);
-    const k = aCentimos(valorDe(l, 'contado').value);
+    const k = contadoDe(l);
     const salida = valorDe(l, 'contado').closest('.linea-cierre').querySelector('.dif');
     deberia += e;
-    const debe = `debería haber ${sinMas(e)}`;
+    // Si escribió una suma, se muestra el resultado (así se ve que sumó bien).
+    const suma = /[+x×*]/.test(valorDe(l, 'contado').value) && k !== null ? `contaste ${textoSoles(k)} · ` : '';
+    const debe = `${suma}debería haber ${sinMas(e)}`;
     if (k === null) { completo = false; salida.textContent = debe; salida.className = 'dif'; continue; }
     contado += k;
     salida.textContent = k === e ? `${debe} · cuadra ✔` : `${debe} · diferencia ${conSigno(k - e)}`;
@@ -179,7 +207,7 @@ function recalcularCierre() {
   }
   $('#cierre-total').textContent = completo
     ? `Debería haber ${sinMas(deberia)} · contado ${textoSoles(contado)} · diferencia ${conSigno(contado - deberia)}`
-    : `Debería haber ${sinMas(deberia)}. Escribe lo contado en cada cuenta (0 si no hay nada).`;
+    : `Debería haber ${sinMas(deberia)}. Escribe lo que contaste donde debería haber dinero (lo que no usaste ese día puede quedar vacío).`;
 }
 
 async function cargarCierre(fecha = $('#cierre-fecha').value || hoyLima()) {
@@ -193,12 +221,21 @@ async function cargarCierre(fecha = $('#cierre-fecha').value || hoyLima()) {
     const mov = Object.assign(document.createElement('small'), { textContent: ` · movimiento del día ${l.esperado.startsWith('-') ? `−${soles(l.esperado.slice(1))}` : `+${soles(l.esperado)}`}` });
     const campo = (texto, nombre, valor, ayuda) => {
       const label = Object.assign(document.createElement('label'), { textContent: texto });
-      const input = Object.assign(document.createElement('input'), { value: valor, placeholder: ayuda, required: nombre === 'contado' });
+      const input = Object.assign(document.createElement('input'), { value: valor, placeholder: ayuda });
       input.dataset.clave = l.clave;
       input.dataset.campo = nombre;
       input.setAttribute('inputmode', 'decimal');
       input.addEventListener('input', recalcularCierre);
-      label.append(input);
+      // El teclado numérico del celular no tiene "+": un botón lo pone para ir sumando.
+      const mas = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario sumar', textContent: '+', title: 'Sumar otro monto' });
+      mas.addEventListener('click', () => {
+        if (input.value.trim() && !/\+\s*$/.test(input.value)) input.value += '+';
+        input.focus();
+        recalcularCierre();
+      });
+      const caja = Object.assign(document.createElement('div'), { className: 'con-suma' });
+      caja.append(input, mas);
+      label.append(caja);
       return label;
     };
     const fila = Object.assign(document.createElement('div'), { className: 'fila' });
@@ -214,7 +251,25 @@ async function cargarCierre(fecha = $('#cierre-fecha').value || hoyLima()) {
       ? `Ya cerrada por ${ultimo.cerradoPor} a las ${new Date(ultimo.cerradoEn).toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit' })}: ${textoDiferencia(ultimo.totales.diferencia)}. Si contaste mal, ciérrala otra vez (vale la última).`
       : 'Aún no se cierra este día.';
   $('#lista-cierres').replaceChildren(...(r.historial.length
-    ? r.historial.map((x) => linea(`${x.fecha} · ${x.cerradoPor}${x.nota ? ` · ${x.nota}` : ''}`, textoDiferencia(x.totales.diferencia), x.totales.diferencia === '0.00' ? '' : 'bajo'))
+    ? r.historial.map((x) => {
+      const li = linea(`${x.fecha} · ${x.cerradoPor}${x.nota ? ` · ${x.nota}` : ''} ▸`, textoDiferencia(x.totales.diferencia), x.totales.diferencia === '0.00' ? '' : 'bajo');
+      li.title = 'Toca para ver el detalle por medio de pago';
+      // Al tocarlo: en qué medio estuvo la diferencia (antes solo se veía el total).
+      li.addEventListener('click', () => {
+        const abierto = li.querySelector('.detalle-cierre');
+        if (abierto) { abierto.remove(); return; }
+        const detalle = Object.assign(document.createElement('ul'), { className: 'detalle-cierre' });
+        for (const l of x.lineas.filter((y) => y.deberiaHaber !== '0.00' || y.contado !== '0.00')) {
+          detalle.append(Object.assign(document.createElement('li'), {
+            textContent: `${l.nombre}: debía haber ${soles(l.deberiaHaber)} · contaste ${soles(l.contado)} · ${textoDiferencia(l.diferencia)}`,
+          }));
+        }
+        const hora = new Date(x.cerradoEn).toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit' });
+        detalle.append(Object.assign(document.createElement('li'), { className: 'nota', textContent: `Cerrada a las ${hora} · total: debía haber ${soles(x.totales.deberiaHaber)}, contado ${soles(x.totales.contado)}.` }));
+        li.append(detalle);
+      });
+      return li;
+    })
     : [linea('Todavía no hay cierres.', '')]));
   mensaje('#mensaje-cierre', '');
   recalcularCierre();
@@ -224,8 +279,11 @@ async function alCerrarCaja(e) {
   e.preventDefault();
   const contados = {};
   const fondos = {};
-  for (const input of document.querySelectorAll('#cierre-lineas input')) {
-    (input.dataset.campo === 'fondo' ? fondos : contados)[input.dataset.clave] = input.value.trim().replace(',', '.') || (input.dataset.campo === 'fondo' ? '0' : '');
+  for (const l of lineasCierre) {
+    const f = sumaEnCentimos(valorDe(l, 'fondo').value);
+    fondos[l.clave] = f === null ? valorDe(l, 'fondo').value.trim() || '0' : textoSoles(f).replace('S/ ', '');
+    const k = contadoDe(l);
+    contados[l.clave] = k === null ? valorDe(l, 'contado').value.trim().replace(',', '.') : textoSoles(k).replace('S/ ', '');
   }
   try {
     const c = await api('/caja/cierre', { cuerpo: { fecha: $('#cierre-fecha').value, contados, fondos, nota: e.target.nota.value } });

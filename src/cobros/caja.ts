@@ -114,7 +114,7 @@ export async function caja(db: Db, empresaId: string, desde: string, hasta: stri
         WHERE empresa_id = $1 AND anulado_en IS NULL AND fecha BETWEEN $2::date AND $3::date)
      -- Una línea por cuenta (aunque la cuenta haya cambiado de medio: vale el medio actual) y,
      -- para lo que no dijo cuenta, una línea por medio.
-     SELECT k.id AS cuenta_id, coalesce(k.nombre, 'Sin cuenta: ' || initcap(min(m.medio::text))) AS nombre,
+     SELECT k.id AS cuenta_id, coalesce(k.nombre, initcap(min(m.medio::text))) AS nombre,
             coalesce(k.medio::text, min(m.medio::text)) AS medio,
             k.titular, coalesce(k.de_la_empresa, true) AS de_la_empresa, sum(m.es_cobro)::int AS cobros,
             sum(m.entra)::text AS monto, sum(m.sale)::text AS gastos
@@ -179,6 +179,7 @@ export interface Cierre {
 }
 
 const claveDe = (cuentaId: string | null, medio: string) => cuentaId ?? `SIN:${medio}`;
+const MEDIOS_CIERRE = [['EFECTIVO', 'Efectivo'], ['YAPE', 'Yape'], ['PLIN', 'Plin'], ['TRANSFERENCIA', 'Transferencia'], ['TARJETA', 'Tarjeta']] as const;
 const MONTO = /^\d{1,11}(\.\d{1,2})?$/;
 
 /**
@@ -191,6 +192,11 @@ export async function lineasParaCerrar(db: Db, empresaId: string, fecha: string)
   const lineas = c.cuentas.map((x) => ({ clave: claveDe(x.cuentaId, x.medio), cuentaId: x.cuentaId, medio: x.medio, nombre: x.nombre, esperado: x.neto }));
   for (const k of await listarCuentas(db, empresaId)) {
     if (k.activa && !lineas.some((l) => l.cuentaId === k.id)) lineas.push({ clave: k.id, cuentaId: k.id, medio: k.medio, nombre: k.nombre, esperado: '0.00' });
+  }
+  // Todos los medios a la vista aunque ese día no se hayan usado (si ya tienen su cuenta, sale
+  // la cuenta): así se cuenta también el efectivo del cajón aunque no se haya vendido en efectivo.
+  for (const [medio, nombre] of MEDIOS_CIERRE) {
+    if (!lineas.some((l) => l.medio === medio)) lineas.push({ clave: claveDe(null, medio), cuentaId: null, medio, nombre, esperado: '0.00' });
   }
   // Último contado de cada cuenta en efectivo, del cierre más reciente ANTES de este día.
   const anteriores = (await db.query(
@@ -233,13 +239,19 @@ export async function cerrarCaja(
   if (fecha > hoy) throw new ErrorCuenta('No se puede cerrar la caja de un día que aún no llega.');
   const lineas = await lineasParaCerrar(db, empresaId, fecha);
   if (!lineas.length) throw new ErrorCuenta('No hay cobros ni cuentas que contar ese día.');
+  for (const l of lineas) {
+    if (fondos[l.clave] !== undefined && !MONTO.test(fondos[l.clave]!)) throw new ErrorCuenta(`"${l.nombre}": el fondo inicial debe ser un monto, por ejemplo 50.00.`);
+  }
+  const fondo = (l: LineaCierre) => fondos[l.clave] ?? l.fondoSugerido;
+  // Un medio que no se usó ese día y empezó en 0 puede quedar sin contar: se toma como 0
+  // (salen todos los medios en el cierre y no se obliga a escribir "0" en cada uno).
+  contados = { ...contados };
+  for (const l of lineas) if (contados[l.clave] === undefined && dec(fondo(l)).plus(dec(l.esperado)).isZero()) contados[l.clave] = '0.00';
   const faltan = lineas.filter((l) => contados[l.clave] === undefined).map((l) => l.nombre);
   if (faltan.length) throw new ErrorCuenta(`Falta poner cuánto contaste en: ${faltan.join(', ')}.`);
   for (const l of lineas) {
     if (!MONTO.test(contados[l.clave] ?? '')) throw new ErrorCuenta(`"${l.nombre}": escribe el monto contado, por ejemplo 150.00.`);
-    if (fondos[l.clave] !== undefined && !MONTO.test(fondos[l.clave]!)) throw new ErrorCuenta(`"${l.nombre}": el fondo inicial debe ser un monto, por ejemplo 50.00.`);
   }
-  const fondo = (l: LineaCierre) => fondos[l.clave] ?? l.fondoSugerido;
   const id = await enTransaccion(db, async (tx) => {
     const nuevo = (await tx.query(
       `INSERT INTO cierres_caja (empresa_id, fecha, usuario_id, nota) VALUES ($1, $2, $3, $4) RETURNING id`,

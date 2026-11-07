@@ -207,3 +207,10 @@ button.acceso small { color: var(--gris); font-size: 13px; }
 .emitir-grande button + button { background: #fff; color: var(--tinta); border: 2px solid var(--tinta); }
 #herramientas-mas { margin: 8px 0 4px; }
 #caja-resumen > summary, #caja-configuracion > summary { font-weight: 600; color: var(--tinta); }
+/* Cierre de caja: el campo y su botón "+" para ir sumando montos. */
+.con-suma { display: flex; gap: 6px; align-items: stretch; }
+.con-suma input { flex: 1; }
+button.sumar { margin-top: 4px; padding: 0 14px; font-size: 20px; font-weight: 700; }
+#lista-cierres > li { flex-wrap: wrap; cursor: pointer; }
+.detalle-cierre { flex-basis: 100%; margin: 8px 0 0; padding-left: 18px; font-size: 14px; }
+.lista .detalle-cierre li { display: list-item; padding: 2px 0; margin: 0; border: 0; background: none; cursor: auto; }

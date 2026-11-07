@@ -458,7 +458,8 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect(r.status).toBe(201);
     const cierre = await r.json();
     expect(cierre.lineas.map((l: { esperado: string }) => l.esperado)).toEqual(p.lineas.map((l: { esperado: string }) => l.esperado));
-    expect((await pedir('/panel/api/caja/cierre', { cookie: dueno, cuerpo: { fecha: p.fecha, contados: {} } })).status).toBe(422);
+    // Un monto mal escrito no se guarda (vacío sí vale si ahí no había dinero: cuenta 0).
+    expect((await pedir('/panel/api/caja/cierre', { cookie: dueno, cuerpo: { fecha: p.fecha, contados: { [p.lineas[0].clave]: 'diez' } } })).status).toBe(422);
     const despues = await (await pedir('/panel/api/caja/cierre', { cookie: dueno })).json();
     expect(despues.historial[0].id).toBe(cierre.id);
   });
