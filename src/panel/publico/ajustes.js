@@ -332,12 +332,24 @@ async function alCambiarContrasena(e) {
   }
 }
 
-// Cliente ya conocido: al escribir su DNI o RUC se completa el nombre.
-async function buscarCliente(e) {
-  const doc = e.target.value.trim();
-  const nombre = $('[name=nombre]');
-  if (!/^\d{8}$|^\d{11}$/.test(doc) || nombre.value.trim()) return;
-  try { nombre.value = (await api(`/clientes?doc=${doc}`)).nombre; } catch { /* cliente nuevo */ }
+// Cliente ya conocido: apenas se completa su DNI (8) o RUC (11), se pone su nombre.
+// Antes buscaba el PRIMER campo "nombre" de la página (el de la instalación, escondido) y el
+// nombre nunca aparecía en Vender: ahora se busca dentro del formulario de venta.
+let nombreAutocompletado = '';
+async function buscarCliente() {
+  const f = $('#form-emitir');
+  const doc = f.numero.value.trim();
+  // Si cambia el documento, el nombre que se puso solo ya no corresponde: se borra (así no sale
+  // una boleta con el nombre de otra persona). Lo escrito a mano no se toca nunca.
+  const puestoSolo = Boolean(nombreAutocompletado) && f.nombre.value === nombreAutocompletado;
+  if (puestoSolo) f.nombre.value = nombreAutocompletado = '';
+  else if (f.nombre.value.trim()) return;
+  if (!/^\d{8}$|^\d{11}$/.test(doc)) return;
+  try {
+    const { nombre } = await api(`/clientes?doc=${doc}`);
+    if (f.numero.value.trim() !== doc || f.nombre.value.trim()) return; // siguió escribiendo mientras se buscaba
+    f.nombre.value = nombreAutocompletado = nombre;
+  } catch { /* cliente nuevo: se escribe el nombre */ }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -427,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-producto').addEventListener('submit', alGuardarProducto);
   $('#form-ajuste').addEventListener('submit', alAjustar);
   $('#form-contrasena').addEventListener('submit', alCambiarContrasena);
-  $('[name=numero]').addEventListener('change', buscarCliente);
+  $('#form-emitir').numero.addEventListener('input', buscarCliente);
   $('#form-entrar').addEventListener('submit', alEntrar);
   $('#ir-instalar').addEventListener('click', () => { $('#vista-entrar').hidden = true; $('#vista-instalar').hidden = false; });
   $('#form-instalar').addEventListener('submit', alInstalar);
