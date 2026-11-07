@@ -108,6 +108,20 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     expect(await r.text()).toContain('/panel/app.js');
   });
 
+  it('los archivos del panel van comprimidos (gzip) si el navegador lo acepta: el celular baja ~3 veces menos', async () => {
+    const { gunzipSync } = await import('node:zlib');
+    const normal = await pedir('/panel/ventas.js');
+    const gz = await app.request('http://localhost/panel/ventas.js', { headers: { 'Accept-Encoding': 'gzip, br' } });
+    expect(gz.headers.get('content-encoding')).toBe('gzip');
+    expect(gz.headers.get('vary')).toBe('Accept-Encoding');
+    const comprimido = Buffer.from(await gz.arrayBuffer());
+    const original = await normal.text();
+    expect(comprimido.length * 2).toBeLessThan(Buffer.byteLength(original));
+    expect(gunzipSync(comprimido).toString('utf8')).toBe(original);
+    // Las imágenes ya vienen comprimidas: se sirven tal cual.
+    expect((await app.request('http://localhost/panel/icono-192.png', { headers: { 'Accept-Encoding': 'gzip' } })).headers.get('content-encoding')).toBeNull();
+  });
+
   it('entrar y emitir: sale B001 por el canal elegido, con el usuario como autor', async () => {
     const u = await usuario('VENDEDOR');
     const cookie = await entrar(u);

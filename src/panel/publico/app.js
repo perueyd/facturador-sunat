@@ -35,6 +35,19 @@ async function api(ruta, opciones = {}) {
   return datos;
 }
 
+/**
+ * Guarda en el aparato el archivo que respondió el facturador (Excel, XML, ZIP). Si respondió
+ * un error, lo muestra en vez de bajar un archivo con el error adentro. El nombre lo da el
+ * facturador (Content-Disposition); `nombre` es por si no viene.
+ */
+async function descargar(res, nombre) {
+  if (!res.ok) { alert((await res.json().catch(() => ({}))).error?.mensaje || 'No se pudo descargar.'); return; }
+  const url = URL.createObjectURL(await res.blob());
+  const delServidor = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1];
+  Object.assign(document.createElement('a'), { href: url, download: delServidor || nombre }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 // ---------- Céntimos exactos ----------
 function aCentimos(texto) {
   const t = String(texto).trim().replace(',', '.');

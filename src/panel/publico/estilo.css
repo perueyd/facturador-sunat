@@ -79,8 +79,9 @@ form > button[type=submit] { display: block; width: 100%; margin-top: 12px; }
 .ajustes summary { cursor: pointer; color: var(--gris); }
 button.peligro { color: var(--rojo); border-color: #fda29b; }
 
-.pestanas { display: flex; gap: 4px; margin: 16px 0 0; overflow-x: auto; border-bottom: 1px solid var(--borde); }
-.pestanas button { flex: 1; padding: 10px 8px; font-size: 14px; color: var(--gris); background: none; border-radius: 8px 8px 0 0; }
+/* Pestañas siempre a la vista: quedan pegadas arriba al bajar, como en una app. */
+.pestanas { position: sticky; top: 0; z-index: 10; display: flex; gap: 4px; margin: 16px 0 0; padding-top: 6px; overflow-x: auto; background: var(--fondo); border-bottom: 1px solid var(--borde); }
+.pestanas button { flex: 1 0 auto; white-space: nowrap; padding: 10px 8px; font-size: 14px; color: var(--gris); background: none; border-radius: 8px 8px 0 0; }
 .pestanas button.activa { color: var(--tinta); background: #fff; border: 1px solid var(--borde); border-bottom-color: #fff; margin-bottom: -1px; }
 .item.cuota { grid-template-columns: 1fr 1fr 36px; }
 .item .sku { grid-column: 1 / -1; font-size: 13px; padding: 6px 10px; }
@@ -172,15 +173,12 @@ button.acceso small { color: var(--gris); font-size: 13px; }
 .lista li:has(.pago-compra) { flex-wrap: wrap; cursor: default; }
 .lista li .pago-compra { flex-basis: 100%; }
 
-/* Pestañas siempre a la vista: quedan pegadas arriba al bajar, como en una app. */
-.pestanas { position: sticky; top: 0; z-index: 10; background: var(--fondo, #fafafa); padding-top: 6px; }
-.pestanas button { flex: 1 0 auto; white-space: nowrap; }
 /* "Más" ordenado por grupos. */
 .grupo-mas { margin: 0 0 22px; }
 .titulo-grupo { margin: 18px 0 6px; padding-bottom: 4px; font-size: 1.05rem; border-bottom: 2px solid var(--borde); }
 .lista li.actual { border-color: #a6d8b8; background: #f0faf3; }
 @media (max-width: 600px) {
-  /* En el celular todas las pestañas a la vista (en dos filas) en vez de esconderse a la derecha. */
+  /* En el celular las 4 pestañas a la vista, en una fila, en vez de esconderse a la derecha. */
   .pestanas { flex-wrap: wrap; overflow-x: visible; gap: 4px; border-bottom: 0; padding-bottom: 6px; }
   .pestanas button { flex: 1 1 22%; padding: 8px 4px; font-size: 13px; border: 1px solid var(--borde); border-radius: 8px; background: #fff; }
   .pestanas button.activa { color: #fff; background: var(--tinta); border-color: var(--tinta); margin-bottom: 0; }

@@ -39,6 +39,8 @@ export interface Comun {
   /** El comprobante si es de la empresa; si no, undefined (igual que si no existiera). */
   deLaEmpresa: (empresaId: string, id: string) => Promise<string | undefined>;
   sinModulo: (c: Context, m: Modulo) => Response;
+  /** Id del canal manual (WhatsApp, Instagram, Presencial) por su nombre; el panel no vende como "Tienda web". */
+  canalManual: (empresaId: string, nombre: unknown) => Promise<string | undefined>;
   /** Texto recortado y con tope de largo. */
   texto: (v: unknown, max: number) => string;
   frenado: (c: Context) => Response;

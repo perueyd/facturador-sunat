@@ -283,14 +283,7 @@ async function cargarAntiguos() {
     const li = linea(`${x.fechaEmision} · ${x.tipo} ${x.comprobante} · ${x.cliente}`, `${x.moneda === 'PEN' ? 'S/' : x.moneda} ${x.total}${x.firmaValida ? '' : ' ⚠️'}`);
     if (!x.firmaValida) li.title = 'Su firma no se pudo comprobar: el archivo pudo ser modificado.';
     const boton = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'XML' });
-    boton.addEventListener('click', async () => {
-      const res = await api(`/antiguos/${x.id}/xml`, { crudo: true });
-      if (!res.ok) { alert((await res.json().catch(() => ({}))).error?.mensaje || 'No se pudo descargar.'); return; }
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(await res.blob());
-      a.download = `${x.comprobante}.xml`;
-      a.click();
-    });
+    boton.addEventListener('click', async () => descargar(await api(`/antiguos/${x.id}/xml`, { crudo: true }), `${x.comprobante}.xml`));
     li.append(boton);
     return li;
   }));
@@ -321,12 +314,7 @@ async function subirAntiguos(e) {
 async function exportar() {
   const mes = $('#mes-exportar').value;
   const que = $('#que-exportar').value;
-  const res = await api(`/exportar?que=${que}&mes=${encodeURIComponent(mes)}`, { crudo: true });
-  if (!res.ok) { alert((await res.json().catch(() => ({}))).error?.mensaje || 'No se pudo exportar.'); return; }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(await res.blob());
-  a.download = `${que}-${mes}.csv`;
-  a.click();
+  await descargar(await api(`/exportar?que=${que}&mes=${encodeURIComponent(mes)}`, { crudo: true }), `${que}-${mes}.csv`);
 }
 
 async function alCambiarContrasena(e) {

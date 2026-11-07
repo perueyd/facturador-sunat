@@ -13,6 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import type { Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
@@ -75,10 +76,17 @@ const BASE = {
 };
 // Versión del panel = huella de todos sus archivos: si se publica un cambio, la app instalada lo nota.
 const VERSION_PANEL = Object.values(BASE).reduce((h, a) => h.update(a.contenido), createHash('sha256').update(PAGINA.contenido)).digest('hex').slice(0, 12);
-const ARCHIVOS = {
+interface Archivo { contenido: Buffer; tipo: string; gzip?: Buffer }
+/**
+ * El texto (HTML, JS, CSS) se comprime UNA vez al arrancar: el celular baja ~3 veces menos
+ * (unos 65 KB en vez de 212 KB) y el servidor no gasta CPU comprimiendo en cada visita.
+ */
+const conGzip = (a: { contenido: Buffer; tipo: string }): Archivo => (a.tipo.startsWith('image/') ? a : { ...a, gzip: gzipSync(a.contenido, { level: 9 }) });
+const ARCHIVOS: Record<string, Archivo> = Object.fromEntries(Object.entries({
   ...BASE,
   'sw.js': { contenido: Buffer.from(leer('sw.js').toString('utf8').replace("'__VERSION__'", `'${VERSION_PANEL}'`)), tipo: 'text/javascript; charset=utf-8' },
-};
+}).map(([nombre, a]) => [nombre, conGzip(a)]));
+const PAGINA_GZIP = conGzip(PAGINA);
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src blob:; manifest-src 'self'; worker-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 type ErrorJson = (c: Context, estado: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429, codigo: string, mensaje: string, detalles?: string[]) => Response;
@@ -103,15 +111,20 @@ export interface DependenciasPanel {
 export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   const frenado = (c: Context) => d.error(c, 429, 'DEMASIADOS_INTENTOS', 'Demasiados intentos fallidos; espera un minuto.');
 
-  const servir = (c: Context, a: { contenido: Buffer; tipo: string }, extra: Record<string, string> = {}) => c.body(new Uint8Array(a.contenido), 200, {
-    'Content-Type': a.tipo,
-    'Content-Security-Policy': CSP,
-    'Cache-Control': 'no-cache',
-    // La cámara solo para esta página (escáner de códigos de barras).
-    'Permissions-Policy': 'camera=(self)',
-    ...extra,
-  });
-  for (const ruta of ['/panel', '/panel/']) app.get(ruta, (c) => servir(c, PAGINA));
+  const servir = (c: Context, a: Archivo, extra: Record<string, string> = {}) => {
+    const comprimido = a.gzip && /\bgzip\b/.test(c.req.header('accept-encoding') ?? '');
+    return c.body(new Uint8Array(comprimido ? a.gzip! : a.contenido), 200, {
+      'Content-Type': a.tipo,
+      'Content-Security-Policy': CSP,
+      'Cache-Control': 'no-cache',
+      // La cámara solo para esta página (escáner de códigos de barras).
+      'Permissions-Policy': 'camera=(self)',
+      ...(a.gzip ? { Vary: 'Accept-Encoding' } : {}),
+      ...(comprimido ? { 'Content-Encoding': 'gzip' } : {}),
+      ...extra,
+    });
+  };
+  for (const ruta of ['/panel', '/panel/']) app.get(ruta, (c) => servir(c, PAGINA_GZIP));
   for (const [nombre, archivo] of Object.entries(ARCHIVOS)) {
     // El service worker vive en /panel/sw.js pero atiende también la página /panel (sin barra final).
     app.get(`/panel/${nombre}`, (c) => servir(c, archivo, nombre === 'sw.js' ? { 'Service-Worker-Allowed': '/panel' } : {}));
@@ -346,6 +359,11 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (!s.empresa) return d.error(c, 403, 'SIN_EMPRESA', 'Tu usuario no tiene ninguna empresa asignada.');
     return { ...s, empresa: s.empresa };
   };
+  // Solo canales manuales de la empresa elegida: el panel no emite como "Tienda web".
+  const canalManual = async (empresaId: string, nombre: unknown) =>
+    (await d.db.query(`SELECT id FROM canales WHERE empresa_id = $1 AND nombre = $2 AND tipo = 'MANUAL' AND activo`, [
+      empresaId, typeof nombre === 'string' ? nombre : '',
+    ])).rows[0]?.id as string | undefined;
 
   app.post('/panel/api/salir', async (c) => {
     const token = cookie(c);
@@ -451,13 +469,10 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (!b || typeof b.pedido !== 'string' || !PEDIDO_PANEL.test(b.pedido)) {
       return d.error(c, 422, 'DATOS_INVALIDOS', 'Falta el número interno del formulario. Recarga la página.');
     }
-    // Solo canales manuales de la empresa elegida: el panel no emite como "Tienda web".
-    const canal = await d.db.query(`SELECT id FROM canales WHERE empresa_id = $1 AND nombre = $2 AND tipo = 'MANUAL' AND activo`, [
-      s.empresa.id, typeof b.canal === 'string' ? b.canal : '',
-    ]);
-    if (!canal.rows[0]) return d.error(c, 422, 'DATOS_INVALIDOS', 'Elige por dónde fue la venta (WhatsApp, Instagram o Presencial).');
+    const canalId = await canalManual(s.empresa.id, b.canal);
+    if (!canalId) return d.error(c, 422, 'DATOS_INVALIDOS', 'Elige por dónde fue la venta (WhatsApp, Instagram o Presencial).');
     const { canal: _canal, ...cuerpo } = b;
-    return d.emitir(c, { empresaId: s.empresa.id, canalId: canal.rows[0].id as string, usuarioId: s.usuarioId }, cuerpo);
+    return d.emitir(c, { empresaId: s.empresa.id, canalId, usuarioId: s.usuarioId }, cuerpo);
   });
 
   app.get('/panel/api/comprobantes', async (c) => {
@@ -516,7 +531,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
       texto: `Para entrar, abre este enlace (vale 72 horas) y crea tu contraseña:\n\n${enlace}\n\nTen a mano Google Authenticator en tu celular.`,
     }).catch((e: unknown) => console.error('[invitacion] no se pudo enviar:', e instanceof Error ? e.message : e));
   };
-  const comun = { d, conSesion, conEmpresa, deLaEmpresa, sinModulo, texto, frenado, enlaceInvitacion, avisarInvitacion };
+  const comun = { d, conSesion, conEmpresa, deLaEmpresa, sinModulo, canalManual, texto, frenado, enlaceInvitacion, avisarInvitacion };
 
   app.get('/panel/api/tablero', async (c) => {
     const s = await conEmpresa(c);

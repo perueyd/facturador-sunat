@@ -10,7 +10,7 @@
  */
 import { sqlSaldo } from '../cobros/pagos.js';
 import { diasDeContingencia } from '../contingencia/contingencia.js';
-import type { Db } from '../db/conexion.js';
+import { type Db, sqlDelMes } from '../db/conexion.js';
 import { dec } from '../dinero.js';
 import { porPagar } from '../inventario/por-pagar.js';
 import { ahoraLima, diasEntre } from '../fechas.js';
@@ -82,10 +82,10 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
                 CASE WHEN tipo_comprobante = '07' THEN -(total_gravado + total_exonerado + total_inafecto) ELSE total_gravado + total_exonerado + total_inafecto END AS base,
                 CASE WHEN tipo_comprobante = '07' THEN -total_igv ELSE total_igv END AS igv
            FROM comprobantes
-          WHERE empresa_id = $1 AND to_char(fecha_emision, 'YYYY-MM') = $2 AND estado NOT IN ('RECHAZADO', 'ANULADO')
+          WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')} AND estado NOT IN ('RECHAZADO', 'ANULADO')
          UNION ALL
          SELECT importe_total, total_gravado + total_exonerado + total_inafecto, total_igv
-           FROM ventas_contingencia WHERE empresa_id = $1 AND to_char(fecha_emision, 'YYYY-MM') = $2) v`,
+           FROM ventas_contingencia WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')}) v`,
       [empresaId, periodo],
     )).rows[0];
     const compras = (await db.query(

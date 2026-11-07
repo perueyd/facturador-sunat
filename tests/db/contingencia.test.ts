@@ -12,12 +12,11 @@ import { crearApp } from '../../src/api/app.js';
 import { diasDeContingencia, generarInforme, registrarContingencia } from '../../src/contingencia/contingencia.js';
 import type { Db } from '../../src/db/conexion.js';
 import { ahoraLima, sumarDias } from '../../src/fechas.js';
-import { asignarEmpresa, crearUsuario, type Rol } from '../../src/panel/usuarios.js';
+import type { Rol } from '../../src/panel/usuarios.js';
 import { tablero } from '../../src/reportes/tablero.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
-import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
 import { RUC_CLIENTE, RUC_EMPRESA } from '../ayudantes.js';
-import { URL_PRUEBAS, activarSegundoPaso, crearEmpresa, prepararBase, type Fixture } from './base-prueba.js';
+import { URL_PRUEBAS, crearEmpresa, panelDePrueba, prepararBase, type Fixture } from './base-prueba.js';
 
 const hoy = ahoraLima().fecha;
 let n = 0;
@@ -35,6 +34,7 @@ describe.skipIf(!URL_PRUEBAS)('vender sin internet (contingencia)', () => {
   let f: Fixture;
   let almacen: AlmacenLocal;
   let app: ReturnType<typeof crearApp>;
+  let panel: ReturnType<typeof panelDePrueba>;
   const llaveMaestra = Buffer.from(generarLlaveMaestra(), 'base64');
 
   beforeAll(async () => {
@@ -42,6 +42,7 @@ describe.skipIf(!URL_PRUEBAS)('vender sin internet (contingencia)', () => {
     f = await crearEmpresa(db);
     almacen = new AlmacenLocal(await mkdtemp(join(tmpdir(), 'almacen-contingencia-')));
     app = crearApp({ db, fallosPorMinuto: 1000, servicios: { almacen, llaveMaestra, algoritmo: 'SHA256', crearCliente: () => { throw new Error('sin SUNAT'); } } });
+    panel = panelDePrueba(app, db, llaveMaestra);
   });
   afterAll(async () => {
     await db?.end();
@@ -109,21 +110,8 @@ describe.skipIf(!URL_PRUEBAS)('vender sin internet (contingencia)', () => {
 
   // ---------- Desde el panel ----------
 
-  async function entrar(rol: Rol): Promise<string> {
-    const email = `contingencia${++n}@prueba.pe`;
-    const { usuarioId, secreto } = await crearUsuario(db, { email, nombre: `Usuario ${n}`, contrasena: 'clave del panel 2026', llaveMaestra });
-    await asignarEmpresa(db, usuarioId, f.empresaId, rol);
-    await activarSegundoPaso(db, usuarioId, secreto, llaveMaestra);
-    const r = await pedir('/panel/api/entrar', { cuerpo: { email, contrasena: 'clave del panel 2026', codigo: codigoTotp(secreto, pasoActual()) } });
-    expect(r.status).toBe(200);
-    return (r.headers.get('set-cookie') ?? '').split(';')[0]!;
-  }
-  const pedir = (ruta: string, o: { cuerpo?: unknown; cookie?: string } = {}) =>
-    app.request(`http://localhost${ruta}`, {
-      method: o.cuerpo !== undefined ? 'POST' : 'GET',
-      headers: { 'Content-Type': 'application/json', 'X-Panel': '1', ...(o.cookie ? { Cookie: o.cookie } : {}) },
-      ...(o.cuerpo !== undefined ? { body: JSON.stringify(o.cuerpo) } : {}),
-    });
+  const entrar = (rol: Rol) => panel.entrar(f.empresaId, rol);
+  const pedir: typeof panel.pedir = (ruta, o) => panel.pedir(ruta, o);
 
   it('el vendedor anota; el contador descarga el archivo; el Excel de ventas las incluye', async () => {
     const vendedor = await entrar('VENDEDOR');

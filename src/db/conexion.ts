@@ -66,6 +66,14 @@ export async function enTransaccion<T>(db: Db, fn: (tx: Tx) => Promise<T>): Prom
   }
 }
 
+/**
+ * Filtro "fecha dentro del mes AAAA-MM" que SÍ usa los índices por fecha. Con
+ * `to_char(fecha, 'YYYY-MM') = $2` PostgreSQL tenía que leer TODAS las filas de la empresa
+ * (la función oculta la columna al índice); con un rango lee solo las del mes.
+ */
+export const sqlDelMes = (columna: string, mes: string) =>
+  `${columna} >= (${mes} || '-01')::date AND ${columna} < (${mes} || '-01')::date + interval '1 month'`;
+
 /** Código de error de PostgreSQL (ej. '23505' = valor duplicado). */
 export function codigoErrorPg(e: unknown): string | undefined {
   return typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : undefined;

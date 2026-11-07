@@ -5,7 +5,9 @@
  */
 import { crearPool, type Db } from '../../src/db/conexion.js';
 import { configurarEmpresa } from '../../src/empresas/configurar.js';
-import { activarTotp } from '../../src/panel/usuarios.js';
+import { randomUUID } from 'node:crypto';
+import type { crearApp } from '../../src/api/app.js';
+import { activarTotp, asignarEmpresa, crearUsuario, type Rol } from '../../src/panel/usuarios.js';
 import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
 import type { Regimen } from '../../src/tipos.js';
 import { migrar } from '../../scripts/migrar.js';
@@ -61,4 +63,28 @@ export async function crearEmpresa(db: Db, ruc = RUC_EMPRESA, regimen: Regimen =
     [empresaId],
   );
   return { empresaId, canalTienda: r.rows[0].tienda, canalManual: r.rows[0].manual, marcaId: r.rows[0].marca };
+}
+
+/**
+ * Panel para pruebas: `entrar(rol)` crea un usuario con ese rol en la empresa, activa su
+ * segundo paso y devuelve la cookie; `pedir` llama al panel como lo hace el navegador.
+ */
+export function panelDePrueba(app: ReturnType<typeof crearApp>, db: Db, llaveMaestra: Buffer) {
+  let n = 0;
+  const pedir = (ruta: string, o: { cuerpo?: unknown; cookie?: string } = {}) =>
+    app.request(`http://localhost${ruta}`, {
+      method: o.cuerpo !== undefined ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json', 'X-Panel': '1', ...(o.cookie ? { Cookie: o.cookie } : {}) },
+      ...(o.cuerpo !== undefined ? { body: JSON.stringify(o.cuerpo) } : {}),
+    });
+  async function entrar(empresaId: string, rol: Rol): Promise<string> {
+    const email = `panel${++n}-${randomUUID().slice(0, 8)}@prueba.pe`;
+    const { usuarioId, secreto } = await crearUsuario(db, { email, nombre: `Usuario ${n}`, contrasena: 'clave del panel 2026', llaveMaestra });
+    await asignarEmpresa(db, usuarioId, empresaId, rol);
+    await activarSegundoPaso(db, usuarioId, secreto, llaveMaestra);
+    const r = await pedir('/panel/api/entrar', { cuerpo: { email, contrasena: 'clave del panel 2026', codigo: codigoTotp(secreto, pasoActual()) } });
+    if (r.status !== 200) throw new Error(`No se pudo entrar al panel (${r.status}).`);
+    return (r.headers.get('set-cookie') ?? '').split(';')[0]!;
+  }
+  return { entrar, pedir };
 }
