@@ -203,7 +203,14 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
         WHERE v.empresa_id = $1 AND ${sqlDelMes('v.fecha_emision', '$2')}`,
       [s.empresa.id, mes],
     );
-    const TIPOS: Record<string, string> = { '01': 'Factura', '03': 'Boleta', '07': 'Nota de crédito' };
+    // Emitidos fuera del facturador (SUNAT SOL, Emprende) y subidos como XML: también se declaran.
+    const deSunat = await d.db.query(
+      `SELECT fecha_emision::text AS fecha, tipo, serie, numero, coalesce(cliente_doc, '') AS doc, coalesce(cliente_nombre, '') AS nombre,
+              (total - coalesce(igv, 0))::text AS base, coalesce(igv, 0)::text AS igv, total::text AS total
+         FROM comprobantes_antiguos WHERE empresa_id = $1 AND moneda = 'PEN' AND ${sqlDelMes('fecha_emision', '$2')}`,
+      [s.empresa.id, mes],
+    );
+    const TIPOS: Record<string, string> = { '01': 'Factura', '03': 'Boleta', '07': 'Nota de crédito', '08': 'Nota de débito' };
     const filas = [
       ...r.rows.map((x) => [
         x.fecha, TIPOS[x.tipo_comprobante] ?? x.tipo_comprobante, idComprobanteLegible(x.serie, Number(x.numero)), x.cliente_numero_doc,
@@ -212,6 +219,10 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
       ...impresas.rows.map((x) => [
         x.fecha, `${TIPOS[x.tipo]} impresa (contingencia)`, `${x.serie}-${x.numero}`, x.cliente_doc, x.cliente_nombre, x.base, x.igv, x.total,
         'IMPRESA: informar con archivo RF', 'PAGADO', x.canal,
+      ]),
+      ...deSunat.rows.map((x) => [
+        x.fecha, `${TIPOS[x.tipo] ?? x.tipo} (emitida en SUNAT)`, idComprobanteLegible(x.serie, Number(x.numero)), x.doc, x.nombre,
+        x.tipo === '07' ? `-${x.base}` : x.base, x.tipo === '07' ? `-${x.igv}` : x.igv, x.tipo === '07' ? `-${x.total}` : x.total, 'EMITIDA EN SUNAT', '', 'SUNAT',
       ]),
     ].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
     const lineas = [['Fecha', 'Tipo', 'Número', 'Doc. cliente', 'Cliente', 'Base imponible', 'IGV', 'Total', 'Estado SUNAT', 'Pago', 'Canal'], ...filas];

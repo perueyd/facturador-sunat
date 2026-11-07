@@ -131,6 +131,16 @@ function dibujarAccesos() {
 }
 
 // ---------- Tablero ----------
+const puedeMarcarDeclaracion = () => ['DUENO', 'ADMIN', 'CONTADOR'].includes(yo?.empresa?.rol);
+function botonDeclaracion(texto, periodo, declarado) {
+  const b = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: texto });
+  b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (declarado && !confirm(`¿Ya presentaste en SUNAT la declaración de ${periodo}? El Inicio pasará al mes siguiente.`)) return;
+    try { await api('/declaraciones', { cuerpo: { periodo, declarado } }); await cargarTablero(); } catch (err) { alert(err.message); }
+  });
+  return b;
+}
 function tarjeta(titulo, valor, detalle, clase = '') {
   const t = document.createElement('div');
   t.className = `tarjeta ${clase}`;
@@ -166,8 +176,16 @@ async function cargarTablero() {
     tarjetas.push(tarjeta('Declaración mensual', 'Falta el cronograma', 'Carga el cronograma de SUNAT de este año.', 'ancha urgente'));
   } else if (v) {
     const dias = v.dias === 0 ? '¡vence HOY!' : v.dias === 1 ? 'vence MAÑANA' : `quedan ${v.dias} días`;
-    tarjetas.push(tarjeta(`Declarar y pagar ${v.nombre} (IGV y Renta)`, `${fechaLarga(v.vence)} · ${dias}`,
-      `Según el último dígito de tu RUC (${v.grupo}). Fuente: cronograma oficial SUNAT.`, `ancha ${v.dias <= 3 ? 'urgente' : ''}`));
+    const t1 = tarjeta(`Declarar y pagar ${v.nombre} (IGV y Renta)`, `${fechaLarga(v.vence)} · ${dias}`,
+      `Según el último dígito de tu RUC (${v.grupo}). Fuente: cronograma oficial SUNAT.`, `ancha ${v.dias <= 3 ? 'urgente' : ''}`);
+    // Si ya se declaró, se marca y el Inicio pasa al mes siguiente.
+    if (puedeMarcarDeclaracion()) t1.append(botonDeclaracion(`✔ Ya declaré ${v.nombre}`, v.periodo, true));
+    tarjetas.push(t1);
+  }
+  if (t.declarado) {
+    const t2 = tarjeta('Declaración', `✔ ${t.declarado.nombre} declarado`, `Marcado el ${t.declarado.el}.`, 'ok');
+    if (puedeMarcarDeclaracion()) t2.append(botonDeclaracion('Deshacer (no lo declaré)', t.declarado.periodo, false));
+    tarjetas.push(t2);
   }
   const r = t.resumen;
   /** Tabla de un mes: ventas, IGV y renta (todo estimado). */

@@ -3,8 +3,10 @@
  * (SUNAT Operaciones en Línea, app Emprende u otro sistema). El dueño descarga los XML de
  * SUNAT y los sube aquí para consultarlos junto con los nuevos.
  *
- * Es solo un historial: no se envían a SUNAT ni cuentan en ventas, impuestos, caja o
- * correlativos. Se guarda el XML tal cual llegó (con su huella) y se comprueba su firma.
+ * No se vuelven a enviar a SUNAT ni tocan los correlativos ni la caja. Sí suman en las ventas e
+ * IGV estimados del mes y salen en el Excel del contador (son ventas de la empresa: el dueño
+ * emitía boletas en SUNAT el mismo mes en que empezó a usar el facturador).
+ * Se guarda el XML tal cual llegó (con su huella) y se comprueba su firma.
  */
 import { createHash } from 'node:crypto';
 import { DOMParser } from '@xmldom/xmldom';

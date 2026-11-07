@@ -759,8 +759,9 @@ Línea, app Emprende u otro sistema). Viene **apagado**: el dueño lo prende en 
   XML tal cual, con su huella. Subir el mismo dos veces no lo duplica.
 - Se rechazan los de **otro RUC** y los que ya emitió este facturador. Si la serie es una que usa el
   facturador (ej. B001), se avisa para revisar con el contador que los números no se repitan.
-- Es **solo historial**: tabla aparte (`comprobantes_antiguos`, solo inserción). No se envía a SUNAT
-  ni cuenta en ventas, impuestos, caja ni correlativos.
+- Tabla aparte (`comprobantes_antiguos`, solo inserción): no se reenvía a SUNAT ni toca correlativos
+  ni caja. Desde el 07/11/2026 **sí suma** en las ventas e IGV estimados del mes y sale en el Excel
+  de ventas ("emitida en SUNAT"): el dueño emitía boletas en SOL el mismo mes.
 - Ven la lista: dueño, administrador y contador. Suben: dueño y administrador. Apagarlo solo la oculta.
 
 ## 19. Decisiones que siguen abiertas
