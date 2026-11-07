@@ -20,6 +20,25 @@ export function registrarPlataforma(app: Hono<any>, { d, conSesion, texto, frena
     if (s instanceof Response) return s;
     return s.adminPlataforma ? s : d.error(c, 403, 'SIN_PERMISO', 'Solo el administrador de la plataforma.');
   };
+  /**
+   * Invita al DUEÑO de una empresa (lo hace el administrador de la plataforma o el aliado que la
+   * trajo): recibe un enlace para crear su contraseña y su app de códigos.
+   */
+  const invitarDueno = async (c: Context, empresaId: string, b: Record<string, unknown>, creadaPor: string) => {
+    try {
+      const email = texto(b.email, 200);
+      const r = await invitar(d.db, { email, nombre: texto(b.nombre, 120), empresaId, rol: 'DUENO', creadaPor });
+      if (r.existente) return c.json({ ok: true, existente: true });
+      const razon = (await d.db.query(`SELECT razon_social FROM empresas WHERE id = $1`, [empresaId])).rows[0].razon_social as string;
+      const enlace = enlaceInvitacion(c, r.token);
+      avisarInvitacion(email.toLowerCase(), enlace, razon);
+      return c.json({ ok: true, existente: false, enlace, expira: r.expira, porCorreo: Boolean(d.correo) }, 201);
+    } catch (e) {
+      if (e instanceof ErrorInvitacion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
+  };
+
   const empresaDeRuta = async (c: Context) => {
     const id = c.req.param('empresaId') ?? '';
     return UUID.test(id) && (await d.db.query(`SELECT 1 FROM empresas WHERE id = $1`, [id])).rowCount ? id : undefined;
@@ -87,17 +106,7 @@ export function registrarPlataforma(app: Hono<any>, { d, conSesion, texto, frena
     const empresaId = await empresaDeRuta(c);
     if (!empresaId) return d.error(c, 404, 'NO_ENCONTRADO', 'Empresa no encontrada.');
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    try {
-      const r = await invitar(d.db, { email: texto(b.email, 200), nombre: texto(b.nombre, 120), empresaId, rol: 'DUENO', creadaPor: s.usuarioId });
-      if (r.existente) return c.json({ ok: true, existente: true });
-      const razon = (await d.db.query(`SELECT razon_social FROM empresas WHERE id = $1`, [empresaId])).rows[0].razon_social as string;
-      const enlace = enlaceInvitacion(c, r.token);
-      avisarInvitacion(texto(b.email, 200).toLowerCase(), enlace, razon);
-      return c.json({ ok: true, existente: false, enlace, expira: r.expira, porCorreo: Boolean(d.correo) }, 201);
-    } catch (e) {
-      if (e instanceof ErrorInvitacion) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
-      throw e;
-    }
+    return invitarDueno(c, empresaId, b, s.usuarioId);
   });
 
   // Precios de los planes: los decide el dueño de la plataforma (los de fábrica son una propuesta).
@@ -169,16 +178,7 @@ export function registrarPlataforma(app: Hono<any>, { d, conSesion, texto, frena
     if (puede === 'YA_TIENE_DUENO') return d.error(c, 409, 'YA_TIENE_DUENO', 'Ese negocio ya tiene su dueño activo: él invita a su gente desde su panel.');
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     if (texto(b.email, 200).trim().toLowerCase() === s.email.toLowerCase()) return d.error(c, 422, 'DATOS_INVALIDOS', 'Invita al dueño del negocio, no a ti.');
-    try {
-      const r = await invitar(d.db, { email: texto(b.email, 200), nombre: texto(b.nombre, 120), empresaId, rol: 'DUENO', creadaPor: s.usuarioId });
-      if (r.existente) return c.json({ ok: true, existente: true });
-      const razon = (await d.db.query(`SELECT razon_social FROM empresas WHERE id = $1`, [empresaId])).rows[0].razon_social as string;
-      const enlace = enlaceInvitacion(c, r.token);
-      avisarInvitacion(texto(b.email, 200).toLowerCase(), enlace, razon);
-      return c.json({ ok: true, existente: false, enlace, expira: r.expira, porCorreo: Boolean(d.correo) }, 201);
-    } catch (e) {
-      return errorAliado(c, e);
-    }
+    return invitarDueno(c, empresaId, b, s.usuarioId);
   });
 
   // El dueño de la plataforma nombra aliados, les cambia el %, los desactiva y les paga.

@@ -186,12 +186,7 @@ function limpiarVenta(form) {
 async function alEmitir(e) {
   e.preventDefault();
   const f = new FormData(e.target);
-  const items = [...document.querySelectorAll('#items .item')].map((fila) => ({
-    ...(fila.querySelector('[name=codigo]').value ? { codigo: fila.querySelector('[name=codigo]').value } : {}),
-    descripcion: fila.querySelector('[name=descripcion]').value.trim(),
-    cantidad: fila.querySelector('[name=cantidad]').value.trim().replace(',', '.'),
-    precio: fila.querySelector('[name=precio]').value.trim().replace(',', '.'),
-  }));
+  const items = itemsDelFormulario();
   const tipoDocumento = f.get('tipoDocumento');
   const cuerpo = {
     pedido: pedidoActual,
