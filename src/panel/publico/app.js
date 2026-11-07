@@ -30,6 +30,8 @@ async function api(ruta, opciones = {}) {
   if (!res.ok) {
     const e = new Error(datos.error?.mensaje || 'No se pudo completar. Intenta de nuevo.');
     e.detalles = datos.error?.detalles || [];
+    // Quien llama puede distinguir "datos mal" (4xx) de "sesión vencida" (401) o "servidor caído" (5xx).
+    e.estado = res.status;
     throw e;
   }
   return datos;
@@ -91,6 +93,16 @@ function elegirTipo(tipo) {
   $('#caja-forma-pago').hidden = tipo !== 'FACTURA';
   select.dispatchEvent(new Event('change'));
   textoBotonEmitir();
+}
+
+/** Los productos escritos en Vender (los mismos para emitir, cotizar o anotar sin internet). */
+function itemsDelFormulario() {
+  return [...document.querySelectorAll('#items .item')].map((fila) => ({
+    ...(fila.querySelector('[name=codigo]').value ? { codigo: fila.querySelector('[name=codigo]').value } : {}),
+    descripcion: fila.querySelector('[name=descripcion]').value.trim(),
+    cantidad: fila.querySelector('[name=cantidad]').value.trim().replace(',', '.'),
+    precio: fila.querySelector('[name=precio]').value.trim().replace(',', '.'),
+  })).filter((x) => x.descripcion || x.precio);
 }
 
 function agregarItem() {

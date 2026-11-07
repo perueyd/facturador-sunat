@@ -13,12 +13,7 @@ function leerFormularioVenta() {
   const f = new FormData($('#form-emitir'));
   return {
     cliente: { tipoDocumento: f.get('tipoDocumento'), numero: String(f.get('numero')).trim(), nombre: String(f.get('nombre')).trim() },
-    items: [...document.querySelectorAll('#items .item')].map((fila) => ({
-      codigo: fila.querySelector('[name=codigo]').value,
-      descripcion: fila.querySelector('[name=descripcion]').value.trim(),
-      cantidad: fila.querySelector('[name=cantidad]').value.trim().replace(',', '.'),
-      precio: fila.querySelector('[name=precio]').value.trim().replace(',', '.'),
-    })).filter((x) => x.descripcion || x.precio),
+    items: itemsDelFormulario(),
   };
 }
 

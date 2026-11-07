@@ -222,3 +222,7 @@ dialog button[type=submit].peligro { color: #fff; background: var(--rojo); }
 #form-emitir.modo-cotizacion #caja-pago, #form-emitir.modo-cotizacion #boton-emitir, #form-emitir.modo-cotizacion #opciones-venta { display: none; }
 #form-emitir.modo-devolucion > :not(fieldset:first-of-type):not(#elegir-devolucion) { display: none; }
 #form-emitir:not(.modo-devolucion) #elegir-devolucion { display: none; }
+/* Venta sin internet rechazada: el motivo y los botones van debajo, a lo ancho (en el celular no caben al lado). */
+#lista-por-enviar li { flex-wrap: wrap; }
+#lista-por-enviar li small { flex-basis: 100%; color: var(--rojo); }
+#lista-por-enviar li button { margin-top: 4px; }

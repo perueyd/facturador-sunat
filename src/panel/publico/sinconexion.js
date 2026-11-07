@@ -82,6 +82,7 @@ function ponerModoSinConexion(activo) {
 }
 
 const colaDeLaEmpresa = () => colaSinConexion().filter((x) => x.empresaId === yo?.empresa?.id);
+const quitarDeLaCola = (venta) => guardarCola(colaSinConexion().filter((y) => y.cuerpo.contingencia.origen !== venta.cuerpo.contingencia.origen));
 
 function mostrarPorEnviar() {
   const n = colaDeLaEmpresa().length;
@@ -144,20 +145,19 @@ async function enviarPendientes() {
   if (enviando || !navigator.onLine || !colaDeLaEmpresa().length) return;
   enviando = true;
   try {
-    for (const venta of colaSinConexion().filter((x) => x.empresaId === yo?.empresa?.id)) {
-      let quitar = false;
+    // Las que el facturador ya rechazó no se reintentan solas: esperan a que la persona las revise.
+    for (const venta of colaDeLaEmpresa().filter((x) => !x.error)) {
       try {
         await api('/contingencia', { cuerpo: venta.cuerpo });
-        quitar = true;
+        quitarDeLaCola(venta);
       } catch (err) {
-        if (err instanceof TypeError) break; // se cortó otra vez la señal: se reintenta después
+        // Sin señal, sesión vencida o servidor caído: la venta está bien, se reintenta después.
+        if (err instanceof TypeError || err.estado === 401 || !(err.estado >= 400 && err.estado < 500)) break;
         // El facturador la rechazó (ej. número repetido): queda en el celular con el motivo.
         const cola = colaSinConexion();
         const x = cola.find((y) => y.cuerpo.contingencia.origen === venta.cuerpo.contingencia.origen);
         if (x) { x.error = [err.message, ...(err.detalles || [])].join(' '); guardarCola(cola); }
-        if (/sesión|entrar/i.test(err.message)) break;
       }
-      if (quitar) guardarCola(colaSinConexion().filter((y) => y.cuerpo.contingencia.origen !== venta.cuerpo.contingencia.origen));
     }
   } finally {
     enviando = false;
@@ -174,8 +174,25 @@ function dibujarPorEnviar() {
   lista.replaceChildren(...cola.map((x) => {
     const k = x.cuerpo.contingencia;
     const li = linea(`${x.cuerpo.tipo === 'FACTURA' ? 'Factura' : 'Boleta'} impresa ${k.serie}-${k.numero} · ${k.fecha} ${k.hora}`, x.error ? '⚠️ revisar' : 'por enviar', x.error ? 'error' : '');
-    if (x.error) li.title = x.error;
-    if (x.error) li.append(Object.assign(document.createElement('small'), { textContent: x.error }));
+    if (!x.error) return li;
+    li.title = x.error;
+    li.append(Object.assign(document.createElement('small'), { textContent: x.error }));
+    // Rechazada: se corrige y se reintenta, o (si ya se resolvió de otra forma) se quita de la lista.
+    const reintentar = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'Reintentar' });
+    reintentar.addEventListener('click', () => {
+      const cola = colaSinConexion();
+      for (const y of cola) if (y.cuerpo.contingencia.origen === k.origen) delete y.error;
+      guardarCola(cola);
+      enviarPendientes();
+    });
+    const quitar = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario peligro', textContent: 'Quitar' });
+    quitar.addEventListener('click', () => {
+      if (!confirm(`¿Quitar la ${x.cuerpo.tipo === 'FACTURA' ? 'factura' : 'boleta'} impresa ${k.serie}-${k.numero} de este celular? Hazlo solo si ya la registraste de otra forma (con tu contador).`)) return;
+      quitarDeLaCola(x);
+      mostrarPorEnviar();
+      dibujarPorEnviar();
+    });
+    li.append(reintentar, quitar);
     return li;
   }));
 }

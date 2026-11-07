@@ -746,8 +746,12 @@ Revisión del 07/11/2026 (fuentes oficiales):
 - **Antes de usarlo**: pedir a SUNAT la autorización de impresión de boletas de contingencia (imprenta
   autorizada, hasta 100 por local la primera vez) con las leyendas "Comprobante de pago emitido en
   contingencia" y "Emisor electrónico obligado".
-- **Aún no**: no descuentan stock, no entran en Caja ni en Estadísticas, y no tienen notas de crédito
-  (si hay que corregir una, se ve con el contador).
+- Desde el 07/11/2026 también **descuentan stock** (si el producto lo controla), su cobro **entra a la
+  Caja** y suman en **Estadísticas** y **Resultado del mes** (vista `ventas_todas`, migración 044, que
+  junta lo emitido aquí, lo impreso sin internet y lo emitido en SUNAT y subido). Sin señal se revisa
+  también el límite de S/ 700 de la boleta. Si el facturador rechaza una al recibirla, en el celular
+  sale con su motivo y los botones "Reintentar" y "Quitar".
+- **Aún no**: no tienen notas de crédito (si hay que corregir una, se ve con el contador).
 
 ## 22. Comprobantes antiguos (opcional, resultado)
 
