@@ -645,6 +645,30 @@
           <button type="button" id="exportar" class="secundario">Descargar (Excel)</button>
         </div>
       </section>
+      <details class="ajustes" id="caja-antiguos">
+        <summary>Comprobantes antiguos (opcional)</summary>
+        <div id="antiguos-apagado">
+          <p class="nota">Para ver junto a los nuevos los comprobantes que emitiste <strong>antes</strong> de este facturador
+            (SUNAT Operaciones en Línea, app Emprende u otro sistema). Es solo para consultar: no se envían a SUNAT ni
+            cuentan en tus ventas, impuestos ni correlativos.</p>
+          <button type="button" id="activar-antiguos" class="secundario">Activar comprobantes antiguos</button>
+          <p class="nota" id="antiguos-solo-dueno">Solo el dueño puede activarlo.</p>
+        </div>
+        <div id="antiguos-prendido" hidden>
+          <div id="caja-subir-antiguos">
+            <p class="nota">Descarga de SUNAT el <strong>XML</strong> (o el ZIP) de cada comprobante y súbelos aquí; puedes elegir
+              varios a la vez. Subir el mismo dos veces no lo duplica.</p>
+            <input type="file" id="archivo-antiguos" accept=".xml,.zip,text/xml,application/xml,application/zip" multiple>
+            <ul id="resultado-antiguos" class="lista"></ul>
+          </div>
+          <div class="fila">
+            <label>Buscar <input id="buscar-antiguos" maxlength="60" placeholder="E001-25, DNI, RUC o nombre"></label>
+            <label>Año <input id="anio-antiguos" type="number" min="1990" max="2100" placeholder="Todos"></label>
+          </div>
+          <ul id="lista-antiguos" class="lista"></ul>
+          <button type="button" id="apagar-antiguos" class="secundario">Ocultar esta sección</button>
+        </div>
+      </details>
       </div>
       <div class="grupo-mas" id="grupo-cuenta">
         <h2 class="titulo-grupo">👤 Mi cuenta</h2>

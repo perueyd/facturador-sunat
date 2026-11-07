@@ -242,6 +242,82 @@ async function alCrearEmpresa(e) {
   }
 }
 
+// ---------- Comprobantes antiguos (opcional, viene apagado) ----------
+function mostrarAntiguos() {
+  const prendido = tiene('antiguos');
+  // Apagada, solo la ve el dueño (para prenderla). Prendida: dueño, administrador y contador.
+  $('#caja-antiguos').hidden = !(yo.esDueno || (prendido && ['ADMIN', 'CONTADOR'].includes(yo.empresa?.rol)));
+  $('#antiguos-apagado').hidden = prendido;
+  $('#antiguos-prendido').hidden = !prendido;
+  $('#activar-antiguos').hidden = !yo.esDueno;
+  $('#antiguos-solo-dueno').hidden = yo.esDueno;
+  $('#apagar-antiguos').hidden = !yo.esDueno;
+  $('#caja-subir-antiguos').hidden = !yo.puedeAdministrar;
+}
+
+async function cambiarAntiguos(activo) {
+  try {
+    await api('/antiguos/activar', { cuerpo: { activo } });
+    yo = await api('/yo');
+    mostrarAntiguos();
+    ordenarMas();
+    if (activo) await cargarAntiguos();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+let buscarAntiguosEn;
+async function cargarAntiguos() {
+  if (!tiene('antiguos')) return;
+  const q = new URLSearchParams();
+  if ($('#buscar-antiguos').value.trim()) q.set('buscar', $('#buscar-antiguos').value.trim());
+  if ($('#anio-antiguos').value) q.set('anio', $('#anio-antiguos').value);
+  const { comprobantes } = await api(`/antiguos?${q}`);
+  const lista = $('#lista-antiguos');
+  if (!comprobantes.length) {
+    lista.replaceChildren(Object.assign(document.createElement('li'), { className: 'vacio', textContent: 'Todavía no hay comprobantes antiguos (o ninguno coincide con la búsqueda).' }));
+    return;
+  }
+  lista.replaceChildren(...comprobantes.map((x) => {
+    const li = linea(`${x.fechaEmision} · ${x.tipo} ${x.comprobante} · ${x.cliente}`, `${x.moneda === 'PEN' ? 'S/' : x.moneda} ${x.total}${x.firmaValida ? '' : ' ⚠️'}`);
+    if (!x.firmaValida) li.title = 'Su firma no se pudo comprobar: el archivo pudo ser modificado.';
+    const boton = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'XML' });
+    boton.addEventListener('click', async () => {
+      const res = await api(`/antiguos/${x.id}/xml`, { crudo: true });
+      if (!res.ok) { alert((await res.json().catch(() => ({}))).error?.mensaje || 'No se pudo descargar.'); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = `${x.comprobante}.xml`;
+      a.click();
+    });
+    li.append(boton);
+    return li;
+  }));
+}
+
+/** Sube los archivos uno por uno y muestra qué pasó con cada comprobante. */
+async function subirAntiguos(e) {
+  const archivos = [...(e.target.files ?? [])];
+  const resultado = $('#resultado-antiguos');
+  resultado.replaceChildren();
+  const ICONO = { GUARDADO: '✔', REPETIDO: '↺', ERROR: '✖' };
+  for (const archivo of archivos) {
+    const li = linea(`${archivo.name}`, 'subiendo…');
+    resultado.append(li);
+    try {
+      if (archivo.size > 2 * 1024 * 1024) throw new Error('Pesa más de 2 MB: súbelo en partes.');
+      const r = await api('/antiguos', { cuerpo: { nombre: archivo.name, archivo: await leerBase64(archivo) } });
+      li.replaceWith(...r.resultados.map((x) =>
+        linea(`${ICONO[x.resultado]} ${x.comprobante ?? x.archivo}`, x.mensaje ?? (x.resultado === 'GUARDADO' ? 'Guardado' : ''), x.resultado === 'ERROR' ? 'error' : '')));
+    } catch (err) {
+      li.replaceWith(linea(`✖ ${archivo.name}`, err.message, 'error'));
+    }
+  }
+  e.target.value = '';
+  await cargarAntiguos().catch(() => {});
+}
+
 async function exportar() {
   const mes = $('#mes-exportar').value;
   const que = $('#que-exportar').value;
@@ -304,6 +380,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   $('#archivo-logo').addEventListener('change', subirLogo);
+  $('#activar-antiguos').addEventListener('click', () => cambiarAntiguos(true));
+  $('#apagar-antiguos').addEventListener('click', () => {
+    if (confirm('¿Ocultar los comprobantes antiguos? Lo ya subido se conserva y vuelve a verse si la activas de nuevo.')) cambiarAntiguos(false);
+  });
+  $('#archivo-antiguos').addEventListener('change', subirAntiguos);
+  $('#buscar-antiguos').addEventListener('input', () => { clearTimeout(buscarAntiguosEn); buscarAntiguosEn = setTimeout(() => cargarAntiguos().catch(() => {}), 300); });
+  $('#anio-antiguos').addEventListener('change', () => cargarAntiguos().catch(() => {}));
   $('#form-usuario').addEventListener('submit', alDarAcceso);
   $('#form-sol').addEventListener('submit', alGuardarSol);
   $('#form-cuenta').addEventListener('submit', alGuardarCuenta);
