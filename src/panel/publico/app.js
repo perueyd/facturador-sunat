@@ -208,7 +208,6 @@ async function cargarPanel() {
   document.querySelector('#elegir-tipo [data-modo="DEVOLUCION"]').hidden = !yo.puedeCorregir;
   $('#caja-producto').hidden = !yo.puedeAdministrar;
   $('#caja-importar').hidden = !yo.puedeAdministrar;
-  $('#direccion-catalogo').value = (yo.empresa && localStorage.getItem(`catalogo-${yo.empresa.id}`)) || '';
   $('#caja-logo').hidden = !yo.puedeAdministrar;
   $('#caja-usuarios').hidden = !yo.esDueno;
   $('#caja-certificado').hidden = !yo.esDueno;

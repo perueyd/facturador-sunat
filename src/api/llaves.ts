@@ -85,3 +85,25 @@ export async function revocarLlave(q: Db | Tx, empresaId: string, prefijo: strin
   );
   return true;
 }
+
+export interface LlaveListada {
+  prefijo: string;
+  canal: string;
+  creada: string;
+  ultimoUso: string | null;
+  activa: boolean;
+}
+
+/** Llaves de la empresa (sin el secreto: nunca se guarda), las activas primero. */
+export async function listarLlaves(q: Db | Tx, empresaId: string): Promise<LlaveListada[]> {
+  const r = await q.query(
+    `SELECT l.prefijo, c.nombre AS canal, l.creado_en, l.ultimo_uso_en, l.revocada_en IS NULL AS activa
+       FROM api_llaves l JOIN canales c ON c.id = l.canal_id
+      WHERE l.empresa_id = $1 ORDER BY (l.revocada_en IS NULL) DESC, l.creado_en DESC LIMIT 50`,
+    [empresaId],
+  );
+  return r.rows.map((f) => ({
+    prefijo: f.prefijo, canal: f.canal, creada: new Date(f.creado_en).toISOString(),
+    ultimoUso: f.ultimo_uso_en ? new Date(f.ultimo_uso_en).toISOString() : null, activa: f.activa,
+  }));
+}

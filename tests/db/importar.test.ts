@@ -1,6 +1,6 @@
 /**
- * Productos sin escribirlos uno por uno: importados del catálogo de la tienda web o de un
- * Excel (CSV), y sugeridos en Vender a partir de lo que ya se vendió.
+ * Productos sin escribirlos uno por uno: importados de un Excel (CSV) —también acepta el formato
+ * de catálogo de Meta (id, title, price)— y sugeridos en Vender a partir de lo que ya se vendió.
  */
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,13 +9,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AlmacenLocal } from '../../src/almacen/almacen.js';
 import { crearApp } from '../../src/api/app.js';
 import type { Db } from '../../src/db/conexion.js';
-import { descargarCatalogo, importarProductos, leerCatalogo } from '../../src/inventario/importar.js';
+import { importarProductos, leerCatalogo } from '../../src/inventario/importar.js';
 import { ajustarStock, guardarProducto } from '../../src/inventario/productos.js';
 import type { Rol } from '../../src/panel/usuarios.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
 import { URL_PRUEBAS, crearEmpresa, panelDePrueba, prepararBase, type Fixture } from './base-prueba.js';
 
-// Como lo publica la tienda en /api/feed?formato=csv (columnas de Meta).
+// Formato de catálogo de Meta (id, title, price): también se acepta si se exporta así a CSV.
 const CSV_TIENDA = [
   'id,title,description,availability,condition,price,link,image_link,brand,product_type',
   '"tarima-milan-2p","Tarima Milán — 2 plazas","Tarima de melamina, color nogal",in stock,new,"350.00 PEN","https://x/p",,"E|D","Tarimas"',
@@ -24,7 +24,7 @@ const CSV_TIENDA = [
 ].join('\n');
 
 describe('leer el catálogo', () => {
-  it('el de la tienda web: código, nombre y precio; comas y saltos de línea dentro de comillas', () => {
+  it('formato de catálogo (id, title, price): código, nombre y precio; comas y saltos de línea dentro de comillas', () => {
     const r = leerCatalogo(CSV_TIENDA);
     expect(r.productos).toEqual([
       { sku: 'TARIMA-MILAN-2P', nombre: 'Tarima Milán — 2 plazas', precio: '350.00' },
@@ -43,22 +43,6 @@ describe('leer el catálogo', () => {
 
   it('sin las columnas necesarias, lo explica', () => {
     expect(() => leerCatalogo('a;b\n1;2')).toThrow(/código \(o id\), nombre \(o title\) y precio/);
-  });
-});
-
-describe('descargar el catálogo de la tienda', () => {
-  const respuesta = (texto: string) => (async () => new Response(texto)) as unknown as typeof fetch;
-  it('solo direcciones públicas https: nunca la red interna del servidor', async () => {
-    for (const mala of ['http://eydperu.vercel.app/api/feed', 'https://127.0.0.1/x', 'https://[::1]/x', 'https://localhost/x', 'https://servidor.internal/x', 'https://a.com:8443/x', 'no es url']) {
-      await expect(descargarCatalogo(mala, respuesta('x'))).rejects.toThrow();
-    }
-    expect(await descargarCatalogo('https://eydperu.vercel.app/api/feed?formato=csv', respuesta(CSV_TIENDA))).toBe(CSV_TIENDA);
-  });
-  it('no sigue redirecciones (podrían llevar a una dirección interna)', async () => {
-    let opciones: RequestInit | undefined;
-    const espia = (async (_u: unknown, o: RequestInit) => { opciones = o; return new Response('id,title,price'); }) as unknown as typeof fetch;
-    await descargarCatalogo('https://eydperu.vercel.app/api/feed?formato=csv', espia);
-    expect(opciones?.redirect).toBe('error');
   });
 });
 
@@ -103,8 +87,9 @@ describe.skipIf(!URL_PRUEBAS)('importar y sugerir productos', () => {
     const csv = 'codigo;nombre;precio\nALM-01;Almohada;59,90';
     expect((await panel.pedir('/panel/api/productos/importar', { cookie: vendedor, cuerpo: { csv } })).status).toBe(403);
     expect(await (await panel.pedir('/panel/api/productos/importar', { cookie: dueno, cuerpo: { csv } })).json()).toEqual({ nuevos: 1, actualizados: 0, errores: [] });
-    const mala = await panel.pedir('/panel/api/productos/importar', { cookie: dueno, cuerpo: { direccion: 'http://10.0.0.1/catalogo' } });
-    expect(mala.status).toBe(422);
+    // El facturador no se conecta a la tienda: sin archivo no hay nada que importar.
+    const sinArchivo = await panel.pedir('/panel/api/productos/importar', { cookie: dueno, cuerpo: { direccion: 'https://eydperu.vercel.app/api/feed?formato=csv' } });
+    expect(sinArchivo.status).toBe(422);
 
     const vender = (descripcion: string, precio: string) => panel.pedir('/panel/api/comprobantes', {
       cookie: vendedor,

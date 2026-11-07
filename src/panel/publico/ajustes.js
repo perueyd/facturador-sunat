@@ -311,6 +311,27 @@ async function subirAntiguos(e) {
   await cargarAntiguos().catch(() => {});
 }
 
+// ---------- Conexiones (llaves de API) ----------
+async function cargarConexiones() {
+  $('#caja-conexiones').hidden = !yo?.esDueno;
+  if (!yo?.esDueno) return;
+  const { llaves } = await api('/llaves');
+  $('#lista-llaves').replaceChildren(...(llaves.length ? llaves.map((l) => {
+    const uso = l.ultimoUso ? `último uso ${fechaHora(l.ultimoUso)}` : 'nunca usada';
+    const li = linea(`${l.canal} · creada ${fechaHora(l.creada)} · ${uso}`, l.activa ? '🟢 conectada' : '⚪ desconectada', l.activa ? '' : 'apagado');
+    if (l.activa) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario peligro', textContent: 'Desconectar' });
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm(`¿Desconectar "${l.canal}"? Desde ahora ese sistema ya no podrá emitir comprobantes a tu nombre.`)) return;
+        try { await api(`/llaves/${l.prefijo}/desactivar`, { cuerpo: {} }); await cargarConexiones(); } catch (err) { alert(err.message); }
+      });
+      li.append(b);
+    }
+    return li;
+  }) : [linea('Ningún otro sistema está conectado: todo se emite desde aquí.', '')]));
+}
+
 async function exportar() {
   const mes = $('#mes-exportar').value;
   const que = $('#que-exportar').value;
@@ -387,7 +408,6 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#archivo-logo').addEventListener('change', subirLogo);
   $('#form-devolucion').addEventListener('submit', alDevolver);
   $('#cancelar-devolucion').addEventListener('click', () => $('#dialogo-devolucion').close());
-  $('#importar-tienda').addEventListener('click', importarDesdeTienda);
   $('#archivo-catalogo').addEventListener('change', importarDesdeArchivo);
   $('#activar-antiguos').addEventListener('click', () => cambiarAntiguos(true));
   $('#apagar-antiguos').addEventListener('click', () => {
