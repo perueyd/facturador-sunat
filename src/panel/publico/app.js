@@ -160,6 +160,17 @@ async function cargarPanel() {
     b.textContent = bloqueada ? `🔒 ${b.dataset.texto}` : b.dataset.texto;
     b.hidden = !bloqueada && ((modulo && !tiene(modulo)) || (b.dataset.pestana === 'compras' && !yo.puedeComprar));
   }
+  // Arriba solo 4 pestañas (Inicio, Vender, Cobrar, Más): Compras y Stock se abren desde Más.
+  for (const nombre of ['compras', 'stock']) {
+    const pestana = document.querySelector(`#pestanas button[data-pestana="${nombre}"]`);
+    const acceso = document.querySelector(`#herramientas-mas [data-abre="${nombre}"]`);
+    acceso.hidden = pestana.hidden;
+    if (pestana.dataset.bloqueada) acceso.querySelector('strong').textContent = pestana.textContent;
+    pestana.hidden = true;
+  }
+  $('#herramientas-mas').hidden = [...document.querySelectorAll('#herramientas-mas [data-abre]')].every((b) => b.hidden);
+  $('#saludo').textContent = `Hola, ${yo.nombre.split(' ')[0]}`;
+  $('#emitir-grande').hidden = !yo.puedeEmitir;
   $('#caja-producto').hidden = !yo.puedeAdministrar;
   $('#caja-logo').hidden = !yo.puedeAdministrar;
   $('#caja-usuarios').hidden = !yo.esDueno;
@@ -181,6 +192,8 @@ async function cargarPanel() {
   if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
   productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
   $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
+  // El campo del código de barras solo sirve si hay productos guardados.
+  $('#caja-codigo-venta').hidden = !productos.length;
   // Para poder seguir vendiendo si se corta el internet (y mandar lo que quedó guardado).
   recordarParaSinConexion();
   ponerModoSinConexion(!navigator.onLine);

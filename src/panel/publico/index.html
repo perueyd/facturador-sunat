@@ -178,10 +178,19 @@
       </nav>
 
       <div data-vista="inicio" hidden>
-        <h1>Inicio</h1>
+        <h1 id="saludo">Hola</h1>
+        <!-- Como Emprende SUNAT: lo primero que se ve es emitir, con dos botones grandes. -->
+        <div class="emitir-grande" id="emitir-grande">
+          <button type="button" data-tipo="BOLETA">🧾 Emitir boleta</button>
+          <button type="button" data-tipo="FACTURA">📄 Emitir factura</button>
+        </div>
         <!-- Si a la empresa le falta configurar algo (certificado, usuario SOL…), se dice aquí arriba. -->
         <button type="button" class="aviso aviso-boton" id="aviso-configuracion" hidden></button>
+        <!-- Solo lo urgente queda a la vista (certificado, rechazos, plazos); el resto va plegado abajo. -->
+        <div id="alertas-inicio" class="tablero"></div>
         <div id="accesos" class="accesos"></div>
+        <details class="ajustes" id="caja-resumen">
+          <summary>📊 Ver cómo va tu negocio (ventas, IGV, plazos)</summary>
         <!-- Tablero: cada tarjeta aparece solo si la función está activa para la empresa -->
         <!-- Ventas en números (función "estadisticas"; dueño, administrador y contador) -->
         <div id="kpis" class="kpis" hidden></div>
@@ -215,6 +224,7 @@
           </div>
         </div>
         </details>
+        </details>
       </div>
 
       <div data-vista="vender">
@@ -234,7 +244,6 @@
             <button type="button" data-tipo="FACTURA">📄 Factura<small>a empresas (con RUC)</small></button>
           </div>
           <select name="tipo" hidden><option value="BOLETA">Boleta</option><option value="FACTURA">Factura</option></select>
-          <label>¿Por dónde fue la venta? <select name="canal" id="canal"></select></label>
         </fieldset>
         <fieldset id="caja-contingencia" hidden>
           <legend>Boleta impresa que entregas</legend>
@@ -245,12 +254,15 @@
             <label>Número <input id="numero-impresa" inputmode="numeric" maxlength="8" pattern="[0-9]{1,8}" placeholder="123"></label>
           </div>
         </fieldset>
-        <details class="ajustes" id="caja-fecha-venta">
-          <summary>¿La venta fue otro día?</summary>
-          <p class="nota">Solo si la venta (entrega o cobro) fue en un día anterior y no se emitió a tiempo, por ejemplo
+        <details class="ajustes" id="opciones-venta">
+          <summary>Más opciones (por dónde fue la venta, otra fecha)</summary>
+          <label>¿Por dónde fue la venta? <select name="canal" id="canal"></select></label>
+          <div id="caja-fecha-venta">
+          <p class="nota"><strong>¿La venta fue otro día?</strong> Solo si la venta (entrega o cobro) fue en un día anterior y no se emitió a tiempo, por ejemplo
             porque se cayó el sistema. Pon la fecha REAL de la venta. SUNAT la recibe hasta <span id="dias-atras"></span>.</p>
           <label>Fecha de la venta <input name="fecha" type="date" id="fecha-venta"></label>
           <p class="aviso" id="aviso-mes-anterior" hidden></p>
+          </div>
         </details>
 
         <fieldset>
@@ -270,7 +282,7 @@
         <fieldset>
           <legend>3. Productos <small>(precio con IGV)</small></legend>
           <!-- Un lector de códigos USB/Bluetooth escribe aquí como un teclado y termina con Enter. -->
-          <div class="fila escaner">
+          <div class="fila escaner" id="caja-codigo-venta">
             <label>Código o código de barras <input id="codigo-venta" autocomplete="off" maxlength="40" placeholder="Escanea o escribe y pulsa Enter"></label>
             <button type="button" id="escanear-venta" class="secundario" hidden>📷 Escanear</button>
           </div>
@@ -328,7 +340,7 @@
       <h2>Últimos comprobantes</h2>
       <ul id="lista" class="lista"></ul>
 
-      <h2>Cotizaciones</h2>
+      <h2 id="titulo-cotizaciones">Cotizaciones</h2>
       <ul id="lista-cotizaciones" class="lista"></ul>
       </div>
 
@@ -576,12 +588,16 @@
       </div>
 
       <div data-vista="mas" hidden>
+      <div class="accesos" id="herramientas-mas">
+        <button type="button" class="acceso" data-abre="compras"><span class="icono">📥</span><strong>Compras</strong><small>Facturas de proveedores</small></button>
+        <button type="button" class="acceso" data-abre="stock"><span class="icono">📦</span><strong>Stock</strong><small>Productos e inventario</small></button>
+      </div>
       <div class="grupo-mas" id="grupo-empresa">
         <h2 class="titulo-grupo">🏢 Mi empresa</h2>
-      <section id="caja-configuracion" hidden>
-        <h2>Configuración de tu empresa <small id="avance-configuracion"></small></h2>
+      <details class="ajustes" id="caja-configuracion" hidden>
+        <summary>Configuración de tu empresa <small id="avance-configuracion"></small></summary>
         <ul id="pasos-configuracion" class="pasos"></ul>
-      </section>
+      </details>
       <section id="caja-plan" hidden>
         <h2>Mi plan</h2>
         <ul id="detalle-plan" class="lista"></ul>
@@ -766,8 +782,8 @@
       </div>
       <div class="grupo-mas" id="grupo-ayuda">
         <h2 class="titulo-grupo">💬 Ayuda</h2>
-      <section id="caja-reporte">
-        <h2>¿Algo no funciona o te falta algo?</h2>
+      <details class="ajustes" id="caja-reporte">
+        <summary>¿Algo no funciona o te falta algo? Escríbenos</summary>
         <form id="form-reporte">
           <label>Es un
             <select name="tipo"><option value="PROBLEMA">Problema (algo no funciona)</option><option value="SUGERENCIA">Sugerencia (me falta algo)</option></select></label>
@@ -775,7 +791,7 @@
           <button type="submit" class="secundario">Enviar</button>
           <p id="mensaje-reporte" role="status"></p>
         </form>
-      </section>
+      </details>
       </div>
       </div>
     </section>
