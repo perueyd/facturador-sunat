@@ -62,6 +62,9 @@ function ponerModoSinConexion(activo) {
   $('#aviso-sin-conexion').hidden = !activo;
   $('#caja-contingencia').hidden = !activo;
   for (const campo of $('#caja-contingencia').querySelectorAll('input')) campo.required = activo;
+  // Cotizar y devolver necesitan al facturador: sin señal solo se vende.
+  if (activo) elegirTipo($('#form-emitir').tipo.value || 'BOLETA');
+  for (const b of document.querySelectorAll('#elegir-tipo [data-modo]')) b.hidden = activo || (b.dataset.modo === 'DEVOLUCION' && !yo?.puedeCorregir);
   // Lo que necesita al facturador se oculta: venta otro día, crédito y cotizaciones.
   $('#caja-fecha-venta').hidden = activo;
   $('#caja-cotizar').hidden = activo;

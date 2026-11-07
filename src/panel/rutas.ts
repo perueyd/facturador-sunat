@@ -539,6 +539,25 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     return c.json(await tablero(d.db, s.empresa.id, { modulos: s.empresa.modulos, porPagar: ROLES_COMPRAS.includes(s.empresa.rol) }));
   });
 
+  // "Ya declaré este mes" (o deshacerlo si fue un error): dueño, administrador o contador.
+  app.post('/panel/api/declaraciones', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!ROLES_COMPRAS.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño, un administrador o el contador marcan la declaración.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const periodo = texto(b.periodo, 7);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo) || typeof b.declarado !== 'boolean') return d.error(c, 422, 'DATOS_INVALIDOS', 'Indica el mes (AAAA-MM) y si ya se declaró.');
+    if (b.declarado) {
+      await d.db.query(`INSERT INTO declaraciones_mensuales (empresa_id, periodo, registrado_por) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [s.empresa.id, periodo, s.usuarioId]);
+    } else {
+      await d.db.query(`DELETE FROM declaraciones_mensuales WHERE empresa_id = $1 AND periodo = $2`, [s.empresa.id, periodo]);
+    }
+    await d.db.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'MARCAR_DECLARACION', 'empresas', $1, $3)`, [
+      s.empresa.id, s.usuarioId, JSON.stringify({ periodo, declarado: b.declarado }),
+    ]);
+    return c.json({ ok: true });
+  });
+
   // Cuánto se vende y de dónde: solo quienes responden por la empresa y el contador.
   app.get('/panel/api/estadisticas', async (c) => {
     const s = await conEmpresa(c);

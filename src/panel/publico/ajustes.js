@@ -430,7 +430,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('#agregar-cuota').addEventListener('click', agregarCuota);
   // El crédito en cuotas solo existe para facturas (lo valida también el facturador).
-  for (const b of document.querySelectorAll('#elegir-tipo button')) b.addEventListener('click', () => elegirTipo(b.dataset.tipo));
+  for (const b of document.querySelectorAll('#elegir-tipo button[data-tipo]')) b.addEventListener('click', () => elegirTipo(b.dataset.tipo));
+  for (const b of document.querySelectorAll('#elegir-tipo button[data-modo]')) b.addEventListener('click', () => elegirModo(b.dataset.modo));
+  $('#buscar-devolucion').addEventListener('input', dibujarParaDevolver);
   $('#form-emitir').tipo.addEventListener('change', limitarFechaVenta);
   $('#fecha-venta').addEventListener('change', limitarFechaVenta);
   $('#form-emitir').tipo.addEventListener('change', (e) => {

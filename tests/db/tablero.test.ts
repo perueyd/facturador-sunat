@@ -49,6 +49,40 @@ describe.skipIf(!URL_PRUEBAS)('tablero', () => {
     expect((await tablero(db, empresaId, { hoy: '2027-02-01' })).vencimiento).toEqual({ faltaCronograma: true });
   });
 
+  // El dueño ya había declarado octubre y el Inicio le seguía pidiendo octubre.
+  it('"ya declaré": pasa al mes siguiente; deshacerlo vuelve a pedirlo', async () => {
+    const { empresaId } = await crearEmpresa(db, rucTerminadoEn(4));
+    await db.query(`INSERT INTO declaraciones_mensuales (empresa_id, periodo) VALUES ($1, '2026-10')`, [empresaId]);
+    const t = await tablero(db, empresaId, { hoy: '2026-11-07' });
+    expect(t.vencimiento).toMatchObject({ periodo: '2026-11', vence: '2026-12-22' });
+    expect(t.declarado).toMatchObject({ periodo: '2026-10', nombre: 'octubre 2026' });
+    expect(t.resumen?.periodo).toBe('2026-11');
+    expect(t.mesActual).toBeUndefined(); // noviembre ya es el que se declara: una sola tarjeta
+    // Pasado el vencimiento de octubre, ya no se muestra "octubre declarado".
+    expect((await tablero(db, empresaId, { hoy: '2026-11-20' })).declarado).toBeUndefined();
+    await db.query(`DELETE FROM declaraciones_mensuales WHERE empresa_id = $1`, [empresaId]);
+    expect((await tablero(db, empresaId, { hoy: '2026-11-07' })).vencimiento).toMatchObject({ periodo: '2026-10' });
+  });
+
+  // Las boletas que el dueño emitió en SUNAT SOL (subidas como XML) también son ventas del mes.
+  it('los comprobantes emitidos en SUNAT y subidos suman en las ventas e IGV del mes', async () => {
+    const f = await crearEmpresa(db, rucTerminadoEn(4));
+    const archivo = (await db.query(
+      `INSERT INTO archivos (empresa_id, entidad, entidad_id, tipo, ruta_almacenamiento, sha256, tamano, conservar_hasta)
+       VALUES ($1, 'comprobantes_antiguos', $1, 'XML', 'x/y.xml', repeat('a', 64), 1, current_date + 2200) RETURNING id`,
+      [f.empresaId],
+    )).rows[0].id;
+    for (const [numero, tipo, total, igv] of [[1, '03', '118.00', '18.00'], [2, '03', '59.00', '9.00'], [1, '07', '59.00', '9.00']] as const) {
+      await db.query(
+        `INSERT INTO comprobantes_antiguos (empresa_id, tipo, serie, numero, fecha_emision, moneda, total, igv, firma_valida, archivo_id)
+         VALUES ($1, $2, 'EB01', $3, '2026-11-03', 'PEN', $4, $5, true, $6)`,
+        [f.empresaId, tipo, numero, total, igv, archivo],
+      );
+    }
+    const t = await tablero(db, f.empresaId, { hoy: '2026-11-07' });
+    expect(t.mesActual).toMatchObject({ periodo: '2026-11', ventas: '118.00', baseImponible: '100.00', igvVentas: '18.00' });
+  });
+
   it('buen contribuyente usa su propia columna', async () => {
     const { empresaId } = await crearEmpresa(db, rucTerminadoEn(0));
     expect((await tablero(db, empresaId, { hoy: '2026-10-27' })).vencimiento).toMatchObject({ vence: '2026-11-16' });

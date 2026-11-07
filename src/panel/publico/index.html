@@ -242,9 +242,17 @@
           <div class="eleccion" id="elegir-tipo">
             <button type="button" data-tipo="BOLETA" class="activa">🧾 Boleta<small>a personas (DNI o sin documento)</small></button>
             <button type="button" data-tipo="FACTURA">📄 Factura<small>a empresas (con RUC)</small></button>
+            <button type="button" data-modo="COTIZACION">📋 Cotización<small>presupuesto (no es comprobante)</small></button>
+            <button type="button" data-modo="DEVOLUCION">↩️ Devolución<small>nota de crédito de una venta</small></button>
           </div>
           <select name="tipo" hidden><option value="BOLETA">Boleta</option><option value="FACTURA">Factura</option></select>
         </fieldset>
+        <section id="elegir-devolucion">
+          <p class="nota">Elige la boleta o factura que te devolvieron. Se emite una nota de crédito por todo el comprobante y,
+            si devolviste el dinero, la Caja lo resta.</p>
+          <label>Buscar <input id="buscar-devolucion" placeholder="Número (B001-15) o nombre del cliente" maxlength="60"></label>
+          <ul id="lista-devolucion" class="lista"></ul>
+        </section>
         <fieldset id="caja-contingencia" hidden>
           <legend>Boleta impresa que entregas</legend>
           <p class="nota">Usa tus boletas o facturas impresas de contingencia (autorizadas por SUNAT, con la leyenda
@@ -294,7 +302,7 @@
           <p class="total">Total: <strong id="total">S/ 0.00</strong></p>
         </fieldset>
 
-        <fieldset>
+        <fieldset id="caja-pago">
           <legend>4. ¿Cómo pagó?</legend>
           <div class="fila">
             <label>Medio
@@ -702,8 +710,8 @@
         <summary>Comprobantes antiguos (opcional)</summary>
         <div id="antiguos-apagado">
           <p class="nota">Para ver junto a los nuevos los comprobantes que emitiste <strong>antes</strong> de este facturador
-            (SUNAT Operaciones en Línea, app Emprende u otro sistema). Es solo para consultar: no se envían a SUNAT ni
-            cuentan en tus ventas, impuestos ni correlativos.</p>
+            (SUNAT Operaciones en Línea, app Emprende u otro sistema). No se vuelven a enviar a SUNAT ni tocan tus
+            correlativos, pero SÍ suman en las ventas e IGV del mes y salen en el Excel de tu contador.</p>
           <button type="button" id="activar-antiguos" class="secundario">Activar comprobantes antiguos</button>
           <p class="nota" id="antiguos-solo-dueno">Solo el dueño puede activarlo.</p>
         </div>

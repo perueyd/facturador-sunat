@@ -131,6 +131,16 @@ function dibujarAccesos() {
 }
 
 // ---------- Tablero ----------
+const puedeMarcarDeclaracion = () => ['DUENO', 'ADMIN', 'CONTADOR'].includes(yo?.empresa?.rol);
+function botonDeclaracion(texto, periodo, declarado) {
+  const b = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: texto });
+  b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (declarado && !confirm(`¿Ya presentaste en SUNAT la declaración de ${periodo}? El Inicio pasará al mes siguiente.`)) return;
+    try { await api('/declaraciones', { cuerpo: { periodo, declarado } }); await cargarTablero(); } catch (err) { alert(err.message); }
+  });
+  return b;
+}
 function tarjeta(titulo, valor, detalle, clase = '') {
   const t = document.createElement('div');
   t.className = `tarjeta ${clase}`;
@@ -166,8 +176,16 @@ async function cargarTablero() {
     tarjetas.push(tarjeta('Declaración mensual', 'Falta el cronograma', 'Carga el cronograma de SUNAT de este año.', 'ancha urgente'));
   } else if (v) {
     const dias = v.dias === 0 ? '¡vence HOY!' : v.dias === 1 ? 'vence MAÑANA' : `quedan ${v.dias} días`;
-    tarjetas.push(tarjeta(`Declarar y pagar ${v.nombre} (IGV y Renta)`, `${fechaLarga(v.vence)} · ${dias}`,
-      `Según el último dígito de tu RUC (${v.grupo}). Fuente: cronograma oficial SUNAT.`, `ancha ${v.dias <= 3 ? 'urgente' : ''}`));
+    const t1 = tarjeta(`Declarar y pagar ${v.nombre} (IGV y Renta)`, `${fechaLarga(v.vence)} · ${dias}`,
+      `Según el último dígito de tu RUC (${v.grupo}). Fuente: cronograma oficial SUNAT.`, `ancha ${v.dias <= 3 ? 'urgente' : ''}`);
+    // Si ya se declaró, se marca y el Inicio pasa al mes siguiente.
+    if (puedeMarcarDeclaracion()) t1.append(botonDeclaracion(`✔ Ya declaré ${v.nombre}`, v.periodo, true));
+    tarjetas.push(t1);
+  }
+  if (t.declarado) {
+    const t2 = tarjeta('Declaración', `✔ ${t.declarado.nombre} declarado`, `Marcado el ${t.declarado.el}.`, 'ok');
+    if (puedeMarcarDeclaracion()) t2.append(botonDeclaracion('Deshacer (no lo declaré)', t.declarado.periodo, false));
+    tarjetas.push(t2);
   }
   const r = t.resumen;
   /** Tabla de un mes: ventas, IGV y renta (todo estimado). */
@@ -415,6 +433,43 @@ async function abrirArchivo(ruta) {
   }
   const url = URL.createObjectURL(await res.blob());
   if (ventana) ventana.location.href = url; else window.location.href = url;
+}
+
+// ---------- Paso 1 de Vender: venta, cotización o devolución ----------
+// Cotización: los mismos datos de cliente y productos, sin "cómo pagó"; se guarda como proforma.
+// Devolución: se elige la boleta o factura que se devuelve y se abre la ventana de la nota de crédito.
+let comprobantesParaDevolver = [];
+function elegirModo(modo) {
+  const f = $('#form-emitir');
+  f.classList.toggle('modo-cotizacion', modo === 'COTIZACION');
+  f.classList.toggle('modo-devolucion', modo === 'DEVOLUCION');
+  for (const b of document.querySelectorAll('#elegir-tipo button[data-modo]')) b.classList.toggle('activa', b.dataset.modo === modo);
+  if (modo === 'VENTA') return;
+  for (const b of document.querySelectorAll('#elegir-tipo button[data-tipo]')) b.classList.remove('activa');
+  if (modo === 'COTIZACION') {
+    $('#caja-cotizar').open = true;
+    $('#caja-cotizar').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else {
+    $('#buscar-devolucion').value = '';
+    cargarParaDevolver().catch((err) => { $('#lista-devolucion').replaceChildren(linea(err.message, '')); });
+  }
+}
+
+async function cargarParaDevolver() {
+  const { comprobantes } = await api('/comprobantes');
+  // Solo boletas y facturas aceptadas por SUNAT se pueden devolver.
+  comprobantesParaDevolver = comprobantes.filter((c) => ['01', '03'].includes(c.tipo) && ['ACEPTADO', 'ACEPTADO_OBS'].includes(c.estado));
+  dibujarParaDevolver();
+}
+
+function dibujarParaDevolver() {
+  const q = $('#buscar-devolucion').value.trim().toLowerCase();
+  const lista = comprobantesParaDevolver.filter((c) => !q || c.numero.toLowerCase().includes(q) || (c.cliente || '').toLowerCase().includes(q));
+  $('#lista-devolucion').replaceChildren(...(lista.length ? lista.map((c) => {
+    const li = linea(`${c.fecha} · ${c.numero} · ${c.cliente}`, `S/ ${c.total}`);
+    li.addEventListener('click', () => abrirDevolucion(c));
+    return li;
+  }) : [linea('No hay boletas o facturas aceptadas por SUNAT para devolver (entre las últimas 30).', '')]));
 }
 
 // ---------- Devolución total ----------

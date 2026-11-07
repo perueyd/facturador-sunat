@@ -218,3 +218,7 @@ button.sumar { margin-top: 4px; padding: 0 14px; font-size: 20px; font-weight: 7
 dialog { width: min(520px, calc(100% - 32px)); border: 0; border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
 dialog::backdrop { background: rgba(0, 0, 0, .4); }
 dialog button[type=submit].peligro { color: #fff; background: var(--rojo); }
+/* Paso 1 de Vender en modo Cotización o Devolución: se esconde lo que no aplica. */
+#form-emitir.modo-cotizacion #caja-pago, #form-emitir.modo-cotizacion #boton-emitir, #form-emitir.modo-cotizacion #opciones-venta { display: none; }
+#form-emitir.modo-devolucion > :not(fieldset:first-of-type):not(#elegir-devolucion) { display: none; }
+#form-emitir:not(.modo-devolucion) #elegir-devolucion { display: none; }

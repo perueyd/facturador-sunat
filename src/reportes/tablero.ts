@@ -45,6 +45,8 @@ export interface Tablero {
     rentaPagoCuenta?: { monto: string; tasa: string; porVerificar: boolean };
     estimado: true;
   };
+  /** Período que ya se marcó como declarado (y cuándo), mientras su vencimiento no pase. */
+  declarado?: { periodo: string; nombre: string; el: string };
   /** El mes en curso, cuando no es el que toca declarar (lo acumulado hasta hoy). */
   mesActual?: Tablero['resumen'];
   certificado?: { vence: string; dias: number } | { falta: true };
@@ -65,11 +67,23 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
   // El período que toca declarar es el del PRÓXIMO vencimiento (hoy en adelante).
   const grupo = grupoCronograma(e.ruc as string, e.buen_contribuyente as boolean);
   const v = (await db.query(
-    `SELECT periodo, vence::text AS vence, fuente FROM cronograma_mensual WHERE grupo = $1 AND vence >= $2::date ORDER BY vence LIMIT 1`,
-    [grupo, hoy],
+    `SELECT periodo, vence::text AS vence, fuente FROM cronograma_mensual
+      WHERE grupo = $1 AND vence >= $2::date
+        -- Lo ya declarado no se vuelve a pedir: pasa al período siguiente.
+        AND periodo NOT IN (SELECT periodo FROM declaraciones_mensuales WHERE empresa_id = $3)
+      ORDER BY vence LIMIT 1`,
+    [grupo, hoy, empresaId],
+  )).rows[0];
+  // El último declarado cuyo vencimiento aún no pasó: "✔ octubre ya declarado".
+  const declarado = (await db.query(
+    `SELECT d.periodo, to_char(d.creado_en AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS el FROM declaraciones_mensuales d
+       JOIN cronograma_mensual k ON k.periodo = d.periodo AND k.grupo = $2
+      WHERE d.empresa_id = $1 AND k.vence >= $3::date ORDER BY d.periodo DESC LIMIT 1`,
+    [empresaId, grupo, hoy],
   )).rows[0];
   const periodo = (v?.periodo as string | undefined) ?? hoy.slice(0, 7);
   if (activo('vencimientos')) {
+    if (declarado) t.declarado = { periodo: declarado.periodo, nombre: nombrePeriodo(declarado.periodo), el: declarado.el };
     t.vencimiento = v
       ? { periodo, nombre: nombrePeriodo(periodo), vence: v.vence, dias: diasEntre(hoy, v.vence), grupo, fuente: v.fuente }
       : { faltaCronograma: true };
@@ -133,7 +147,13 @@ async function resumenDelPeriodo(db: Db, empresaId: string, periodo: string): Pr
         WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')} AND estado NOT IN ('RECHAZADO', 'ANULADO')
        UNION ALL
        SELECT importe_total, total_gravado + total_exonerado + total_inafecto, total_igv
-         FROM ventas_contingencia WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')}) v`,
+         FROM ventas_contingencia WHERE empresa_id = $1 AND ${sqlDelMes('fecha_emision', '$2')}
+       UNION ALL
+       -- Emitidos fuera del facturador (SUNAT SOL, Emprende) y subidos como XML: también son
+       -- ventas del mes. La base es el total menos el IGV que dice el XML.
+       SELECT CASE WHEN tipo = '07' THEN -total ELSE total END, CASE WHEN tipo = '07' THEN -(total - coalesce(igv, 0)) ELSE total - coalesce(igv, 0) END,
+              CASE WHEN tipo = '07' THEN -coalesce(igv, 0) ELSE coalesce(igv, 0) END
+         FROM comprobantes_antiguos WHERE empresa_id = $1 AND moneda = 'PEN' AND ${sqlDelMes('fecha_emision', '$2')}) v`,
     [empresaId, periodo],
   )).rows[0];
   const compras = (await db.query(
