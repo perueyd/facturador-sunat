@@ -10,20 +10,18 @@ import { ROLES_EMISORES } from './usuarios.js';
 import { ROLES_COMPRAS } from './comun-rutas.js';
 import type { Comun } from './comun-rutas.js';
 
-export function registrarRutasContingencia(app: Hono<any>, { d, conEmpresa }: Comun): void {
+export function registrarRutasContingencia(app: Hono<any>, { d, conEmpresa, canalManual }: Comun): void {
   app.post('/panel/api/contingencia', async (c) => {
     const s = await conEmpresa(c);
     if (s instanceof Response) return s;
     if (!ROLES_EMISORES.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Tu rol no registra ventas.');
     const b = (await c.req.json().catch(() => undefined)) as Record<string, unknown> | undefined;
     if (!b) return d.error(c, 422, 'DATOS_INVALIDOS', 'Datos inválidos.');
-    const canal = await d.db.query(`SELECT id FROM canales WHERE empresa_id = $1 AND nombre = $2 AND tipo = 'MANUAL' AND activo`, [
-      s.empresa.id, typeof b.canal === 'string' ? b.canal : '',
-    ]);
+    const canalId = await canalManual(s.empresa.id, b.canal);
     const { canal: _canal, ...cuerpo } = b;
     try {
       const r = await registrarContingencia(d.db, {
-        empresaId: s.empresa.id, usuarioId: s.usuarioId, cuerpo, ...(canal.rows[0] ? { canalId: canal.rows[0].id as string } : {}),
+        empresaId: s.empresa.id, usuarioId: s.usuarioId, cuerpo, ...(canalId ? { canalId } : {}),
       });
       return c.json(r, r.resultado === 'REGISTRADA' ? 201 : 200);
     } catch (e) {

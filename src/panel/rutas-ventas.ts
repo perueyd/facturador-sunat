@@ -2,6 +2,7 @@
  * Rutas del panel · Ventas: cotizaciones, venta rápida, clientes, exportar, devoluciones y anulaciones.
  * Se registran desde rutas.ts, que arma la sesión y los ayudantes comunes (ver comun-rutas.ts).
  */
+import { sqlDelMes } from '../db/conexion.js';
 import type { Context, Hono } from 'hono';
 import { solicitarAnulacion } from '../comprobantes/anular.js';
 import { ErrorDevolucion, registrarDevolucion } from '../devoluciones/devoluciones.js';
@@ -149,7 +150,7 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
         `SELECT g.fecha::text AS fecha, g.categoria, g.descripcion, g.monto::text AS monto, g.medio::text AS medio, k.nombre AS cuenta, g.documento,
                 coalesce(u.nombre, u.email) AS registrado_por, g.foto_archivo_id IS NOT NULL AS foto, g.motivo_anulacion
            FROM gastos g JOIN usuarios u ON u.id = g.registrado_por LEFT JOIN cuentas_cobro k ON k.id = g.cuenta_id
-          WHERE g.empresa_id = $1 AND to_char(g.fecha, 'YYYY-MM') = $2 ORDER BY g.fecha, g.creado_en`,
+          WHERE g.empresa_id = $1 AND ${sqlDelMes('g.fecha', '$2')} ORDER BY g.fecha, g.creado_en`,
         [s.empresa.id, mes],
       );
       return csv('gastos', [
@@ -164,7 +165,7 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
               (co.total_gravado + co.total_exonerado + co.total_inafecto)::text AS base, co.total_igv::text AS igv, co.importe_total::text AS total,
               co.estado::text AS estado, co.estado_pago::text AS pago, ca.nombre AS canal
          FROM comprobantes co JOIN canales ca ON ca.id = co.canal_id
-        WHERE co.empresa_id = $1 AND to_char(co.fecha_emision, 'YYYY-MM') = $2 ORDER BY co.fecha_emision, co.serie, co.numero`,
+        WHERE co.empresa_id = $1 AND ${sqlDelMes('co.fecha_emision', '$2')} ORDER BY co.fecha_emision, co.serie, co.numero`,
       [s.empresa.id, mes],
     );
     // Boletas y facturas IMPRESAS de contingencia (ventas sin internet): también van al registro de ventas.
@@ -173,7 +174,7 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
               (v.total_gravado + v.total_exonerado + v.total_inafecto)::text AS base, v.total_igv::text AS igv, v.importe_total::text AS total,
               coalesce(ca.nombre, '') AS canal
          FROM ventas_contingencia v LEFT JOIN canales ca ON ca.id = v.canal_id
-        WHERE v.empresa_id = $1 AND to_char(v.fecha_emision, 'YYYY-MM') = $2`,
+        WHERE v.empresa_id = $1 AND ${sqlDelMes('v.fecha_emision', '$2')}`,
       [s.empresa.id, mes],
     );
     const TIPOS: Record<string, string> = { '01': 'Factura', '03': 'Boleta', '07': 'Nota de crédito' };

@@ -206,14 +206,9 @@ async function verKardex(contenedor, sku) {
       const fila = cuerpo.insertRow();
       for (const v of [m.fecha, m.tipo, m.documento || m.detalle || '', m.entrada || '', m.salida || '', m.saldo, m.costoPromedio || '', m.valorSaldo]) fila.insertCell().textContent = v;
     }
-    const descargar = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'Descargar Kardex (Excel)' });
-    descargar.addEventListener('click', async () => {
-      const res = await api(`/kardex?sku=${encodeURIComponent(sku)}&formato=csv`, { crudo: true });
-      const url = URL.createObjectURL(await res.blob());
-      Object.assign(document.createElement('a'), { href: url, download: `kardex-${sku}.csv` }).click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    });
-    caja.append(k.movimientos.length ? tabla : Object.assign(document.createElement('p'), { className: 'vacio', textContent: 'Sin movimientos todavía.' }), descargar);
+    const botonKardex = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'Descargar Kardex (Excel)' });
+    botonKardex.addEventListener('click', async () => descargar(await api(`/kardex?sku=${encodeURIComponent(sku)}&formato=csv`, { crudo: true }), `kardex-${sku}.csv`));
+    caja.append(k.movimientos.length ? tabla : Object.assign(document.createElement('p'), { className: 'vacio', textContent: 'Sin movimientos todavía.' }), botonKardex);
   } catch (err) {
     caja.textContent = err.message;
   }

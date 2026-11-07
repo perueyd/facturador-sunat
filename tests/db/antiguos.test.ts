@@ -14,13 +14,12 @@ import { prepararComprobante } from '../../src/comprobantes/preparar.js';
 import type { Db } from '../../src/db/conexion.js';
 import { leerPfx } from '../../src/firma/certificado.js';
 import { firmarXml } from '../../src/firma/firmar.js';
-import { asignarEmpresa, crearUsuario, type Rol } from '../../src/panel/usuarios.js';
+import type { Rol } from '../../src/panel/usuarios.js';
 import { generarLlaveMaestra } from '../../src/seguridad/cifrado.js';
-import { codigoTotp, pasoActual } from '../../src/seguridad/totp.js';
 import { generarXmlComprobante } from '../../src/xml/comprobante.js';
 import { contextoPrueba, solicitudBoleta, solicitudFactura } from '../ayudantes.js';
 import { crearPfxPrueba } from '../certificado-prueba.js';
-import { URL_PRUEBAS, activarSegundoPaso, crearEmpresa, prepararBase, type Fixture } from './base-prueba.js';
+import { URL_PRUEBAS, crearEmpresa, panelDePrueba, prepararBase, type Fixture } from './base-prueba.js';
 
 const certificado = leerPfx(crearPfxPrueba(), 'clave-de-prueba');
 
@@ -39,14 +38,15 @@ describe.skipIf(!URL_PRUEBAS)('comprobantes antiguos', () => {
   let f: Fixture;
   let almacen: AlmacenLocal;
   let app: ReturnType<typeof crearApp>;
+  let panel: ReturnType<typeof panelDePrueba>;
   const llaveMaestra = Buffer.from(generarLlaveMaestra(), 'base64');
-  let n = 0;
 
   beforeAll(async () => {
     db = await prepararBase();
     f = await crearEmpresa(db);
     almacen = new AlmacenLocal(await mkdtemp(join(tmpdir(), 'almacen-antiguos-')));
     app = crearApp({ db, fallosPorMinuto: 1000, servicios: { almacen, llaveMaestra, algoritmo: 'SHA256', crearCliente: () => { throw new Error('sin SUNAT'); } } });
+    panel = panelDePrueba(app, db, llaveMaestra);
   });
   afterAll(async () => {
     await db?.end();
@@ -101,21 +101,8 @@ describe.skipIf(!URL_PRUEBAS)('comprobantes antiguos', () => {
 
   // ---------- Desde el panel ----------
 
-  async function entrar(rol: Rol): Promise<string> {
-    const email = `antiguos${++n}@prueba.pe`;
-    const { usuarioId, secreto } = await crearUsuario(db, { email, nombre: `Usuario ${n}`, contrasena: 'clave del panel 2026', llaveMaestra });
-    await asignarEmpresa(db, usuarioId, f.empresaId, rol);
-    await activarSegundoPaso(db, usuarioId, secreto, llaveMaestra);
-    const r = await pedir('/panel/api/entrar', { cuerpo: { email, contrasena: 'clave del panel 2026', codigo: codigoTotp(secreto, pasoActual()) } });
-    expect(r.status).toBe(200);
-    return (r.headers.get('set-cookie') ?? '').split(';')[0]!;
-  }
-  const pedir = (ruta: string, o: { cuerpo?: unknown; cookie?: string } = {}) =>
-    app.request(`http://localhost${ruta}`, {
-      method: o.cuerpo !== undefined ? 'POST' : 'GET',
-      headers: { 'Content-Type': 'application/json', 'X-Panel': '1', ...(o.cookie ? { Cookie: o.cookie } : {}) },
-      ...(o.cuerpo !== undefined ? { body: JSON.stringify(o.cuerpo) } : {}),
-    });
+  const entrar = (rol: Rol) => panel.entrar(f.empresaId, rol);
+  const pedir: typeof panel.pedir = (ruta, o) => panel.pedir(ruta, o);
 
   it('viene apagada; solo el dueño la prende; el contador consulta y no sube', async () => {
     const dueno = await entrar('DUENO');

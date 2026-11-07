@@ -185,12 +185,7 @@ async function cargarContingencia() {
     const li = linea(`${d.fecha} · ${d.ventas.length} venta(s) · S/ ${d.total}`, estado, d.informado ? '' : 'urgente');
     const b = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: d.informado ? 'Descargar de nuevo' : 'Descargar archivo para SUNAT' });
     b.addEventListener('click', async () => {
-      const res = await api('/contingencia/informe', { cuerpo: { fecha: d.fecha }, crudo: true });
-      if (!res.ok) { alert((await res.json().catch(() => ({}))).error?.mensaje || 'No se pudo generar el archivo.'); return; }
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(await res.blob());
-      a.download = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || `contingencia-${d.fecha}.zip`;
-      a.click();
+      await descargar(await api('/contingencia/informe', { cuerpo: { fecha: d.fecha }, crudo: true }), `contingencia-${d.fecha}.zip`);
       await cargarContingencia();
     });
     li.append(b);
