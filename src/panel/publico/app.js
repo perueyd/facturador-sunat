@@ -64,7 +64,9 @@ function textoBotonEmitir() {
   if (b.disabled) return;
   const tipo = $('#form-emitir').tipo.value === 'FACTURA' ? 'factura' : 'boleta';
   const total = $('#total').textContent;
-  b.textContent = /^S\//.test(total) && total !== 'S/ 0.00' ? `Emitir ${tipo} · ${total}` : `Emitir ${tipo}`;
+  // Sin internet no se emite: se anota la boleta impresa que se entregó (ver sinconexion.js).
+  const accion = modoSinConexion ? `Anotar ${tipo} impresa` : `Emitir ${tipo}`;
+  b.textContent = /^S\//.test(total) && total !== 'S/ 0.00' ? `${accion} · ${total}` : accion;
 }
 
 /** Botones Boleta / Factura: marcan el elegido y actualizan lo que depende del tipo. */
@@ -179,6 +181,11 @@ async function cargarPanel() {
   if (!$('#mes-exportar').value) $('#mes-exportar').value = new Date().toISOString().slice(0, 7);
   productos = tiene('productos') ? (await api('/productos').catch(() => ({ productos: [] }))).productos : [];
   $('#lista-productos').replaceChildren(...productos.map((p) => new Option(`S/ ${p.precio}`, p.nombre)));
+  // Para poder seguir vendiendo si se corta el internet (y mandar lo que quedó guardado).
+  recordarParaSinConexion();
+  ponerModoSinConexion(!navigator.onLine);
+  dibujarPorEnviar();
+  enviarPendientes();
   // Todos tienen su Inicio con el tablero (antes el tablero ocupaba la parte de arriba de TODAS las
   // pestañas y había que bajar para encontrarlas). Quien solo vende entra directo a Vender.
   $('#boton-inicio').hidden = false;

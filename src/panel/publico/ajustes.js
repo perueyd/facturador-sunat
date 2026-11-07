@@ -460,7 +460,17 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-instalar-codigo').addEventListener('submit', alActivarInstalacion);
   $('#form-emitir').addEventListener('submit', alEmitir);
   $('#agregar').addEventListener('click', () => { agregarItem(); recalcularTotal(); });
-  $('#salir').addEventListener('click', async () => { await api('/salir', { cuerpo: {} }).catch(() => {}); mostrarEntrar(); });
+  $('#salir').addEventListener('click', async () => {
+    const pendientes = colaDeLaEmpresa().length;
+    if (pendientes && !confirm(`Hay ${pendientes} venta(s) sin internet que aún no se envían. Se quedan guardadas en este celular y se enviarán cuando vuelvas a entrar. ¿Salir?`)) return;
+    await api('/salir', { cuerpo: {} }).catch(() => {});
+    olvidarDatosSinConexion();
+    mostrarEntrar();
+  });
+  $('#ventas-por-enviar').addEventListener('click', () => {
+    abrirPestana('vender').then(() => { dibujarPorEnviar(); $('#caja-por-enviar').scrollIntoView({ behavior: 'smooth' }); }).catch(() => {});
+    enviarPendientes();
+  });
   $('#empresa').addEventListener('change', async (e) => {
     await api('/empresa', { cuerpo: { empresaId: e.target.value } });
     pedidoActual = nuevoPedido();
@@ -468,7 +478,10 @@ document.addEventListener('DOMContentLoaded', () => {
     await cargarPanel();
   });
   agregarItem();
-  if (!revisarEnlaceDelCorreo() && !revisarInvitacion()) cargarPanel().catch(mostrarEntrar);
+  if (!revisarEnlaceDelCorreo() && !revisarInvitacion()) {
+    // Sin señal se abre con lo último guardado en este celular, solo para vender (boletas impresas).
+    cargarPanel().catch((err) => { if (!((err instanceof TypeError || !navigator.onLine) && abrirSinConexion())) mostrarEntrar(); });
+  }
   // El enlace pegado en una pestaña donde el panel ya estaba abierto no recarga la página.
   window.addEventListener('hashchange', () => revisarEnlaceDelCorreo() || revisarInvitacion());
 });

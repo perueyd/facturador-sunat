@@ -9,6 +9,7 @@
  * Los cálculos de impuestos son SIEMPRE estimados: la declaración la confirma el contador.
  */
 import { sqlSaldo } from '../cobros/pagos.js';
+import { diasDeContingencia } from '../contingencia/contingencia.js';
 import type { Db } from '../db/conexion.js';
 import { dec } from '../dinero.js';
 import { porPagar } from '../inventario/por-pagar.js';
@@ -47,6 +48,8 @@ export interface Tablero {
   certificado?: { vence: string; dias: number } | { falta: true };
   sunat?: { pendientes: number; rechazados: number };
   cobros?: { comprobantes: number; saldo: string };
+  /** Días con ventas sin internet que aún no se informaron a SUNAT (plazo de 7 días). */
+  contingencia?: { dias: number; ventas: number; venceEn: number };
   /** Deudas a proveedores (compras al crédito): solo para quien ve las compras. */
   porPagar?: { saldo: string; vencido: string; vencePronto: string };
 }
@@ -72,12 +75,17 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
 
   if (activo('resumen')) {
     // Ventas del período: boletas y facturas suman; sus notas de crédito restan.
+    // También las boletas impresas de contingencia (ventas sin internet): son ventas del mes.
     const ventas = (await db.query(
-      `SELECT coalesce(sum(CASE WHEN tipo_comprobante = '07' THEN -importe_total ELSE importe_total END), 0)::text AS total,
-              coalesce(sum(CASE WHEN tipo_comprobante = '07' THEN -(total_gravado + total_exonerado + total_inafecto) ELSE total_gravado + total_exonerado + total_inafecto END), 0)::text AS base,
-              coalesce(sum(CASE WHEN tipo_comprobante = '07' THEN -total_igv ELSE total_igv END), 0)::text AS igv
-         FROM comprobantes
-        WHERE empresa_id = $1 AND to_char(fecha_emision, 'YYYY-MM') = $2 AND estado NOT IN ('RECHAZADO', 'ANULADO')`,
+      `SELECT coalesce(sum(total), 0)::text AS total, coalesce(sum(base), 0)::text AS base, coalesce(sum(igv), 0)::text AS igv FROM (
+         SELECT CASE WHEN tipo_comprobante = '07' THEN -importe_total ELSE importe_total END AS total,
+                CASE WHEN tipo_comprobante = '07' THEN -(total_gravado + total_exonerado + total_inafecto) ELSE total_gravado + total_exonerado + total_inafecto END AS base,
+                CASE WHEN tipo_comprobante = '07' THEN -total_igv ELSE total_igv END AS igv
+           FROM comprobantes
+          WHERE empresa_id = $1 AND to_char(fecha_emision, 'YYYY-MM') = $2 AND estado NOT IN ('RECHAZADO', 'ANULADO')
+         UNION ALL
+         SELECT importe_total, total_gravado + total_exonerado + total_inafecto, total_igv
+           FROM ventas_contingencia WHERE empresa_id = $1 AND to_char(fecha_emision, 'YYYY-MM') = $2) v`,
       [empresaId, periodo],
     )).rows[0];
     const compras = (await db.query(
@@ -132,6 +140,10 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
     [empresaId, hoy],
   )).rows[0];
   t.sunat = { pendientes: s.pendientes, rechazados: s.rechazados };
+  const sinInformar = (await diasDeContingencia(db, empresaId, hoy)).filter((x) => !x.informado);
+  if (sinInformar.length) {
+    t.contingencia = { dias: sinInformar.length, ventas: sinInformar.reduce((n, x) => n + x.ventas.length, 0), venceEn: Math.min(...sinInformar.map((x) => x.diasRestantes)) };
+  }
 
   if (activo('cobros')) {
     const p = (await db.query(

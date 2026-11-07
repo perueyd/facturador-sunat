@@ -46,6 +46,7 @@ import {
 import { ROLES_CORRIGEN, ROLES_COMPRAS, UUID, origenPropio } from './comun-rutas.js';
 import { registrarAntiguos } from './rutas-antiguos.js';
 import { registrarCobros } from './rutas-cobros.js';
+import { registrarRutasContingencia } from './rutas-contingencia.js';
 import { registrarInventario } from './rutas-inventario.js';
 import { registrarPlataforma } from './rutas-plataforma.js';
 import { registrarVentas } from './rutas-ventas.js';
@@ -65,6 +66,7 @@ const BASE = {
   'plataforma.js': { contenido: leer('plataforma.js'), tipo: 'text/javascript; charset=utf-8' },
   'cobros.js': { contenido: leer('cobros.js'), tipo: 'text/javascript; charset=utf-8' },
   'compras.js': { contenido: leer('compras.js'), tipo: 'text/javascript; charset=utf-8' },
+  'sinconexion.js': { contenido: leer('sinconexion.js'), tipo: 'text/javascript; charset=utf-8' },
   'ajustes.js': { contenido: leer('ajustes.js'), tipo: 'text/javascript; charset=utf-8' },
   'estilo.css': { contenido: leer('estilo.css'), tipo: 'text/css; charset=utf-8' },
   'manifest.webmanifest': { contenido: leer('manifest.webmanifest'), tipo: 'application/manifest+json; charset=utf-8' },
@@ -79,7 +81,7 @@ const ARCHIVOS = {
 };
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src blob:; manifest-src 'self'; worker-src 'self'; media-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
-type ErrorJson = (c: Context, estado: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429, codigo: string, mensaje: string) => Response;
+type ErrorJson = (c: Context, estado: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429, codigo: string, mensaje: string, detalles?: string[]) => Response;
 
 export interface DependenciasPanel {
   db: Db;
@@ -566,6 +568,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   registrarInventario(app, comun);
   registrarCobros(app, comun);
   registrarAntiguos(app, comun);
+  registrarRutasContingencia(app, comun);
   // Logo para el PDF (el navegador lo achica antes de enviarlo).
   app.post('/panel/api/logo', async (c) => {
     const s = await conEmpresa(c);

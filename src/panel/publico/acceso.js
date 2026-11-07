@@ -164,6 +164,24 @@ async function alEntrar(e) {
   }
 }
 
+/** Deja el formulario de Vender listo para la siguiente venta (otro pedido). */
+function limpiarVenta(form) {
+  pedidoActual = nuevoPedido();
+  const serie = $('#serie-impresa').value;
+  const numero = $('#numero-impresa').value;
+  form.reset();
+  // La serie y el siguiente número de la boleta impresa se conservan.
+  $('#serie-impresa').value = serie;
+  $('#numero-impresa').value = numero;
+  elegirTipo('BOLETA');
+  $('#items').replaceChildren();
+  $('#cuotas').replaceChildren();
+  $('#caja-cuotas').hidden = true;
+  $('#opcion-credito').disabled = true;
+  agregarItem();
+  recalcularTotal();
+}
+
 async function alEmitir(e) {
   e.preventDefault();
   const f = new FormData(e.target);
@@ -192,9 +210,23 @@ async function alEmitir(e) {
       : {}),
   };
   const b = $('#boton-emitir');
+  $('#error-emitir').textContent = '';
+  if (modoSinConexion) {
+    try {
+      const numero = anotarSinConexion(cuerpo);
+      limpiarVenta(e.target);
+      $('#resultado').hidden = false;
+      $('#resultado').replaceChildren(Object.assign(document.createElement('p'), {
+        textContent: `✔ Venta anotada con la boleta impresa ${numero}. Está guardada en este celular y se enviará sola cuando vuelva la señal.`,
+      }));
+      dibujarPorEnviar();
+    } catch (err) {
+      $('#error-emitir').textContent = err.message;
+    }
+    return;
+  }
   b.disabled = true;
   b.textContent = 'Emitiendo...';
-  $('#error-emitir').textContent = '';
   try {
     const c = await api('/comprobantes', { cuerpo });
     mostrarResultado(c);
@@ -203,19 +235,16 @@ async function alEmitir(e) {
       usarCotizacion(null);
       cargarCotizaciones().catch(() => undefined);
     }
-    // Listo: el siguiente comprobante es otro pedido.
-    pedidoActual = nuevoPedido();
-    e.target.reset();
-    elegirTipo('BOLETA');
-    $('#items').replaceChildren();
-    $('#cuotas').replaceChildren();
-    $('#caja-cuotas').hidden = true;
-    $('#opcion-credito').disabled = true;
-    agregarItem();
-    recalcularTotal();
+    limpiarVenta(e.target);
     await Promise.all([cargarLista(), cargarTablero(), cargarVentaRapida().catch(() => undefined)]);
   } catch (err) {
-    $('#error-emitir').textContent = [err.message, ...(err.detalles || [])].join('\n');
+    if (err instanceof TypeError) {
+      // Se cortó el internet al emitir: se pasa a anotar boletas impresas.
+      ponerModoSinConexion(true);
+      $('#error-emitir').textContent = 'No hay conexión con el facturador. Entrega una boleta IMPRESA de contingencia, escribe su serie y número arriba y pulsa "Anotar". (Si la señal vuelve enseguida, intenta emitir de nuevo: no se duplica.)';
+    } else {
+      $('#error-emitir').textContent = [err.message, ...(err.detalles || [])].join('\n');
+    }
   } finally {
     b.disabled = false;
     textoBotonEmitir();
@@ -253,7 +282,10 @@ async function abrirPestana(nombre) {
     if (nombre === 'cobrar') await cargarPorCobrar();
     if (nombre === 'compras') await cargarCompras();
     if (nombre === 'stock') await cargarStock();
-    if (nombre === 'mas') { await cargarUsuarios(); mostrarAntiguos(); ordenarMas(); cargarSesiones().catch(() => {}); cargarAntiguos().catch(() => {}); }
+    if (nombre === 'mas') {
+      await cargarUsuarios(); mostrarAntiguos(); ordenarMas();
+      cargarSesiones().catch(() => {}); cargarAntiguos().catch(() => {}); cargarContingencia().then(ordenarMas).catch(() => {});
+    }
     if (nombre === 'plataforma') await cargarPlataforma();
     if (nombre === 'aliado') await cargarAliado();
   } catch (err) { alert(err.message); }

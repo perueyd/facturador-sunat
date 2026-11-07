@@ -194,6 +194,13 @@ async function cargarTablero() {
     tarjetas.push(tarjeta('SUNAT', problemas ? `${t.sunat.rechazados} rechazado(s)` : t.sunat.pendientes ? `${t.sunat.pendientes} en cola` : 'Todo enviado',
       problemas ? 'Revísalos en la lista de abajo.' : t.sunat.pendientes ? 'Se envían solos.' : '', problemas ? 'urgente' : 'ok'));
   }
+  if (t.contingencia) {
+    const k = t.contingencia;
+    const t1 = tarjeta('Ventas sin internet por informar a SUNAT', k.venceEn < 0 ? '¡Plazo vencido!' : k.venceEn <= 2 ? `vence en ${k.venceEn} día(s)` : `${k.ventas} boleta(s) impresa(s)`,
+      'Descarga el archivo en Más → Para tu contador y cárgalo en SUNAT.', `ancha ${k.venceEn <= 2 ? 'urgente' : ''}`);
+    t1.addEventListener('click', async () => { await abrirPestana('mas'); $('#caja-informar-contingencia').open = true; $('#caja-informar-contingencia').scrollIntoView({ behavior: 'smooth' }); });
+    tarjetas.push(t1);
+  }
   if (t.cobros) {
     tarjetas.push(tarjeta('Por cobrar', `S/ ${t.cobros.saldo}`, `${t.cobros.comprobantes} comprobante(s)`));
   }
