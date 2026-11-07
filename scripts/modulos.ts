@@ -8,7 +8,8 @@
  *
  * Funciones: panel (todo el panel web), vencimientos, resumen, certificado, cobros,
  * notas (notas de crédito y anulaciones), productos (y stock), exportar, compras,
- * avisos (correos de vencimientos, certificado y rechazos).
+ * avisos (correos de vencimientos, certificado y rechazos), antiguos (comprobantes de antes
+ * del facturador; viene apagada y el dueño la prende desde el panel).
  * Buen contribuyente: usa la columna "Buenos Contribuyentes y UESP" del cronograma.
  */
 import { parseArgs } from 'node:util';

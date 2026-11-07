@@ -725,6 +725,20 @@ Por confirmar con el contador antes de programar:
 - Si "se cortó el internet de la tienda" cuenta como causa no imputable.
 - El formato exacto (anexo 6 de la R.S. 097-2012; el PDF oficial es una imagen escaneada).
 
+## 22. Comprobantes antiguos (opcional, resultado)
+
+Para ver en el panel los comprobantes emitidos **antes** de este facturador (SUNAT Operaciones en
+Línea, app Emprende u otro sistema). Viene **apagado**: el dueño lo prende en Más → Para tu contador
+→ Comprobantes antiguos.
+- Se suben los **XML** (o el ZIP) que se descargan de SUNAT, varios a la vez. Se lee la serie, el
+  número, la fecha, el cliente y el total; se **comprueba la firma** (⚠️ si no se pudo) y se guarda el
+  XML tal cual, con su huella. Subir el mismo dos veces no lo duplica.
+- Se rechazan los de **otro RUC** y los que ya emitió este facturador. Si la serie es una que usa el
+  facturador (ej. B001), se avisa para revisar con el contador que los números no se repitan.
+- Es **solo historial**: tabla aparte (`comprobantes_antiguos`, solo inserción). No se envía a SUNAT
+  ni cuenta en ventas, impuestos, caja ni correlativos.
+- Ven la lista: dueño, administrador y contador. Suben: dueño y administrador. Apagarlo solo la oculta.
+
 ## 19. Decisiones que siguen abiertas
 
 Mientras no respondas, se usan las decisiones provisionales de la sección 7.

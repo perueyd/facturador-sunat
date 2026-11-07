@@ -14,7 +14,7 @@ import { dec } from '../dinero.js';
 import { porPagar } from '../inventario/por-pagar.js';
 import { ahoraLima, diasEntre } from '../fechas.js';
 
-export const MODULOS = ['panel', 'vencimientos', 'resumen', 'certificado', 'cobros', 'notas', 'productos', 'exportar', 'compras', 'avisos', 'estadisticas'] as const;
+export const MODULOS = ['panel', 'vencimientos', 'resumen', 'certificado', 'cobros', 'notas', 'productos', 'exportar', 'compras', 'avisos', 'estadisticas', 'antiguos'] as const;
 export type Modulo = (typeof MODULOS)[number];
 /** Secciones que se reparten por plan. Las demás van siempre (son para cumplir con SUNAT). */
 export const SECCIONES_DE_PLAN = ['cobros', 'productos', 'compras', 'estadisticas'] as const satisfies readonly Modulo[];
