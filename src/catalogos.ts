@@ -32,6 +32,22 @@ export function esMotivoNotaCreditoValido(codigo: string): boolean {
   return Object.hasOwn(MOTIVOS_NOTA_CREDITO, codigo);
 }
 
+/**
+ * Catálogo 10: tipo de nota de débito según motivo (cbc:ResponseCode).
+ * Fuente oficial: Anexo 8 de la R.S. 245-2017/SUNAT, leído el 09/11/2026 en
+ * www.sunat.gob.pe/legislacion/superin/2017/anexoE-245-2017.pdf (los anexos de la R.S. 114-2019
+ * no lo cambian). Los códigos de exportación/IVAP que no usamos no se incluyen.
+ */
+export const MOTIVOS_NOTA_DEBITO: Record<string, string> = {
+  '01': 'Intereses por mora',
+  '02': 'Aumento en el valor',
+  '03': 'Penalidades / otros conceptos',
+};
+
+export function esMotivoNotaDebitoValido(codigo: string): boolean {
+  return Object.hasOwn(MOTIVOS_NOTA_DEBITO, codigo);
+}
+
 /** Catálogo 51: tipo de operación. 0101 = venta interna. */
 export const TIPO_OPERACION_VENTA_INTERNA = '0101';
 

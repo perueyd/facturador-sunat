@@ -16,6 +16,7 @@ const TIPOS: Record<string, TipoComprobante> = {
   FACTURA: TipoComprobante.FACTURA,
   BOLETA: TipoComprobante.BOLETA,
   NOTA_CREDITO: TipoComprobante.NOTA_CREDITO,
+  NOTA_DEBITO: TipoComprobante.NOTA_DEBITO,
 };
 const DOCUMENTOS: Record<string, TipoDocIdentidad> = {
   DNI: TipoDocIdentidad.DNI,
@@ -30,7 +31,7 @@ const AFECTACIONES: Record<string, Afectacion> = {
   INAFECTO: Afectacion.INAFECTO,
 };
 /** Serie por defecto según el tipo (y, en notas de crédito, según el documento que modifican). */
-const SERIE_POR_DEFECTO = { '01': 'F001', '03': 'B001', '07-01': 'FC01', '07-03': 'BC01' } as const;
+const SERIE_POR_DEFECTO = { '01': 'F001', '03': 'B001', '07-01': 'FC01', '07-03': 'BC01', '08-01': 'FD01', '08-03': 'BD01' } as const;
 
 export interface PedidoApi {
   pedido: string;
@@ -73,7 +74,7 @@ export function leerPedido(cuerpo: unknown, hoy = ahoraLima()): R<PedidoApi> {
   if (!pedido || pedido.length > 100) errores.push('pedido: obligatorio (el número de pedido de tu tienda, máximo 100 caracteres).');
 
   const tipo = TIPOS[texto(cuerpo.tipo)?.toUpperCase() ?? ''];
-  if (!tipo) errores.push('tipo: debe ser "BOLETA", "FACTURA" o "NOTA_CREDITO".');
+  if (!tipo) errores.push('tipo: debe ser "BOLETA", "FACTURA", "NOTA_CREDITO" o "NOTA_DEBITO".');
 
   // Cliente
   const c = esObjeto(cuerpo.cliente) ? cuerpo.cliente : {};
@@ -129,16 +130,19 @@ export function leerPedido(cuerpo: unknown, hoy = ahoraLima()): R<PedidoApi> {
     errores.push('formaPago: usa "CONTADO" o { "cuotas": [...] }.');
   }
 
-  // Nota de crédito
-  let notaCredito: SolicitudComprobante['notaCredito'];
-  if (tipo === TipoComprobante.NOTA_CREDITO) {
-    const nc = esObjeto(cuerpo.notaCredito) ? cuerpo.notaCredito : undefined;
+  // Nota de crédito (notaCredito) o de débito (notaDebito): mismo formato, distinto catálogo de motivos.
+  let nota: SolicitudComprobante['notaCredito'];
+  const esNota = tipo === TipoComprobante.NOTA_CREDITO || tipo === TipoComprobante.NOTA_DEBITO;
+  if (esNota) {
+    const campo = tipo === TipoComprobante.NOTA_CREDITO ? 'notaCredito' : 'notaDebito';
+    const nc = esObjeto(cuerpo[campo]) ? (cuerpo[campo] as Record<string, unknown>) : undefined;
     const refTipo = TIPOS[texto(nc?.tipo)?.toUpperCase() ?? ''];
     const numero = typeof nc?.numero === 'number' ? nc.numero : Number(texto(nc?.numero));
-    if (!nc || !refTipo || refTipo === TipoComprobante.NOTA_CREDITO || !texto(nc.serie) || !Number.isSafeInteger(numero) || numero < 1) {
-      errores.push('notaCredito: indica { "tipo": "FACTURA" | "BOLETA", "serie": "F001", "numero": 15, "motivo": "07", "descripcion": "..." }.');
+    const esComprobante = refTipo === TipoComprobante.FACTURA || refTipo === TipoComprobante.BOLETA;
+    if (!nc || !esComprobante || !texto(nc.serie) || !Number.isSafeInteger(numero) || numero < 1) {
+      errores.push(`${campo}: indica { "tipo": "FACTURA" | "BOLETA", "serie": "F001", "numero": 15, "motivo": "${tipo === TipoComprobante.NOTA_CREDITO ? '07' : '01'}", "descripcion": "..." }.`);
     } else {
-      notaCredito = {
+      nota = {
         referencia: { tipo: refTipo, serie: texto(nc.serie)!.toUpperCase(), numero },
         motivoCodigo: texto(nc.motivo) ?? '',
         motivoDescripcion: texto(nc.descripcion) ?? '',
@@ -166,7 +170,7 @@ export function leerPedido(cuerpo: unknown, hoy = ahoraLima()): R<PedidoApi> {
   const fecha = texto(cuerpo.fecha) ?? hoy.fecha;
   if (!esFecha(fecha)) errores.push('fecha: usa el formato AAAA-MM-DD.');
 
-  const clave = tipo === TipoComprobante.NOTA_CREDITO ? `07-${notaCredito?.referencia.tipo ?? '01'}` : tipo;
+  const clave = esNota ? `${tipo}-${nota?.referencia.tipo ?? '01'}` : tipo;
   const serie = texto(cuerpo.serie)?.toUpperCase() || SERIE_POR_DEFECTO[clave as keyof typeof SERIE_POR_DEFECTO] || '';
 
   if (errores.length > 0 || !tipo || !pedido) return { ok: false, errores };
@@ -186,7 +190,7 @@ export function leerPedido(cuerpo: unknown, hoy = ahoraLima()): R<PedidoApi> {
         formaPago,
         // "0.00" = sin descuento (la tienda puede mandarlo siempre).
         ...(descuento !== undefined && dec(descuento).gt(0) ? { descuentoGlobal: descuento } : {}),
-        ...(notaCredito ? { notaCredito } : {}),
+        ...(nota ? { [tipo === TipoComprobante.NOTA_CREDITO ? 'notaCredito' : 'notaDebito']: nota } : {}),
       },
     },
   };

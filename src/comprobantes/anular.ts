@@ -66,7 +66,7 @@ export async function solicitarAnulacion(db: Db, s: SolicitudAnulacion): Promise
 
       const esFactura =
         c.tipo_comprobante === TipoComprobante.FACTURA ||
-        (c.tipo_comprobante === TipoComprobante.NOTA_CREDITO && c.ref_tipo === TipoComprobante.FACTURA);
+        ((c.tipo_comprobante === TipoComprobante.NOTA_CREDITO || c.tipo_comprobante === TipoComprobante.NOTA_DEBITO) && c.ref_tipo === TipoComprobante.FACTURA);
       const via = esFactura ? 'BAJA' : 'RESUMEN_DIARIO';
       const tabla = esFactura ? 'comunicaciones_baja' : 'resumenes_diarios';
       const prefijo = esFactura ? 'RA' : 'RC';

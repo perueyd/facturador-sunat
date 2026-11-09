@@ -784,6 +784,26 @@ Pedido del dueño al comparar con otro facturador ("haz lo que creas correcto").
 - Quedan para más adelante (si el facturador se vende a bodegas o ferreterías): ICBPER (bolsas
   plásticas) y el código de producto SUNAT.
 
+## 25. Nota de débito (resultado, 09/11/2026)
+
+Para cobrar algo más sobre una venta ya emitida (flete, instalación, intereses por mora, penalidad).
+
+- **Fuentes (leídas el 09/11/2026):** catálogo 10 del Anexo 8 de la R.S. 245-2017/SUNAT
+  (www.sunat.gob.pe/legislacion/superin/2017/anexoE-245-2017.pdf): `01` intereses por mora,
+  `02` aumento en el valor, `03` penalidades / otros conceptos (los anexos de la R.S. 114-2019 no lo
+  cambian). orientacion.sunat.gob.pe, "Nota de Débito y Nota de Crédito Electrónica": se emite sobre
+  una factura aceptada o una boleta del mismo adquirente. Desde el 1-ene-2027 una nota modifica UN
+  comprobante (R.S. 000048-2026), como ya hace el facturador. cpe.sunat.gob.pe no se pudo abrir
+  (bloqueo de Cloudflare): la estructura se validó con el esquema OASIS UBL 2.1 DebitNote y en SUNAT beta.
+- **XML:** `DebitNote` con `DebitNoteLine`/`DebitedQuantity` y `RequestedMonetaryTotal`.
+- **SUNAT beta (09/11/2026):** notas de débito de factura (`FD01`) y de boleta (`BD01`) aceptadas con
+  SHA1 y SHA256 (18 de 18 comprobantes aceptados en la corrida).
+- **Panel:** en un comprobante, "Cobrar algo más (nota de débito)" (dueño o administrador): motivo,
+  qué se cobra, monto con IGV y explicación. Queda por cobrar; no mueve stock. Se anula como cualquier
+  comprobante. Una nota de crédito posterior puede rebajar hasta lo facturado más lo cargado.
+- **API:** `tipo: "NOTA_DEBITO"` con `notaDebito` (ver `docs/API.md`).
+- Migración 046: permitida en todos los regímenes (en Nuevo RUS, POR VERIFICAR) y series `FD01`/`BD01`.
+
 ## 19. Decisiones que siguen abiertas
 
 Mientras no respondas, se usan las decisiones provisionales de la sección 7.

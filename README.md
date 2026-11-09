@@ -158,7 +158,7 @@ Publicar NO es pasar a producción en SUNAT: sigue en BETA hasta tu autorizació
 |---|---|
 | `src/calculos/` | IGV, totales y monto en letras |
 | `src/validaciones/` | DNI, RUC y reglas de cada comprobante |
-| `src/xml/` | Generación de XML (factura, boleta, nota de crédito, resumen diario, baja) |
+| `src/xml/` | Generación de XML (factura, boleta, notas de crédito y de débito, resumen diario, baja) |
 | `src/firma/` | Certificado digital y firma XMLDSig |
 | `src/seguridad/` | Cifrado de datos sensibles (AES-256-GCM) |
 | `src/almacen/` | Guardado de archivos (XML firmados) sin sobrescribir |

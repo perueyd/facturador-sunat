@@ -217,6 +217,33 @@ describe('nota de crédito (07)', () => {
   });
 });
 
+describe('nota de débito (08)', () => {
+  const nd = armar(
+    solicitudFactura({
+      tipo: TipoComprobante.NOTA_DEBITO,
+      serie: 'FD01',
+      items: [item('118.00', '1', { descripcion: 'Flete adicional a provincia' })],
+      notaDebito: { referencia: { tipo: TipoComprobante.FACTURA, serie: 'F001', numero: 15 }, motivoCodigo: '02', motivoDescripcion: 'Aumento en el valor: flete' },
+    }),
+    1,
+  );
+  const xml = generarXmlComprobante(nd);
+
+  it('cumple el esquema oficial UBL 2.1 DebitNote', () => {
+    expect(() => validarContraXsd(xml, 'UBL-DebitNote-2.1.xsd')).not.toThrow();
+  });
+
+  it('referencia, motivo del catálogo 10, líneas DebitNoteLine y total RequestedMonetaryTotal', () => {
+    expect(xpath(xml, '/DebitNote/ID')).toBe('FD01-1');
+    expect(xpath(xml, '/DebitNote/DiscrepancyResponse/ReferenceID')).toBe('F001-15');
+    expect(xpath(xml, '/DebitNote/DiscrepancyResponse/ResponseCode')).toBe('02');
+    expect(xpath(xml, '/DebitNote/BillingReference/InvoiceDocumentReference/DocumentTypeCode')).toBe('01');
+    expect(xpath(xml, '/DebitNote/DebitNoteLine/DebitedQuantity')).toBe('1');
+    expect(xpath(xml, '/DebitNote/RequestedMonetaryTotal/PayableAmount')).toBe('118.00');
+    expect(contar(xml, '/DebitNote/LegalMonetaryTotal')).toBe(0);
+  });
+});
+
 describe('resumen diario (RC)', () => {
   const b1 = armar(solicitudBoleta(), 1);
   const b2 = armar(

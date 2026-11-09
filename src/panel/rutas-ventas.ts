@@ -12,9 +12,9 @@ import { masVendidos, vendidosAntes } from '../reportes/venta-rapida.js';
 import { buscarRuc } from '../padron/padron.js';
 import { ErrorCotizacion, anularCotizacion, cargarCotizacion, crearCotizacion, listarCotizaciones, marcarConvertida, pdfCotizacion, type Cotizacion } from '../cotizaciones/cotizaciones.js';
 import { tokenCotizacion } from '../api/enlaces.js';
-import { idComprobanteLegible } from '../tipos.js';
+import { TipoComprobante, idComprobanteLegible } from '../tipos.js';
 import { ROLES_EMISORES } from './usuarios.js';
-import { ROLES_COMPRAS, ROLES_CORRIGEN, UUID, csvParaExcel, origenPropio } from './comun-rutas.js';
+import { PEDIDO_PANEL, ROLES_COMPRAS, ROLES_CORRIGEN, UUID, csvParaExcel, origenPropio } from './comun-rutas.js';
 import { CATEGORIAS_GASTO, type CategoriaGasto } from '../cobros/gastos.js';
 import { MEDIOS_PAGO, type MedioPago } from '../cobros/pagos.js';
 import type { Comun } from './comun-rutas.js';
@@ -263,6 +263,40 @@ export function registrarVentas(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
       if (e instanceof ErrorDevolucion) return d.error(c, 422, 'NO_SE_PUEDE_DEVOLVER', e.message);
       throw e;
     }
+  });
+
+  // Nota de débito: cobrar algo más sobre una factura o boleta ya emitida (flete, intereses por
+  // mora, penalidad). Se emite como cualquier comprobante (mismas validaciones, cola y PDF).
+  app.post('/panel/api/comprobantes/:id/nota-debito', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (!s.empresa.modulos.includes('notas')) return sinModulo(c, 'notas');
+    if (!ROLES_CORRIGEN.includes(s.empresa.rol)) return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño o un administrador emite notas de débito.');
+    const id = await deLaEmpresa(s.empresa.id, c.req.param('id'));
+    if (!id) return d.error(c, 404, 'NO_ENCONTRADO', 'Comprobante no encontrado.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (typeof b.pedido !== 'string' || !PEDIDO_PANEL.test(b.pedido)) return d.error(c, 422, 'DATOS_INVALIDOS', 'Falta el número interno del formulario. Recarga la página.');
+    const o = (await d.db.query(
+      `SELECT c.tipo_comprobante, c.serie, c.numero, k.id AS canal, k.activo
+         FROM comprobantes c JOIN canales k ON k.id = c.canal_id WHERE c.id = $1`, [id],
+    )).rows[0];
+    if (o.tipo_comprobante !== TipoComprobante.FACTURA && o.tipo_comprobante !== TipoComprobante.BOLETA) {
+      return d.error(c, 422, 'DATOS_INVALIDOS', 'La nota de débito solo se emite sobre una factura o una boleta.');
+    }
+    // El canal de la venta original; si ya no está activo (ej. una tienda desconectada), Presencial.
+    const canalId = o.activo ? o.canal as string : (await d.db.query(
+      `SELECT id FROM canales WHERE empresa_id = $1 AND tipo = 'MANUAL' AND activo ORDER BY (nombre = 'Presencial') DESC LIMIT 1`, [s.empresa.id],
+    )).rows[0]?.id as string | undefined;
+    if (!canalId) return d.error(c, 422, 'DATOS_INVALIDOS', 'No hay un canal activo para emitir.');
+    return d.emitir(c, { empresaId: s.empresa.id, canalId, usuarioId: s.usuarioId }, {
+      pedido: b.pedido, tipo: 'NOTA_DEBITO',
+      notaDebito: {
+        tipo: o.tipo_comprobante === TipoComprobante.FACTURA ? 'FACTURA' : 'BOLETA', serie: o.serie.trim(), numero: Number(o.numero),
+        motivo: texto(b.motivo, 2), descripcion: texto(b.sustento, 250),
+      },
+      // Un cargo (flete, interés, penalidad) es un servicio: unidad ZZ.
+      items: [{ descripcion: texto(b.concepto, 250), cantidad: 1, precio: texto(b.monto, 20), unidad: 'ZZ' }],
+    });
   });
 
   // Anular (error al emitir): comunicación de baja o resumen diario, dentro del plazo.

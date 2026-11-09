@@ -1,6 +1,6 @@
 /**
  * Alta o actualización de una empresa con lo necesario para emitir:
- * régimen, series (F001, B001, FC01, BC01), marca y canales por defecto.
+ * régimen, series (F001, B001, FC01, BC01, FD01, BD01), marca y canales por defecto.
  * Se puede ejecutar varias veces: solo crea lo que falta.
  */
 import { enTransaccion, type Db } from '../db/conexion.js';
@@ -23,7 +23,7 @@ export interface DatosEmpresa {
   marca?: string;
 }
 
-const SERIES: [string, string][] = [['01', 'F001'], ['03', 'B001'], ['07', 'FC01'], ['07', 'BC01']];
+const SERIES: [string, string][] = [['01', 'F001'], ['03', 'B001'], ['07', 'FC01'], ['07', 'BC01'], ['08', 'FD01'], ['08', 'BD01']];
 const CANALES: [string, 'API' | 'MANUAL', FormatoPdf][] = [
   ['Tienda web', 'API', 'A4'],
   ['WhatsApp', 'MANUAL', 'A4'],

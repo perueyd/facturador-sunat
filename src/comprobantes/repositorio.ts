@@ -171,9 +171,9 @@ export async function cargarComprobante(q: Consultor, id: string): Promise<Compr
         c.forma_pago === 'CREDITO'
           ? { tipo: 'CREDITO', cuotas: cuotas.rows.map((q2) => ({ monto: q2.monto as string, fechaVencimiento: q2.fecha as string })) }
           : { tipo: 'CONTADO' },
-      ...(c.tipo_comprobante === TipoComprobante.NOTA_CREDITO
+      ...(c.tipo_comprobante === TipoComprobante.NOTA_CREDITO || c.tipo_comprobante === TipoComprobante.NOTA_DEBITO
         ? {
-            notaCredito: {
+            [c.tipo_comprobante === TipoComprobante.NOTA_CREDITO ? 'notaCredito' : 'notaDebito']: {
               referencia: { tipo: c.ref_tipo as TipoComprobante, serie: c.ref_serie, numero: Number(c.ref_numero) },
               motivoCodigo: c.motivo_nota_codigo,
               motivoDescripcion: c.motivo_nota_texto,

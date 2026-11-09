@@ -148,3 +148,32 @@ describe('notas de crédito', () => {
     expect(errores(solicitudBoleta({ ...base, serie: 'FC01' }), contextoPrueba).join(' ')).toMatch(/debe empezar con B/);
   });
 });
+
+// Catálogo 10 (Anexo 8, R.S. 245-2017/SUNAT): 01 intereses por mora, 02 aumento en el valor,
+// 03 penalidades / otros conceptos.
+describe('notas de débito', () => {
+  const base = {
+    tipo: TipoComprobante.NOTA_DEBITO,
+    serie: 'FD01',
+    notaDebito: { referencia: { tipo: TipoComprobante.FACTURA, serie: 'F001', numero: 1 }, motivoCodigo: '02', motivoDescripcion: 'Flete adicional' },
+  } as const;
+
+  it('una nota de débito correcta pasa', () => {
+    expect(errores(solicitudFactura(base), contextoPrueba)).toEqual([]);
+  });
+  it('solo motivos del catálogo 10 (el 07 de crédito no vale)', () => {
+    for (const motivo of ['01', '02', '03']) expect(errores(solicitudFactura({ ...base, notaDebito: { ...base.notaDebito, motivoCodigo: motivo } }), contextoPrueba)).toEqual([]);
+    expect(errores(solicitudFactura({ ...base, notaDebito: { ...base.notaDebito, motivoCodigo: '07' } }), contextoPrueba).join(' ')).toMatch(/catálogo 10/);
+  });
+  it('lleva motivo escrito, serie F de la factura y referencia a una factura o boleta', () => {
+    expect(errores(solicitudFactura({ ...base, notaDebito: { ...base.notaDebito, motivoDescripcion: ' ' } }), contextoPrueba).join(' ')).toMatch(/Escribe el motivo de la nota de débito/);
+    expect(errores(solicitudFactura({ ...base, serie: 'BD01' }), contextoPrueba).join(' ')).toMatch(/debe empezar con F/);
+    const deNota = { ...base.notaDebito, referencia: { tipo: TipoComprobante.NOTA_CREDITO, serie: 'FC01', numero: 1 } };
+    expect(errores(solicitudFactura({ ...base, notaDebito: deNota }), contextoPrueba).join(' ')).toMatch(/solo puede modificar una factura o una boleta/);
+  });
+  it('sin la nota, o con la de crédito en vez de la de débito, no pasa', () => {
+    expect(errores(solicitudFactura({ tipo: TipoComprobante.NOTA_DEBITO, serie: 'FD01' }), contextoPrueba).join(' ')).toMatch(/debe indicar el comprobante/);
+    expect(errores(solicitudFactura({ tipo: TipoComprobante.NOTA_DEBITO, serie: 'FD01', notaCredito: base.notaDebito }), contextoPrueba).join(' ')).toMatch(/debe indicar el comprobante/);
+    expect(errores(solicitudFactura({ notaDebito: base.notaDebito }), contextoPrueba).join(' ')).toMatch(/Solo las notas/);
+  });
+});

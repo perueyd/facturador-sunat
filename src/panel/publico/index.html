@@ -892,6 +892,29 @@
     </form>
   </dialog>
 
+  <!-- Nota de débito: cobrar algo más sobre una factura o boleta ya emitida. -->
+  <dialog id="dialogo-debito">
+    <form id="form-debito" method="dialog">
+      <h2 id="titulo-debito">Cobrar algo más</h2>
+      <label>¿Por qué? <small>(catálogo de SUNAT)</small>
+        <select name="motivo">
+          <option value="02">Aumento en el valor (ej. flete, instalación, un adicional)</option>
+          <option value="01">Intereses por mora (pagó tarde)</option>
+          <option value="03">Penalidad u otro concepto</option>
+        </select></label>
+      <label>Qué se cobra <input name="concepto" maxlength="250" placeholder="Ej.: Flete a provincia" required></label>
+      <label>Monto con IGV (S/) <input name="monto" inputmode="decimal" placeholder="50.00" required></label>
+      <label>Explicación para SUNAT <input name="sustento" maxlength="250" placeholder="Ej.: Flete acordado después de la venta" required></label>
+      <p class="nota">Se emite una <strong>nota de débito</strong> ligada a ese comprobante y queda por cobrar. Para cobrar
+        menos o devolver, usa la nota de crédito.</p>
+      <p class="error" id="error-debito" role="alert"></p>
+      <div class="fila">
+        <button type="button" id="cancelar-debito" class="secundario">Cancelar</button>
+        <button type="submit">Emitir nota de débito</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="escaner">
     <p>Apunta la cámara al código de barras.</p>
     <video id="video-escaner" playsinline muted></video>

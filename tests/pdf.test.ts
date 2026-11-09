@@ -113,6 +113,19 @@ describe.each<FormatoPdf>(['A4', 'TICKET_80'])('PDF %s', (formato) => {
     expect(t).toContain('Devolución de una almohada');
   });
 
+  it('nota de débito: título, documento que modifica y motivo del catálogo 10', async () => {
+    const c = armar(solicitudFactura({
+      tipo: TipoComprobante.NOTA_DEBITO, serie: 'FD01', items: [item('59.00', '1', { descripcion: 'Flete a Arequipa' })],
+      notaDebito: { referencia: { tipo: TipoComprobante.FACTURA, serie: 'F001', numero: 15 }, motivoCodigo: '02', motivoDescripcion: 'Flete acordado después de la venta' },
+    }), 1);
+    const t = texto(await generarPdf(datos(c), formato)).replace(/\s+/g, ' ');
+    expect(t).toContain('NOTA DE DÉBITO ELECTRÓNICA');
+    expect(t).toContain('FD01-00000001');
+    expect(t).toContain('FACTURA ELECTRÓNICA F001-00000015');
+    expect(t).toContain('02 - Aumento en el valor');
+    expect(t).toContain('Flete acordado después de la venta');
+  });
+
   it('factura al crédito: muestra las cuotas', async () => {
     const c = armar(solicitudFactura({
       items: [item('1000.00')],
