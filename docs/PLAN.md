@@ -804,6 +804,45 @@ Para cobrar algo más sobre una venta ya emitida (flete, instalación, intereses
 - **API:** `tipo: "NOTA_DEBITO"` con `notaDebito` (ver `docs/API.md`).
 - Migración 046: permitida en todos los regímenes (en Nuevo RUS, POR VERIFICAR) y series `FD01`/`BD01`.
 
+## 26. Guía de remisión electrónica — investigación (09/11/2026, NO programada)
+
+Pregunta: ¿el facturador debe emitir guías de remisión, como el de la competencia?
+
+**Lo que dice la norma (leído el 09/11/2026):**
+
+- **R.S. 000123-2022/SUNAT** (08/07/2022, www.sunat.gob.pe/legislacion/superin/2022/123-2022.pdf),
+  que modificó el art. 21 de la R.S. 007-99/SUNAT. Numeral 3.2.6, válido "independientemente de la
+  modalidad de transporte": *"En el caso de venta a consumidores finales concertada por internet,
+  teléfono, telefax u otros medios similares. La boleta de venta electrónica emitida por el vendedor
+  sustenta el traslado de los bienes."* Según el art. 20 num. 3.3, durante el traslado hay que
+  **portar la representación impresa de la boleta** (o dársela al transportista antes de salir).
+  - La página de orientacion.sunat.gob.pe "05. Excepciones en la emisión de Guías de Remisión…"
+    todavía muestra el texto anterior, que limitaba esto a motos, trimotos y similares. Manda el texto
+    de la resolución.
+- La guía electrónica es la regla general. El art. 7 de esa resolución designa emisores electrónicos
+  de guía a los del anexo X. **No se verificó si Corporación Agamenón está en esa lista.**
+- La guía se puede emitir **gratis desde SUNAT Operaciones en Línea** (SEE-SOL, serie EG), según
+  orientacion.sunat.gob.pe, "01. Concepto y características - Guía de Remisión electrónica desde SEE SOL".
+- Desde un sistema propio (serie T), la guía usa la plataforma nueva de SUNAT. Según el "Manual de
+  servicios web de la plataforma nueva GRE", en cpe.sunat.gob.pe, funciona con servicio REST y token
+  OAuth, con credenciales que se crean en SOL ("Credenciales de API SUNAT"). Eso lo dice el extracto
+  de un buscador: **el manual no se pudo leer** (cpe.sunat.gob.pe lo bloquea Cloudflare desde aquí).
+
+**Qué significa para Espacios y Diseño** (confirmar con el contador):
+
+- **Ventas por la web o por WhatsApp a personas, con boleta:** no hace falta guía. En la entrega se
+  lleva la boleta impresa (el PDF del facturador sirve).
+- **Ventas con factura a empresas, o en tienda, que la empresa lleva en su vehículo:** hace falta
+  guía de remisión – remitente. Por ahora se emite gratis en SOL.
+- Si se contrata una empresa de transporte, ella emite su guía de transportista.
+
+**Recomendación:** no programarla por ahora. Es el trabajo más grande que queda: otro tipo de XML
+(DespatchAdvice), la plataforma nueva de SUNAT con token y credenciales aparte, datos del vehículo,
+del conductor, del peso y de los puntos de partida y llegada. Vale la pena solo si las entregas con
+factura se vuelven frecuentes, o si el facturador se vende a negocios que la necesitan todos los
+días (ferreterías, distribuidoras). Antes habría que confirmar con el contador si la empresa está
+designada como emisor electrónico de guías y leer el manual oficial.
+
 ## 19. Decisiones que siguen abiertas
 
 Mientras no respondas, se usan las decisiones provisionales de la sección 7.
