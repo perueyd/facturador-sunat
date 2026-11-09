@@ -2,7 +2,7 @@
  * Catálogo de productos (por SKU) y ajustes manuales de stock.
  */
 import { dec } from '../dinero.js';
-import { enTransaccion, type Db } from '../db/conexion.js';
+import { enTransaccion, type Db, type Tx } from '../db/conexion.js';
 import { revisarStock, stockDe } from './stock.js';
 
 export interface DatosProducto {
@@ -16,6 +16,20 @@ export interface DatosProducto {
   marca?: string;
   /** Lo que lee el escáner (EAN, UPC…). Vacío = se quita. */
   codigoBarras?: string;
+  /** Categoría (ej. "Tarimas"). Sin el campo se conserva la que tenía; vacía = se quita. */
+  categoria?: string;
+}
+
+/**
+ * Categoría limpia: espacios de más fuera y, si ya existe una igual con otras mayúsculas, se usa
+ * esa ("tarimas" → "Tarimas"), para no terminar con dos categorías que son la misma.
+ */
+export async function normalizarCategoria(db: Db | Tx, empresaId: string, texto: string): Promise<string | null> {
+  const c = texto.replace(/\s+/g, ' ').trim();
+  if (!c) return null;
+  if (c.length > 40) throw new ErrorInventario('La categoría es muy larga (máximo 40 letras).');
+  const igual = await db.query(`SELECT categoria FROM productos WHERE empresa_id = $1 AND lower(categoria) = lower($2) LIMIT 1`, [empresaId, c]);
+  return (igual.rows[0]?.categoria as string | undefined) ?? c;
 }
 
 export class ErrorInventario extends Error {}
@@ -46,16 +60,19 @@ export async function guardarProducto(db: Db, empresaId: string, p: DatosProduct
     if (!m.rows[0]) throw new ErrorInventario(`No existe la marca "${p.marca}".`);
     marcaId = m.rows[0].id as string;
   }
+  const categoria = p.categoria === undefined ? null : await normalizarCategoria(db, empresaId, p.categoria);
   const r = await db.query(
-    `INSERT INTO productos (empresa_id, sku, nombre, precio_con_igv, unidad_medida, controla_stock, stock_minimo, marca_id, codigo_barras)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO productos (empresa_id, sku, nombre, precio_con_igv, unidad_medida, controla_stock, stock_minimo, marca_id, codigo_barras, categoria)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $11)
      ON CONFLICT (empresa_id, sku) DO UPDATE SET nombre = EXCLUDED.nombre, precio_con_igv = EXCLUDED.precio_con_igv,
        unidad_medida = EXCLUDED.unidad_medida, controla_stock = EXCLUDED.controla_stock, stock_minimo = EXCLUDED.stock_minimo,
        marca_id = coalesce(EXCLUDED.marca_id, productos.marca_id), activo = true,
        -- Sin código en el formulario se conserva el que tenía (no se borra por olvido).
-       codigo_barras = CASE WHEN $10 THEN EXCLUDED.codigo_barras ELSE productos.codigo_barras END
+       codigo_barras = CASE WHEN $10 THEN EXCLUDED.codigo_barras ELSE productos.codigo_barras END,
+       categoria = CASE WHEN $12 THEN EXCLUDED.categoria ELSE productos.categoria END
      RETURNING id`,
-    [empresaId, sku, p.nombre.trim(), precio.toString(), p.unidad ?? 'NIU', p.controlaStock ?? true, minimo?.toString() ?? null, marcaId, barras, p.codigoBarras !== undefined],
+    [empresaId, sku, p.nombre.trim(), precio.toString(), p.unidad ?? 'NIU', p.controlaStock ?? true, minimo?.toString() ?? null, marcaId, barras,
+      p.codigoBarras !== undefined, categoria, p.categoria !== undefined],
   );
   return r.rows[0].id as string;
 }

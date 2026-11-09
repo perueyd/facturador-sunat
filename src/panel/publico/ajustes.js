@@ -500,6 +500,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-compra').ruc.addEventListener('change', buscarProveedor);
   $('#agregar-compra').addEventListener('click', agregarLineaCompra);
   $('#form-producto').addEventListener('submit', alGuardarProducto);
+  $('#buscar-producto').addEventListener('input', dibujarCatalogo);
+  $('#filtro-categoria').addEventListener('change', dibujarCatalogo);
   $('#form-ajuste').addEventListener('submit', alAjustar);
   $('#form-contrasena').addEventListener('submit', alCambiarContrasena);
   $('#form-emitir').numero.addEventListener('input', buscarCliente);

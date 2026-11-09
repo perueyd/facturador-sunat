@@ -185,6 +185,8 @@
           <button type="button" data-tipo="BOLETA">🧾 Emitir boleta</button>
           <button type="button" data-tipo="FACTURA">📄 Emitir factura</button>
         </div>
+        <!-- Hoy, la semana y el mes siempre a la vista (sin abrir nada), como en otros facturadores. -->
+        <div id="resumen-rapido" class="kpis tres" hidden></div>
         <!-- Si a la empresa le falta configurar algo (certificado, usuario SOL…), se dice aquí arriba. -->
         <button type="button" class="aviso aviso-boton" id="aviso-configuracion" hidden></button>
         <!-- Solo lo urgente queda a la vista (certificado, rechazos, plazos); el resto va plegado abajo. -->
@@ -202,7 +204,7 @@
           <summary>📈 Ver gráficos de ventas</summary>
         <div id="graficos" class="graficos" hidden>
           <div class="grafico">
-            <h3>Ventas de los últimos 6 meses</h3>
+            <h3>Ventas de los últimos 12 meses</h3>
             <svg id="graf-meses" viewBox="0 0 320 170" role="img" aria-label="Ventas por mes"></svg>
             <p class="leyenda"><span class="punto ventas"></span> Ventas <span id="leyenda-compras"><span class="punto compras"></span> Compras</span></p>
           </div>
@@ -218,6 +220,10 @@
           <div class="grafico">
             <h3>Lo más vendido <small>(este mes)</small></h3>
             <div id="graf-productos" class="barras"></div>
+          </div>
+          <div class="grafico">
+            <h3>Estado en SUNAT <small>(lo emitido este mes)</small></h3>
+            <div id="graf-sunat" class="barras"></div>
           </div>
           <div class="grafico" id="caja-vendedores">
             <h3>Ventas por vendedor <small>(este mes)</small></h3>
@@ -495,10 +501,19 @@
           </details>
         </div>
         <ul id="lista-stock" class="lista"></ul>
+        <!-- Todo el catálogo (también lo que no controla stock), con buscador y categorías. -->
+        <details class="ajustes" id="caja-catalogo">
+          <summary>📦 Tus productos <small id="cuantos-productos"></small></summary>
+          <div class="fila">
+            <label>Buscar <input id="buscar-producto" maxlength="60" placeholder="Nombre o código"></label>
+            <label>Categoría <select id="filtro-categoria"><option value="">Todas</option></select></label>
+          </div>
+          <ul id="lista-catalogo" class="lista"></ul>
+        </details>
         <details class="ajustes" id="caja-importar">
           <summary>📥 Cargar tus productos desde un Excel</summary>
-          <p class="nota">Columnas <em>código</em>, <em>nombre</em> y <em>precio</em> (con IGV); guárdalo como "CSV" y elígelo aquí.
-            Si un producto ya estaba (mismo código), se actualizan su nombre y precio.</p>
+          <p class="nota">Columnas <em>código</em>, <em>nombre</em> y <em>precio</em> (con IGV), y si quieres <em>categoría</em>;
+            guárdalo como "CSV" y elígelo aquí. Si un producto ya estaba (mismo código), se actualizan su nombre y precio.</p>
           <input type="file" id="archivo-catalogo" accept=".csv,text/csv">
           <p id="mensaje-importar" role="status"></p>
         </details>
@@ -510,6 +525,8 @@
               <label>Precio con IGV <input name="precio" inputmode="decimal" required></label>
             </div>
             <label>Nombre <input name="nombre" maxlength="250" required></label>
+            <label>Categoría <small>(opcional)</small> <input name="categoria" maxlength="40" list="lista-categorias" placeholder="Ej.: Tarimas" autocomplete="off"></label>
+            <datalist id="lista-categorias"></datalist>
             <div class="fila">
               <label>¿Controla stock? <select name="controlaStock"><option value="si">Sí</option><option value="no">No (servicio)</option></select></label>
               <label>Colchón (stock de seguridad) <input name="stockMinimo" inputmode="decimal"></label>

@@ -168,6 +168,8 @@ async function cargarProductos() {
   productos = cat.productos;
   vendidos = ven.vendidos.map((v) => ({ nombre: v.descripcion, precio: v.precio, sku: v.codigo ?? '' }));
   llenarSugerencias();
+  llenarCategorias();
+  dibujarCatalogo();
   // El campo del código de barras solo sirve si hay productos guardados.
   $('#caja-codigo-venta').hidden = !productos.length;
 }

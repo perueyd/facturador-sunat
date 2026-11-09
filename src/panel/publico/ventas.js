@@ -150,7 +150,7 @@ const FECHA = new Intl.DateTimeFormat('es-PE', { weekday: 'long', day: 'numeric'
 const fechaLarga = (iso) => FECHA.format(new Date(`${iso}T00:00:00Z`));
 
 async function cargarTablero() {
-  const sinEstadisticas = () => { $('#kpis').hidden = true; $('#graficos').hidden = true; };
+  const sinEstadisticas = () => { $('#kpis').hidden = true; $('#graficos').hidden = true; $('#resumen-rapido').hidden = true; };
   const estadisticasEnOtroPlan = yo?.bloqueadas?.find((x) => x.seccion === 'estadisticas');
   if (yo?.verEstadisticas) {
     cargarEstadisticas().catch(sinEstadisticas);
@@ -280,6 +280,7 @@ function graficoMeses(meses) {
   const caja = $('#graf-meses');
   const ancho = 320 / meses.length;
   const hijos = [svg('line', { x1: 0, y1: 140, x2: 320, y2: 140, stroke: '#e5e5e5' })];
+  const mayor = meses.reduce((a, m, i) => (m.alto > meses[a].alto ? i : a), 0);
   meses.forEach((m, i) => {
     const x = i * ancho;
     const barra = (alto, dx, w, color, titulo) => {
@@ -288,12 +289,14 @@ function graficoMeses(meses) {
       return r;
     };
     if (conCompras) {
-      hijos.push(barra(m.alto, ancho / 2 - 15, 14, '#17b897', `${m.nombre}: ventas ${soles(m.ventas)}`));
-      hijos.push(barra(m.altoCompras, ancho / 2 + 1, 14, '#f472a8', `${m.nombre}: compras ${soles(m.compras)}`));
+      hijos.push(barra(m.alto, ancho * 0.12, ancho * 0.36, '#17b897', `${m.nombre}: ventas ${soles(m.ventas)}`));
+      hijos.push(barra(m.altoCompras, ancho * 0.52, ancho * 0.36, '#f472a8', `${m.nombre}: compras ${soles(m.compras)}`));
     } else {
-      hijos.push(barra(m.alto, ancho / 2 - 13, 26, '#17b897', `${m.nombre}: ${soles(m.ventas)}`));
+      hijos.push(barra(m.alto, ancho * 0.18, ancho * 0.64, '#17b897', `${m.nombre}: ${soles(m.ventas)}`));
     }
-    if (m.ventas !== '0.00') hijos.push(svg('text', { x: x + ancho / 2, y: 140 - m.alto * 1.15 - 4, 'text-anchor': 'middle' }, corto(m.ventas)));
+    // Con 12 meses no caben todos los montos: solo el del mejor mes y el del mes actual (el resto, al tocar).
+    const conMonto = i === mayor || i === meses.length - 1;
+    if (conMonto && m.ventas !== '0.00') hijos.push(svg('text', { x: x + ancho / 2, y: 140 - m.alto * 1.15 - 4, 'text-anchor': i === meses.length - 1 ? 'end' : 'middle' }, corto(m.ventas)));
     hijos.push(svg('text', { x: x + ancho / 2, y: 155, 'text-anchor': 'middle' }, m.nombre));
   });
   caja.replaceChildren(...hijos);
@@ -333,7 +336,7 @@ function barras(selector, filas, color) {
     monto.textContent = f.detalle;
     linea.append(nombre, monto);
     const barra = svg('svg', { viewBox: '0 0 100 8', preserveAspectRatio: 'none' });
-    barra.append(svg('rect', { x: 0, y: 0, width: 100, height: 8, rx: 4, fill: '#eee' }), svg('rect', { x: 0, y: 0, width: f.ancho, height: 8, rx: 4, fill: color }));
+    barra.append(svg('rect', { x: 0, y: 0, width: 100, height: 8, rx: 4, fill: '#eee' }), svg('rect', { x: 0, y: 0, width: f.ancho, height: 8, rx: 4, fill: f.color ?? color }));
     fila.append(linea, barra);
     return fila;
   }));
@@ -347,11 +350,16 @@ async function cargarEstadisticas() {
     variacion.textContent = e.mes.comprobantes ? 'El mes anterior no tuvo ventas' : 'Aún sin ventas este mes';
   } else {
     const sube = !e.mes.variacion.startsWith('-');
-    variacion.append(chip(`${sube ? '▲' : '▼'} ${e.mes.variacion.replace('-', '')}%`), ' vs. mismos días del mes pasado');
+    variacion.append(chip(`${sube ? '▲' : '▼'} ${e.mes.variacion.replace('-', '')}%`), ' vs. mes pasado (mismos días)');
   }
+  // Hoy, la semana y el mes van arriba, siempre a la vista; lo demás queda plegado.
+  $('#resumen-rapido').replaceChildren(
+    kpi('verde', 'Hoy', soles(e.hoy.ventas), `${e.hoy.comprobantes} venta(s)${e.hoy.notasCredito !== '0.00' ? ` · devuelto −${soles(e.hoy.notasCredito)}` : ''}`),
+    kpi('azul', 'Esta semana', soles(e.semana.ventas), `${e.semana.comprobantes} venta(s) desde el lunes`),
+    kpi('morado', 'Este mes', soles(e.mes.ventas), variacion),
+  );
+  $('#resumen-rapido').hidden = false;
   const tarjetas = [
-    kpi('verde', 'Ventas de hoy', soles(e.hoy.ventas), `${e.hoy.comprobantes} comprobante(s)${e.hoy.notasCredito !== '0.00' ? ` · notas de crédito −${soles(e.hoy.notasCredito)}` : ''}`),
-    kpi('morado', 'Ventas del mes', soles(e.mes.ventas), variacion),
     kpi('azul', 'Ticket promedio', soles(e.mes.ticketPromedio), `${e.mes.comprobantes} venta(s) en el mes`),
     kpi('ambar', 'Clientes del mes', String(e.clientes.mes), e.clientes.nuevos ? `+${e.clientes.nuevos} nuevo(s) este mes` : 'con DNI o RUC'),
   ];
@@ -367,6 +375,16 @@ async function cargarEstadisticas() {
   graficoMeses(e.meses);
   graficoDias(e.dias);
   barras('#graf-canales', e.canales.map((c) => ({ nombre: c.canal, detalle: `${soles(c.ventas)} · ${c.porcentaje}%`, ancho: c.porcentaje })), '#2f80ed');
+  // Estado en SUNAT de lo emitido este mes: cuántos aceptó, cuántos esperan y cuántos rechazó.
+  const s = e.sunat;
+  const total = s.aceptados + s.observados + s.enCola + s.rechazados + s.anulados;
+  const fila = (nombre, n, color) => ({ nombre, detalle: String(n), ancho: total ? Math.round((n * 100) / total) : 0, color });
+  barras('#graf-sunat', total ? [
+    fila('✅ Aceptados', s.aceptados + s.observados, '#17b897'),
+    ...(s.enCola ? [fila('⏳ En cola (se envían solos)', s.enCola, '#d98a10')] : []),
+    ...(s.rechazados ? [fila('❌ Rechazados (revísalos)', s.rechazados, '#e0457b')] : []),
+    ...(s.anulados ? [fila('Anulados', s.anulados, '#999')] : []),
+  ] : [], '#17b897');
   barras('#graf-productos', e.productos.map((p) => ({ nombre: p.descripcion, detalle: `${miles(p.cantidad)} und · ${soles(p.ventas)}`, ancho: p.alto })), '#d98a10');
   // Solo tiene sentido si vende más de una persona (o la tienda además del dueño).
   $('#caja-vendedores').hidden = e.vendedores.length < 2;
