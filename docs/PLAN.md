@@ -769,6 +769,21 @@ Línea, app Emprende u otro sistema). Viene **apagado**: el dueño lo prende en 
   de ventas ("emitida en SUNAT"): el dueño emitía boletas en SOL el mismo mes.
 - Ven la lista: dueño, administrador y contador. Suben: dueño y administrador. Apagarlo solo la oculta.
 
+## 24. Inicio más completo y categorías de productos (resultado, 09/11/2026)
+
+Pedido del dueño al comparar con otro facturador ("haz lo que creas correcto").
+
+- **Inicio:** hoy, esta semana (de lunes a hoy) y este mes —con el % contra los mismos días del
+  mes pasado— siempre a la vista, sin abrir nada. Dentro de "Ver cómo va tu negocio": gráfico de
+  **12 meses** (antes 6) y **Estado en SUNAT** de lo emitido en el mes (aceptados, en cola,
+  rechazados, anulados). Solo lo ven quienes ven estadísticas (dueño, administrador, contador).
+- **Categorías de productos** (migración 045, opcional): campo en "Nuevo producto o cambiar precio"
+  (sugiere las que ya existen; "tarimas" se guarda como la "Tarimas" existente), columna opcional
+  `categoria` al importar el Excel (también `product_type` del catálogo de Meta), y **Tus productos**
+  en Stock: todo el catálogo con buscador, filtro por categoría y botón Editar.
+- Quedan para más adelante (si el facturador se vende a bodegas o ferreterías): ICBPER (bolsas
+  plásticas) y el código de producto SUNAT.
+
 ## 19. Decisiones que siguen abiertas
 
 Mientras no respondas, se usan las decisiones provisionales de la sección 7.

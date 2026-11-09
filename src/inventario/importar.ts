@@ -1,6 +1,7 @@
 /**
  * Importar productos de una vez, sin escribirlos uno por uno, desde un Excel guardado como CSV
- * (columnas código, nombre y precio; también acepta id, title, price). El facturador no se
+ * (columnas código, nombre y precio; también acepta id, title, price; y, si está, categoría).
+ * El facturador no se
  * conecta a ninguna tienda: el dueño quiere que sean independientes.
  * Si el producto ya existe (mismo código) se actualizan su nombre y precio; lo demás
  * (stock, código de barras, si controla stock) se conserva. Los nuevos no controlan stock:
@@ -14,7 +15,7 @@ const MAXIMO_FILAS = 3000;
 
 export class ErrorImportar extends Error {}
 
-export interface ProductoImportado { sku: string; nombre: string; precio: string }
+export interface ProductoImportado { sku: string; nombre: string; precio: string; categoria?: string }
 
 /** Separa una línea CSV respetando las comillas ("a, b" es una sola celda). */
 function celdas(linea: string, sep: string): string[] {
@@ -57,6 +58,9 @@ export function leerCatalogo(texto: string): { productos: ProductoImportado[]; e
   const cSku = columna('id', 'sku', 'codigo');
   const cNombre = columna('title', 'nombre', 'descripcion', 'producto');
   const cPrecio = columna('price', 'precio', 'precio con igv');
+  const cCategoria = columna('categoria', 'category', 'product_type');
+  // "tarimas" y "Tarimas" en el mismo archivo son la misma categoría: vale la primera forma escrita.
+  const categorias = new Map<string, string>();
   if (cSku < 0 || cNombre < 0 || cPrecio < 0) {
     throw new ErrorImportar('El archivo necesita las columnas: código (o id), nombre (o title) y precio (o price).');
   }
@@ -73,7 +77,9 @@ export function leerCatalogo(texto: string): { productos: ProductoImportado[]; e
       errores.push(`Fila ${i + 2}: falta el código, el nombre o un precio válido.`);
       continue;
     }
-    productos.set(sku, { sku, nombre, precio });
+    const categoria = cCategoria < 0 ? '' : (c[cCategoria] ?? '').replace(/\s+/g, ' ').trim().slice(0, 40).trim();
+    if (categoria && !categorias.has(categoria.toLowerCase())) categorias.set(categoria.toLowerCase(), categoria);
+    productos.set(sku, { sku, nombre, precio, ...(categoria ? { categoria: categorias.get(categoria.toLowerCase())! } : {}) });
   }
   if (filas.length - 1 > MAXIMO_FILAS) errores.push(`Solo se leen las primeras ${MAXIMO_FILAS} filas.`);
   return { productos: [...productos.values()], errores };
@@ -89,11 +95,16 @@ export async function importarProductos(
   if (!productos.length) throw new ErrorImportar('No hay productos válidos para importar.');
   return enTransaccion(db, async (tx) => {
     const r = await tx.query(
-      `INSERT INTO productos (empresa_id, sku, nombre, precio_con_igv, controla_stock)
-       SELECT $1, x.sku, x.nombre, x.precio::numeric, false FROM unnest($2::text[], $3::text[], $4::text[]) AS x(sku, nombre, precio)
-       ON CONFLICT (empresa_id, sku) DO UPDATE SET nombre = EXCLUDED.nombre, precio_con_igv = EXCLUDED.precio_con_igv, activo = true
+      // Una categoría que ya existe con otras mayúsculas se escribe como la existente. Una celda de
+      // categoría vacía no borra la que el producto ya tenía.
+      `INSERT INTO productos (empresa_id, sku, nombre, precio_con_igv, controla_stock, categoria)
+       SELECT $1, x.sku, x.nombre, x.precio::numeric, false,
+              coalesce((SELECT p.categoria FROM productos p WHERE p.empresa_id = $1 AND lower(p.categoria) = lower(x.categoria) LIMIT 1), x.categoria)
+         FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS x(sku, nombre, precio, categoria)
+       ON CONFLICT (empresa_id, sku) DO UPDATE SET nombre = EXCLUDED.nombre, precio_con_igv = EXCLUDED.precio_con_igv, activo = true,
+         categoria = coalesce(EXCLUDED.categoria, productos.categoria)
        RETURNING (xmax = 0) AS nuevo`,
-      [empresaId, productos.map((p) => p.sku), productos.map((p) => p.nombre), productos.map((p) => p.precio)],
+      [empresaId, productos.map((p) => p.sku), productos.map((p) => p.nombre), productos.map((p) => p.precio), productos.map((p) => p.categoria ?? null)],
     );
     const nuevos = r.rows.filter((f) => f.nuevo).length;
     await tx.query(`INSERT INTO auditoria (empresa_id, usuario_id, accion, entidad, entidad_id, despues) VALUES ($1, $2, 'IMPORTAR_PRODUCTOS', 'empresas', $1, $3)`, [

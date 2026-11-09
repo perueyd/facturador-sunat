@@ -610,10 +610,14 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (s instanceof Response) return s;
     if (!s.empresa.modulos.includes('productos')) return sinModulo(c, 'productos');
     const r = await d.db.query(
-      `SELECT sku, nombre, precio_con_igv::numeric(14,2)::text AS precio, codigo_barras FROM productos WHERE empresa_id = $1 AND activo ORDER BY nombre LIMIT 2000`,
+      `SELECT sku, nombre, precio_con_igv::numeric(14,2)::text AS precio, codigo_barras, categoria, controla_stock, trim_scale(stock_minimo)::text AS stock_minimo
+         FROM productos WHERE empresa_id = $1 AND activo ORDER BY nombre LIMIT 2000`,
       [s.empresa.id],
     );
-    return c.json({ productos: r.rows.map((p) => ({ sku: p.sku, nombre: p.nombre, precio: p.precio, codigoBarras: p.codigo_barras })) });
+    return c.json({ productos: r.rows.map((p) => ({
+      sku: p.sku, nombre: p.nombre, precio: p.precio, codigoBarras: p.codigo_barras, categoria: p.categoria,
+      controlaStock: p.controla_stock, stockMinimo: p.stock_minimo,
+    })) });
   });
 
   registrarVentas(app, comun);

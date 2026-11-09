@@ -234,6 +234,7 @@ async function alGuardarProducto(e) {
       sku: f.get('sku'), nombre: f.get('nombre'), precio: String(f.get('precio')).trim().replace(',', '.'),
       controlaStock: f.get('controlaStock') === 'si', ...(f.get('stockMinimo') ? { stockMinimo: f.get('stockMinimo') } : {}),
       ...(f.get('codigoBarras') ? { codigoBarras: String(f.get('codigoBarras')).trim() } : {}),
+      categoria: String(f.get('categoria') ?? ''),
     } });
     // Proveedor habitual y su tiempo de entrega (para saber cuándo pedir).
     if (f.get('proveedor') || f.get('diasEntrega')) {
@@ -248,6 +249,50 @@ async function alGuardarProducto(e) {
     msg.className = 'error';
     msg.textContent = err.message;
   }
+}
+
+// ---------- Tus productos (catálogo con categorías) ----------
+/** Lista del catálogo filtrada por lo que se busca y la categoría elegida. */
+function dibujarCatalogo() {
+  const buscar = $('#buscar-producto').value.trim().toLowerCase();
+  const categoria = $('#filtro-categoria').value;
+  const lista = productos.filter((p) => (!categoria || (categoria === '-' ? !p.categoria : p.categoria === categoria))
+    && (!buscar || p.nombre.toLowerCase().includes(buscar) || p.sku.toLowerCase().includes(buscar)));
+  $('#cuantos-productos').textContent = productos.length ? `(${productos.length})` : '';
+  $('#lista-catalogo').replaceChildren(...(lista.length ? lista.slice(0, 200).map((p) => {
+    const li = linea(`${p.nombre} · ${p.sku}${p.categoria ? ` · ${p.categoria}` : ''}`, `S/\u00a0${p.precio}`);
+    if (yo?.puedeAdministrar) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'Editar' });
+      b.addEventListener('click', () => editarProducto(p));
+      li.append(b);
+    }
+    return li;
+  }) : [linea(productos.length ? 'Ningún producto coincide.' : 'Aún no tienes productos: agrégalos abajo o cárgalos desde un Excel.', '')]));
+}
+
+/** Categorías que ya existen: para el filtro y para sugerirlas al escribir. */
+function llenarCategorias() {
+  const categorias = [...new Set(productos.map((p) => p.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  const filtro = $('#filtro-categoria');
+  const elegida = filtro.value;
+  filtro.replaceChildren(new Option('Todas', ''), ...categorias.map((c) => new Option(c, c)), ...(productos.some((p) => !p.categoria) && categorias.length ? [new Option('Sin categoría', '-')] : []));
+  filtro.value = [...filtro.options].some((o) => o.value === elegida) ? elegida : '';
+  $('#lista-categorias').replaceChildren(...categorias.map((c) => new Option(c)));
+}
+
+/** Pone el producto en el formulario para cambiar su precio, nombre o categoría. */
+function editarProducto(p) {
+  const f = $('#form-producto');
+  f.sku.value = p.sku;
+  f.nombre.value = p.nombre;
+  f.precio.value = p.precio;
+  f.categoria.value = p.categoria ?? '';
+  f.controlaStock.value = p.controlaStock ? 'si' : 'no';
+  f.stockMinimo.value = p.stockMinimo ?? '';
+  f.codigoBarras.value = p.codigoBarras ?? '';
+  $('#caja-producto').open = true;
+  $('#caja-producto').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  f.precio.focus();
 }
 
 async function alAjustar(e) {

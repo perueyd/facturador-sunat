@@ -43,7 +43,7 @@ describe.skipIf(!URL_PRUEBAS)('estadísticas de ventas', () => {
     return r.guardado.id;
   }
 
-  it('hoy, mes, ticket promedio, clientes nuevos, 6 meses, 30 días, canales y productos', async () => {
+  it('hoy, semana, mes, ticket promedio, clientes nuevos, 12 meses, 30 días, canales, productos y estado SUNAT', async () => {
     const vacia = await estadisticas(db, f.empresaId, { hoy });
     expect(vacia.mes).toEqual({ ventas: '0.00', comprobantes: 0, ticketPromedio: '0.00', variacion: null });
     expect(vacia.meses.every((m) => m.alto === 0)).toBe(true);
@@ -62,11 +62,12 @@ describe.skipIf(!URL_PRUEBAS)('estadísticas de ventas', () => {
 
     const e = await estadisticas(db, f.empresaId, { hoy, compras: true, productos: true });
     expect(e.hoy).toEqual({ ventas: '295.00', comprobantes: 2, notasCredito: '0.00' });
+    expect(e.semana).toEqual({ ventas: '295.00', comprobantes: 2 }); // la del mes pasado no es de esta semana
     // (295 - 100) / 100 = +195 %
     expect(e.mes).toEqual({ ventas: '295.00', comprobantes: 2, ticketPromedio: '147.50', variacion: '195.0' });
     expect(e.clientes).toEqual({ mes: 2, nuevos: 1 });
 
-    expect(e.meses).toHaveLength(6);
+    expect(e.meses).toHaveLength(12);
     expect(e.meses.at(-1)).toMatchObject({ periodo: hoy.slice(0, 7), ventas: '295.00', alto: 100, compras: '0.00', altoCompras: 0 });
     expect(e.meses.at(-2)).toMatchObject({ periodo: haceUnMes.slice(0, 7), ventas: '100.00', alto: 34 });
 
@@ -82,6 +83,8 @@ describe.skipIf(!URL_PRUEBAS)('estadísticas de ventas', () => {
       { descripcion: 'Almohada', cantidad: '1', ventas: '59.00', alto: 25 },
     ]);
     expect(e.stockBajo).toBe(0);
+    // Sin SUNAT en las pruebas, los dos buenos siguen en cola; el rechazado se cuenta aparte.
+    expect(e.sunat).toEqual({ aceptados: 0, observados: 0, enCola: 2, rechazados: 1, anulados: 0 });
 
     // Sin las funciones de compras y productos, esos datos no se calculan.
     const sin = await estadisticas(db, f.empresaId, { hoy });

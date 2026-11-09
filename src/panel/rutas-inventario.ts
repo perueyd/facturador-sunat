@@ -56,6 +56,8 @@ export function registrarInventario(app: Hono<any>, { d, conEmpresa, sinModulo, 
         sku: texto(b.sku, 40), nombre: texto(b.nombre, 250), precio: texto(b.precio, 20) || '0',
         controlaStock: b.controlaStock !== false, ...(texto(b.stockMinimo, 20) ? { stockMinimo: texto(b.stockMinimo, 20) } : {}),
         ...(typeof b.codigoBarras === 'string' && b.codigoBarras.trim() ? { codigoBarras: texto(b.codigoBarras, 40) } : {}),
+        // Vacía = se quita la categoría; si no viene, se conserva la que tenía.
+        ...(typeof b.categoria === 'string' ? { categoria: texto(b.categoria, 60) } : {}),
       });
     } catch (e) {
       return negocio(c, e);

@@ -295,7 +295,7 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
   it('productos guardados y cliente conocido por su documento', async () => {
     await guardarProducto(db, f.empresaId, { sku: 'CAB-001', nombre: 'Cabecera Milán', precio: '220.00' });
     const cookie = await entrar(await usuario());
-    expect((await (await pedir('/panel/api/productos', { cookie })).json()).productos).toEqual([{ sku: 'CAB-001', nombre: 'Cabecera Milán', precio: '220.00', codigoBarras: null }]);
+    expect((await (await pedir('/panel/api/productos', { cookie })).json()).productos).toEqual([{ sku: 'CAB-001', nombre: 'Cabecera Milán', precio: '220.00', codigoBarras: null, categoria: null, controlaStock: true, stockMinimo: null }]);
     expect((await pedir('/panel/api/clientes?doc=12345678', { cookie })).status).toBe(404);
     await emitida(cookie);
     expect(await (await pedir('/panel/api/clientes?doc=12345678', { cookie })).json()).toEqual({ nombre: 'JUAN PÉREZ' });
@@ -403,7 +403,7 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     await emitida(dueno);
     const e = await (await pedir('/panel/api/estadisticas', { cookie: dueno })).json();
     expect(e.hoy.comprobantes).toBeGreaterThan(0);
-    expect(e.meses).toHaveLength(6);
+    expect(e.meses).toHaveLength(12);
     expect((await pedir('/panel/api/estadisticas', { cookie: contador })).status).toBe(200);
     expect((await pedir('/panel/api/estadisticas', { cookie: vendedor })).status).toBe(403);
     expect((await (await pedir('/panel/api/yo', { cookie: vendedor })).json()).verEstadisticas).toBe(false);
@@ -578,7 +578,7 @@ describe.skipIf(!URL_PRUEBAS)('panel web', () => {
     // Cambiar el precio sin mandar el código no lo borra.
     expect((await prod('BAR-1', { precio: '12.00' })).status).toBe(201);
     const lista = (await (await pedir('/panel/api/productos', { cookie: dueno })).json()).productos;
-    expect(lista.find((p: { sku: string }) => p.sku === 'BAR-1')).toEqual({ sku: 'BAR-1', nombre: 'BAR-1', precio: '12.00', codigoBarras: '7751234567890' });
+    expect(lista.find((p: { sku: string }) => p.sku === 'BAR-1')).toMatchObject({ sku: 'BAR-1', nombre: 'BAR-1', precio: '12.00', codigoBarras: '7751234567890' });
   });
 
   it('función "compras" apagada: 403 aunque se llame directo', async () => {

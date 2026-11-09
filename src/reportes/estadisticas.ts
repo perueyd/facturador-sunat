@@ -1,7 +1,7 @@
 /**
- * Estadísticas de ventas para el panel: cuánto se vendió hoy y en el mes, cómo va contra el
- * mes anterior, ticket promedio, clientes, gráficos (6 meses y 30 días), de qué canal vienen
- * las ventas y qué productos se venden más.
+ * Estadísticas de ventas para el panel: cuánto se vendió hoy, en la semana y en el mes, cómo va
+ * contra el mes anterior, ticket promedio, clientes, gráficos (12 meses y 30 días), de qué canal
+ * vienen las ventas, qué productos se venden más y cómo están en SUNAT los comprobantes del mes.
  *
  * Todo sale de la vista ventas_todas (migración 044): lo emitido aquí, las boletas impresas sin
  * internet y lo emitido en SUNAT y subido. Boletas y facturas suman, sus notas de crédito restan,
@@ -30,6 +30,8 @@ export interface Estadisticas {
    * un solo número mostraba "Ventas de hoy: S/ -450" el día que se corregía una venta anterior.
    */
   hoy: { ventas: string; comprobantes: number; notasCredito: string };
+  /** De lunes a hoy (hora de Lima), ya con las notas de crédito restadas. */
+  semana: { ventas: string; comprobantes: number };
   mes: {
     ventas: string;
     comprobantes: number;
@@ -38,7 +40,7 @@ export interface Estadisticas {
     variacion: string | null;
   };
   clientes: { mes: number; nuevos: number };
-  /** Últimos 6 meses. `compras` solo si la empresa usa la función de compras. */
+  /** Últimos 12 meses. `compras` solo si la empresa usa la función de compras. */
   meses: { periodo: string; nombre: string; ventas: string; alto: number; compras?: string; altoCompras?: number }[];
   dias: { fecha: string; ventas: string; alto: number }[];
   canales: { canal: string; ventas: string; porcentaje: number }[];
@@ -53,6 +55,11 @@ export interface Estadisticas {
     comision?: { porcentaje: string; monto: string };
   }[];
   stockBajo?: number;
+  /**
+   * Comprobantes emitidos en ESTE facturador en el mes, según lo que respondió SUNAT (las boletas
+   * impresas y lo subido de SUNAT no pasan por aquí). `enCola` = aún sin respuesta: se envían solos.
+   */
+  sunat: { aceptados: number; observados: number; enCola: number; rechazados: number; anulados: number };
 }
 
 export async function estadisticas(
@@ -68,6 +75,10 @@ export async function estadisticas(
        coalesce(sum(importe_total) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante <> '07'), 0)::text AS hoy,
        coalesce(sum(importe_total) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante = '07'), 0)::text AS hoy_notas,
        count(*) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante <> '07')::int AS hoy_n,
+       -- Semana de lunes a hoy. Si el lunes cae en el mes anterior, la consulta de abajo igual lo
+       -- alcanza: lee desde el mes anterior.
+       coalesce(sum(${CON_SIGNO}) FILTER (WHERE fecha_emision >= date_trunc('week', $2::date)), 0)::text AS semana,
+       count(*) FILTER (WHERE fecha_emision >= date_trunc('week', $2::date) AND tipo_comprobante <> '07')::int AS semana_n,
        coalesce(sum(${CON_SIGNO}) FILTER (WHERE fecha_emision >= date_trunc('month', $2::date)), 0)::text AS mes,
        count(*) FILTER (WHERE fecha_emision >= date_trunc('month', $2::date) AND tipo_comprobante <> '07')::int AS mes_n,
        -- Mismos días del mes anterior (del 1 al día de hoy): comparar contra el mes ENTERO
@@ -97,10 +108,10 @@ export async function estadisticas(
   const meses = (await db.query(
     `WITH m AS (
        SELECT to_char(d, 'YYYY-MM') AS periodo
-         FROM generate_series(date_trunc('month', $2::date) - interval '5 months', date_trunc('month', $2::date), interval '1 month') d),
+         FROM generate_series(date_trunc('month', $2::date) - interval '11 months', date_trunc('month', $2::date), interval '1 month') d),
      v AS (
        SELECT to_char(fecha_emision, 'YYYY-MM') AS periodo, sum(${CON_SIGNO}) AS monto FROM ventas_todas
-        WHERE empresa_id = $1 AND ${VALIDO} AND fecha_emision >= date_trunc('month', $2::date) - interval '5 months' AND fecha_emision <= $2::date
+        WHERE empresa_id = $1 AND ${VALIDO} AND fecha_emision >= date_trunc('month', $2::date) - interval '11 months' AND fecha_emision <= $2::date
         GROUP BY 1),
      c AS (
        SELECT periodo, sum(total) AS monto FROM compras WHERE empresa_id = $1 AND anulada_en IS NULL GROUP BY 1),
@@ -178,8 +189,19 @@ export async function estadisticas(
     p,
   )).rows;
 
+  const sunat = (await db.query(
+    `SELECT count(*) FILTER (WHERE estado = 'ACEPTADO')::int AS aceptados,
+            count(*) FILTER (WHERE estado = 'ACEPTADO_OBS')::int AS observados,
+            count(*) FILTER (WHERE estado IN ('EMITIDO_LOCAL', 'PENDIENTE_ENVIO'))::int AS en_cola,
+            count(*) FILTER (WHERE estado = 'RECHAZADO')::int AS rechazados,
+            count(*) FILTER (WHERE estado IN ('ANULACION_EN_PROCESO', 'ANULADO'))::int AS anulados
+       FROM comprobantes WHERE empresa_id = $1 AND fecha_emision >= date_trunc('month', $2::date) AND fecha_emision <= $2::date`,
+    p,
+  )).rows[0];
+
   return {
     hoy: { ventas: soles(r.hoy), comprobantes: r.hoy_n, notasCredito: soles(r.hoy_notas) },
+    semana: { ventas: soles(r.semana), comprobantes: r.semana_n },
     mes: {
       ventas: ventasMes.toFixed(2),
       comprobantes: r.mes_n,
@@ -202,5 +224,6 @@ export async function estadisticas(
       }),
     })),
     ...(opciones.productos ? { stockBajo: (await listarStock(db, empresaId)).filter((s) => s.bajoMinimo).length } : {}),
+    sunat: { aceptados: sunat.aceptados, observados: sunat.observados, enCola: sunat.en_cola, rechazados: sunat.rechazados, anulados: sunat.anulados },
   };
 }
