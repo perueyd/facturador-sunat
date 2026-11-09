@@ -232,7 +232,7 @@ async function cargarPanel() {
   $('#caja-cuentas').hidden = !(yo.puedeAdministrar && tiene('cobros'));
   cargarCuentas().catch(() => {});
   mostrarPlan(yo.plan);
-  // Sin códigos de respaldo, perder el celular obliga a usar la llave de la tienda: se avisa.
+  // Sin códigos de respaldo, perder el celular obliga a usar la clave de recuperación de Render: se avisa.
   $('#estado-respaldo').textContent = yo.codigosRespaldo
     ? `Te quedan ${yo.codigosRespaldo} códigos sin usar.`
     : '⚠️ No tienes códigos de respaldo: genéralos ahora por si pierdes el celular.';

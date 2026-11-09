@@ -42,8 +42,9 @@ bloqueada hasta tu autorización y la lista "Antes de pasar a producción" de `d
 6. Lo firma con el Certificado Digital Tributario de la empresa (guardado cifrado) y guarda el XML firmado.
 7. Lo envía a SUNAT y guarda la constancia (CDR). Si SUNAT no responde, lo reintenta solo.
 8. Genera el PDF con QR en A4 o ticket de 80 mm (a elección).
-9. Otros sistemas pueden emitir por la API, cada uno con su llave (ver `docs/API.md`); el dueño las
-   ve y las desconecta en el panel (Más → Conexiones). Hoy la tienda web va independiente.
+9. Otras páginas web (la de un cliente, una tienda) pueden emitir por la API, cada una con su llave
+   (ver `docs/API.md`); el dueño las crea, ve y desconecta en el panel (Más → Conexiones con
+   páginas web). Hoy la tienda web propia va independiente.
 10. Sin internet se anota la boleta IMPRESA de contingencia en el celular; al volver la señal llega
     sola al facturador, que arma el archivo para informarla a SUNAT en 7 días.
 11. Todas las pantallas (Inicio, Estadísticas, Caja, Excel del contador) suman lo emitido aquí, lo

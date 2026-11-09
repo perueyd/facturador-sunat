@@ -20,6 +20,14 @@ respuestas son JSON en español, salvo las descargas (PDF, XML y CDR).
 
 ## 2. Preparar una empresa y su llave
 
+**Desde el panel (lo normal):** el dueño de la empresa entra a **Más → Mi empresa → Conexiones
+con páginas web → Conectar una página web**, le pone un nombre (ej. "Tienda de María") y copia la
+llave y la dirección para emitir. La llave se muestra UNA sola vez; tiene los permisos `emitir`,
+`consultar` y `cobrar` (anular, nunca: eso se hace en el panel). Hay una sola llave activa por
+página y como máximo 10 páginas a la vez. Para cambiar la llave: Desconectar y conectar de nuevo.
+
+**Desde la PC (alternativa):**
+
 ```bash
 # 1) Empresa, series (F001, B001, FC01, BC01), marca y canales (una sola vez)
 npm run empresa:configurar -- --ruc 20XXXXXXXXX --razon "CORPORACION AGAMENON S.A.C." \

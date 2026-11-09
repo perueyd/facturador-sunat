@@ -49,7 +49,7 @@
       </form>
     </section>
 
-    <!-- Recuperar el acceso: por correo o, si se perdió todo, con la llave de la tienda -->
+    <!-- Recuperar el acceso: por correo o, si se perdió todo, con la clave de recuperación de Render -->
     <section id="vista-recuperar" hidden>
       <h1>Recuperar el acceso</h1>
       <form id="form-recuperar-correo" hidden>
@@ -60,10 +60,11 @@
       </form>
       <details id="caja-recuperar-llave">
         <summary>¿Perdiste el celular y no tienes códigos de respaldo?</summary>
-        <p class="nota">Solo para el <strong>dueño</strong>. Pega la llave de tu tienda (Vercel → Settings → Environment
-          Variables → <code>FACTURADOR_LLAVE</code>, empieza con <code>fk_</code>). Tendrás contraseña y código nuevos.</p>
+        <p class="nota">Solo para quien administra el facturador: pega la clave de recuperación (Render → Environment →
+          <code>CLAVE_RECUPERACION</code>). Tendrás contraseña y código nuevos. Si eres cliente del facturador, pide ayuda
+          a quien te lo dio.</p>
         <form id="form-recuperar">
-          <label>Llave de la tienda <small>(fk_…)</small> <input name="clave" type="password" autocomplete="off" required></label>
+          <label>Clave de recuperación <input name="clave" type="password" autocomplete="off" required></label>
           <label>Tu correo <input name="email" type="email" autocomplete="username" required></label>
           <label>Contraseña nueva <small>(mínimo 10 caracteres)</small>
             <input name="contrasena" type="password" autocomplete="new-password" minlength="10" required></label>
@@ -680,11 +681,27 @@
         </form>
       </details>
       <details class="ajustes" id="caja-conexiones">
-        <summary>Conexiones con otros sistemas (tienda web…)</summary>
-        <p class="nota">Cada sistema que emite comprobantes a tu nombre (por ejemplo, tu tienda web al cobrar) usa una "llave".
-          Si la desconectas, ese sistema ya no puede emitir: todo lo emites tú desde aquí. No se puede volver a activar
+        <summary>Conexiones con páginas web (tu tienda, la de un cliente…)</summary>
+        <p class="nota">Cada página que emite comprobantes a tu nombre (por ejemplo, tu tienda web al cobrar) usa una "llave".
+          Si la desconectas, esa página ya no puede emitir: todo lo emites tú desde aquí. No se puede volver a activar
           (si un día quieres reconectar, se crea una llave nueva).</p>
         <ul id="lista-llaves" class="lista"></ul>
+        <form id="form-conexion">
+          <p class="nota"><strong>Conectar una página web:</strong> ponle un nombre para reconocerla y entrega la llave
+            al programador de esa página. Él la guarda en el servidor (variables de entorno), nunca en el código ni en el
+            navegador. La página solo debe pedir la boleta cuando el pago ya esté confirmado.</p>
+          <label>Nombre de la página <input name="nombre" minlength="2" maxlength="60" placeholder="Ej.: Tienda de María" required></label>
+          <button type="submit" class="secundario">Conectar y crear llave</button>
+          <p id="mensaje-conexion" class="error" role="alert"></p>
+        </form>
+        <div id="caja-llave-nueva" class="enlace-invitacion" hidden>
+          <strong>✔ Llave creada. Cópiala AHORA: no se vuelve a mostrar.</strong>
+          <label>Llave <input id="llave-nueva" readonly></label>
+          <label>Dirección para emitir <input id="direccion-api" readonly></label>
+          <button type="button" class="secundario" id="copiar-llave">Copiar llave y dirección</button>
+          <p class="nota">Si la llave se pierde o se filtra, desconecta esa página y conéctala de nuevo: sale otra llave.</p>
+          <button type="button" id="listo-llave">Ya la copié</button>
+        </div>
       </details>
       <details class="ajustes" id="caja-logo">
         <summary>Logo de la empresa (sale en el PDF)</summary>

@@ -641,7 +641,8 @@ servidor: `<dirección del facturador>/panel`. Pensado para el celular.
   - **Mantener la sesión iniciada** 30 días en un dispositivo propio (casilla al entrar) y
     **cerrar sesión en los demás dispositivos** (pestaña Más).
   - **Recuperar el acceso** sin entrar a Render: códigos de respaldo (celular perdido), enlace por
-    correo (contraseña olvidada) y, si se perdió todo, la llave de la tienda (solo el dueño).
+    correo (contraseña olvidada) y, si se perdió todo, la CLAVE_RECUPERACION de Render (desde el
+    09/11/2026 la llave de la tienda ya no sirve: se entrega a programadores de otras páginas).
     En la PC: `npm run usuario -- recuperar`.
   - **Alta de empresas nuevas**: solo el administrador de la plataforma
     (`npm run usuario -- plataforma --email …`); nunca pisa una empresa que ya existe.

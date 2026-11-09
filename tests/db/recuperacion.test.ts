@@ -2,7 +2,8 @@
  * Recuperar el acceso sin entrar a Render:
  *   - códigos de respaldo (celular perdido),
  *   - enlace por correo (contraseña olvidada; pide además el segundo paso),
- *   - llave de la tienda (el dueño perdió las dos cosas).
+ *   - CLAVE_RECUPERACION de Render (el dueño perdió las dos cosas; probado en instalacion.test.ts).
+ * Una llave de API (fk_…) ya NO sirve para esto: se entrega al programador de cada página.
  * Es la puerta de atrás del panel: se prueba que cada camino sirva UNA vez y solo a quien toca.
  */
 import { mkdtemp } from 'node:fs/promises';
@@ -159,25 +160,20 @@ describe.skipIf(!URL_PRUEBAS)('recuperar el acceso', () => {
     expect((await r.json()).error.mensaje).toMatch(/venció/);
   });
 
-  it('con la llave de la tienda: solo el DUEÑO de esa empresa, y entrega códigos de respaldo al activar', async () => {
-    const vendedor = await usuario('VENDEDOR');
+  // Revisión del 09/11/2026: con una llave de API (la que se le da al programador de una página)
+  // y el correo del dueño se podía cambiar su contraseña y su segundo paso, o sea, tomar su
+  // cuenta con todas sus empresas. Ahora la llave no sirve para recuperar nada.
+  it('una llave de API no sirve para tomar la cuenta del dueño', async () => {
     const dueno = await usuario('DUENO');
-    const datos = (email: string, clave: string) => ({ clave, email, contrasena: 'clave rescatada 2026' });
-    expect((await pedir('/panel/api/recuperar', { cuerpo: datos(vendedor.email, llaveTienda) })).status).toBe(401);
-    expect((await pedir('/panel/api/recuperar', { cuerpo: datos(dueno.email, llaveOtra) })).status).toBe(401);
-    expect((await pedir('/panel/api/recuperar', { cuerpo: datos('nadie@prueba.pe', llaveTienda) })).status).toBe(401);
-
-    correos.length = 0;
-    const r = await pedir('/panel/api/recuperar', { cuerpo: datos(dueno.email, ` ${llaveTienda} `) });
-    expect(r.status).toBe(200);
-    const secreto = desdeBase32((await r.json()).clave);
-    await new Promise((res) => setTimeout(res, 20));
-    expect(correos.map((c) => c.asunto)).toEqual(['Se cambió el acceso a tu facturador']);
-
-    const activar = await pedir('/panel/api/recuperar/activar', { cuerpo: { clave: llaveTienda, email: dueno.email, codigo: codigoTotp(secreto, pasoActual()) } });
-    expect(activar.status).toBe(200);
-    const { codigosRespaldo } = await activar.json();
-    expect(codigosRespaldo).toHaveLength(10);
-    expect((await entrar(dueno.email, codigosRespaldo[0], 'clave rescatada 2026')).status).toBe(200);
+    const datos = (clave: string) => ({ clave, email: dueno.email, contrasena: 'clave rescatada 2026' });
+    for (const clave of [llaveTienda, ` ${llaveTienda} `, llaveOtra]) {
+      const r = await pedir('/panel/api/recuperar', { cuerpo: datos(clave) });
+      expect(r.status).toBe(401);
+      expect((await r.json()).error.mensaje).toMatch(/CLAVE_RECUPERACION/);
+    }
+    expect((await pedir('/panel/api/recuperar/activar', { cuerpo: { clave: llaveTienda, email: dueno.email, codigo: '000000' } })).status).toBe(401);
+    // Su contraseña de siempre sigue sirviendo: nada cambió.
+    await db.query(`UPDATE usuarios SET totp_ultimo_paso = totp_ultimo_paso - 2 WHERE id = $1`, [dueno.usuarioId]);
+    expect((await entrar(dueno.email, codigoTotp(dueno.secreto, pasoActual()))).status).toBe(200);
   });
 });

@@ -7,7 +7,7 @@
  * La llave completa se muestra UNA vez al crearla. Si se filtra, se revoca y se crea otra.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { Db, Tx } from '../db/conexion.js';
+import { enTransaccion, type Db, type Tx } from '../db/conexion.js';
 
 export const PERMISOS = ['emitir', 'consultar', 'cobrar', 'anular'] as const;
 export type Permiso = (typeof PERMISOS)[number];
@@ -49,6 +49,51 @@ export async function crearLlaveApi(
     [d.empresaId, d.usuarioId ?? null, id, JSON.stringify({ prefijo, canal: d.canalId, permisos })],
   );
   return { id, prefijo, llave: `fk_${prefijo}_${secreto}` };
+}
+
+/** Tope de páginas conectadas a la vez: más que eso suele ser un error (o alguien abusando). */
+const MAXIMO_CONEXIONES = 10;
+
+/**
+ * Conectar una página web desde el panel (antes solo con un comando en la PC): crea su canal de
+ * tipo API (o reutiliza el de ese nombre, ej. "Tienda web") y una llave nueva con los permisos de
+ * siempre (emitir, consultar, cobrar; anular nunca: eso se hace en el panel).
+ * Una sola llave activa por canal: así "Desconectar" corta de verdad esa página.
+ */
+export async function crearConexion(
+  db: Db,
+  d: { empresaId: string; nombre: string; usuarioId?: string },
+): Promise<{ llave: string; prefijo: string; canal: string }> {
+  const nombre = d.nombre.replace(/\s+/g, ' ').trim();
+  if (nombre.length < 2 || nombre.length > 60) throw new ErrorLlave('Ponle un nombre de 2 a 60 letras, ej. "Tienda de María".');
+  return enTransaccion(db, async (q) => {
+    // Dos clics seguidos no deben dejar dos llaves activas para la misma página.
+    await q.query(`SELECT pg_advisory_xact_lock(hashtext('conexion-' || $1))`, [d.empresaId]);
+    const activas = await q.query(`SELECT count(*)::int AS n FROM api_llaves WHERE empresa_id = $1 AND revocada_en IS NULL`, [d.empresaId]);
+    if (activas.rows[0].n >= MAXIMO_CONEXIONES) throw new ErrorLlave(`Ya tienes ${MAXIMO_CONEXIONES} páginas conectadas. Desconecta una que ya no uses.`);
+    const existente = await q.query(
+      `SELECT c.id, c.nombre, c.tipo, c.activo, EXISTS (SELECT 1 FROM api_llaves l WHERE l.canal_id = c.id AND l.revocada_en IS NULL) AS conectada
+         FROM canales c WHERE c.empresa_id = $1 AND lower(c.nombre) = lower($2)`,
+      [d.empresaId, nombre],
+    );
+    const c = existente.rows[0];
+    if (c && c.tipo !== 'API') throw new ErrorLlave(`"${nombre}" es una forma de venta del panel (no una página). Elige otro nombre.`);
+    if (c?.conectada) throw new ErrorLlave(`"${nombre}" ya está conectada. Si perdiste su llave, desconéctala y conéctala de nuevo.`);
+    let canalId = c?.id as string | undefined;
+    if (canalId && !c.activo) await q.query(`UPDATE canales SET activo = true WHERE id = $1`, [canalId]);
+    if (!canalId) {
+      // La marca de siempre de la empresa (la de sus otros canales), para que el PDF salga igual.
+      const r = await q.query(
+        `INSERT INTO canales (empresa_id, nombre, tipo, formato_pdf, marca_id_por_defecto)
+         VALUES ($1, $2, 'API', 'A4', (SELECT marca_id_por_defecto FROM canales WHERE empresa_id = $1 AND marca_id_por_defecto IS NOT NULL ORDER BY creado_en LIMIT 1))
+         RETURNING id`,
+        [d.empresaId, nombre],
+      );
+      canalId = r.rows[0].id as string;
+    }
+    const { llave, prefijo } = await crearLlaveApi(q, { empresaId: d.empresaId, canalId, ...(d.usuarioId ? { usuarioId: d.usuarioId } : {}) });
+    return { llave, prefijo, canal: (c?.nombre as string | undefined) ?? nombre };
+  });
 }
 
 /** Devuelve el contexto de la llave, o undefined si no es válida (sin decir por qué, a propósito). */
