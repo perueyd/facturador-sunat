@@ -332,6 +332,35 @@ async function cargarConexiones() {
   }) : [linea('Ningún otro sistema está conectado: todo se emite desde aquí.', '')]));
 }
 
+async function alConectar(e) {
+  e.preventDefault();
+  const msg = $('#mensaje-conexion');
+  msg.textContent = '';
+  try {
+    const r = await api('/llaves', { cuerpo: { nombre: e.target.nombre.value } });
+    $('#llave-nueva').value = r.llave;
+    $('#direccion-api').value = r.direccion;
+    $('#caja-llave-nueva').hidden = false;
+    e.target.reset();
+    await cargarConexiones();
+  } catch (err) {
+    msg.textContent = err.message;
+  }
+}
+
+function copiarLlave() {
+  const texto = `Llave: ${$('#llave-nueva').value}\nDirección para emitir: ${$('#direccion-api').value}`;
+  navigator.clipboard?.writeText(texto).then(() => { $('#copiar-llave').textContent = '✔ Copiado'; }).catch(() => alert('No se pudo copiar: selecciónala y cópiala a mano.'));
+}
+
+/** Al cerrar el aviso, la llave se borra de la pantalla: nadie la ve después por encima del hombro. */
+function ocultarLlave() {
+  $('#llave-nueva').value = '';
+  $('#direccion-api').value = '';
+  $('#copiar-llave').textContent = 'Copiar llave y dirección';
+  $('#caja-llave-nueva').hidden = true;
+}
+
 async function exportar() {
   const mes = $('#mes-exportar').value;
   const que = $('#que-exportar').value;
@@ -419,6 +448,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-usuario').addEventListener('submit', alDarAcceso);
   $('#form-sol').addEventListener('submit', alGuardarSol);
   $('#form-cuenta').addEventListener('submit', alGuardarCuenta);
+  $('#form-conexion').addEventListener('submit', alConectar);
+  $('#copiar-llave').addEventListener('click', copiarLlave);
+  $('#listo-llave').addEventListener('click', ocultarLlave);
   for (const b of document.querySelectorAll('#periodo-caja button')) b.addEventListener('click', () => cargarCaja(b.dataset.periodo).catch((err) => alert(err.message)));
   $('#form-cierre').addEventListener('submit', alCerrarCaja);
   $('#condicion-compra').addEventListener('change', (e) => { $('#caja-vence-compra').hidden = e.target.value !== 'CREDITO'; $('#form-compra').vence.required = e.target.value === 'CREDITO'; });

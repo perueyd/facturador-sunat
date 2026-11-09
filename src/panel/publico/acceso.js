@@ -76,7 +76,7 @@ async function alActivarRecuperacion(e) {
 function irARecuperar() {
   $('#vista-entrar').hidden = true;
   $('#vista-recuperar').hidden = false;
-  // Por correo solo si el facturador tiene correo configurado; si no, queda la llave de la tienda.
+  // Por correo solo si el facturador tiene correo configurado; si no, queda la clave de recuperación.
   api('/recuperar').then((r) => {
     $('#form-recuperar-correo').hidden = !r.correo;
     $('#caja-recuperar-llave').open = !r.correo;

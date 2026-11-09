@@ -10,22 +10,23 @@ autorización escrita y la lista de `docs/PLAN.md` (sección 6).
 | Base de datos (comprobantes, XML, constancias) | Supabase | Gratis para empezar |
 | Servidor del facturador (la API) | Render | Gratis (plan *Free*) |
 | Cola cada 5 min (mantiene despierto al servidor) | cron-job.org | Gratis |
-| Respaldo diario y cola de reserva | GitHub Actions | Gratis (con el repositorio público) |
+| Respaldo diario y cola de reserva | GitHub Actions | Gratis (también con el repositorio privado) |
 
 > **Desde el 02/11/2026 el facturador está en Starter** (US$ 7/mes, no se duerme; `plan: starter`
 > en `render.yaml`). Lo que sigue explica el plan gratis, por si se vuelve a él.
 >
 > **Plan gratis de Render:** se "duerme" tras 15 minutos sin visitas y tarda casi un minuto
 > en despertar. cron-job.org lo visita cada 5 minutos (paso 5b), así que casi siempre está
-> despierto. GitHub también tiene la cola cada 5 minutos, pero en la práctica (octubre 2026)
-> la ejecuta cada 2 o 3 horas: sirve de reserva, no para mantenerlo despierto. Si alguna vez
-> la tienda lo encuentra dormido, la boleta queda pendiente y se emite con
-> **"Emitir de nuevo"** en el panel; no se pierde nada. Para producción conviene *Starter*
+> despierto. GitHub también corre la cola, cada 6 horas: es solo la reserva por si
+> cron-job.org falla, no sirve para mantenerlo despierto. Si alguna vez una página conectada
+> lo encuentra dormido, la boleta queda pendiente y se envía sola; no se pierde nada. Para
+> producción conviene *Starter*
 > (US$ 7 al mes en octubre 2026; revisa el precio en Render) y nunca se dormirá.
 >
-> **Deja el repositorio público:** GitHub da minutos ilimitados a los repositorios públicos.
-> En uno privado, la cola cada 5 minutos gastaría más que los minutos gratis del mes. El
-> repositorio no tiene ninguna clave y los respaldos van cifrados.
+> **Público o privado:** el repositorio no tiene ninguna clave y los respaldos van cifrados, así
+> que puede ser público. Si lo pasas a privado (GitHub → Settings → Danger Zone → Change
+> visibility), las tareas automáticas gastan unos 250 minutos al mes (cola de reserva ~120,
+> padrón ~60, respaldo ~30, pruebas el resto) de los 2.000 gratis. Medido el 09/11/2026.
 
 Necesitas tu PC con la carpeta del facturador (`C:\Users\HP\facturador-sunat`) actualizada:
 ```
@@ -173,9 +174,14 @@ Puedes generar otros en **Más → Códigos de respaldo** (los anteriores dejan 
 - **Olvidaste la contraseña:** toca **"¿Olvidaste tu contraseña?"** → tu correo → abre el enlace que
   llega (vale 30 minutos) → contraseña nueva + el código de la app (o uno de respaldo). Requiere el
   paso 6c (correo con Resend); sin él, esta opción no aparece.
-- **Perdiste las dos cosas (solo el dueño):** "¿Olvidaste tu contraseña?" → **"¿Perdiste el celular y
-  no tienes códigos de respaldo?"** → pega la llave de la tienda (`FACTURADOR_LLAVE` de Vercel) →
-  contraseña nueva → agrega la cuenta otra vez en tu app → código → **Activar**.
+- **Perdiste las dos cosas (quien administra el facturador):** "¿Olvidaste tu contraseña?" →
+  **"¿Perdiste el celular y no tienes códigos de respaldo?"** → pega la **CLAVE_RECUPERACION** de Render
+  → contraseña nueva → agrega la cuenta otra vez en tu app → código → **Activar**. Para tenerla lista:
+  Render → tu servicio → **Environment** → agrega `CLAVE_RECUPERACION` con 16 caracteres o más, y
+  guárdala en un lugar seguro (no en el chat ni en GitHub). Desde el 09/11/2026 la llave de la tienda
+  (`fk_…`) ya no sirve para esto: las llaves se entregan a programadores de otras páginas.
+- **Un cliente del facturador perdió todo:** desde tu PC, `npm run usuario -- recuperar --email su@correo.com`
+  (le da contraseña y código nuevos), o invítalo con otro correo desde Plataforma.
 - Desde la PC: `npm run usuario -- recuperar --email tu@correo.com`.
 
 Cada vez que se cambia la contraseña por estos caminos llega un aviso a tu correo (si está el paso 6c).

@@ -69,6 +69,11 @@ Luego sal del panel y vuelve a entrar.
 4. Al entrar, ve **Configuración de tu empresa** con lo que le falta: certificado digital, primera
    boleta de prueba aceptada (beta), logo, usuario SOL secundario y producción.
 5. Él mismo invita a sus vendedores o a su contador (Más → Usuarios) con el mismo tipo de enlace.
+6. **Si tiene tienda en línea:** él (o tú, que eres dueño de las empresas que das de alta) entra a
+   **Más → Conexiones con páginas web → Conectar una página web** y entrega la llave y la dirección
+   al programador de su tienda (guía: `docs/API.md`). Su página solo pide la boleta cuando el pago
+   ya está confirmado. Si su tienda es Shopify, WooCommerce o Wix, hace falta un pequeño "puente"
+   que avise al facturador cuando entra un pago: el facturador no trae uno hecho.
 
 Lo que el cliente hace en SUNAT con su Clave SOL (no se puede automatizar): crear su usuario SOL
 secundario solo con permisos de comprobantes electrónicos y, para producción, los trámites de

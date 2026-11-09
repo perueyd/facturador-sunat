@@ -18,7 +18,7 @@ import type { Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Almacen } from '../almacen/almacen.js';
-import { autenticarLlave, listarLlaves, revocarLlave } from '../api/llaves.js';
+import { ErrorLlave, autenticarLlave, crearConexion, listarLlaves, revocarLlave } from '../api/llaves.js';
 import { ErrorInvitacion, aceptarInvitacion, activarInvitacion, invitar, nuevoEnlace, verInvitacion } from './invitaciones.js';
 import { ErrorConfiguracionSunat, guardarCredencialesSol } from '../sunat/configuracion.js';
 import type { EnviarCorreo } from '../avisos/avisos.js';
@@ -226,8 +226,10 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   // ---------- Recuperar el acceso ----------
   // 1. Contraseña olvidada: enlace por correo (pide además el código de la app o uno de respaldo).
   // 2. Celular perdido: se entra con un código de respaldo en lugar del de la app.
-  // 3. Perdió las dos cosas: contraseña y segundo paso nuevos, probando que es el DUEÑO con la
-  //    llave de la tienda (fk_…) de su empresa, o con CLAVE_RECUPERACION puesta en Render.
+  // 3. Perdió las dos cosas: contraseña y segundo paso nuevos con CLAVE_RECUPERACION (Render).
+  //    Antes también valía una llave de API (fk_…) de una empresa de la que era dueño. Se quitó
+  //    el 09/11/2026: las llaves se entregan al programador de cada página conectada, y con una
+  //    de ellas más el correo del dueño se podía tomar su cuenta (con TODAS sus empresas).
 
   // Activa el segundo paso recién configurado y entrega los códigos de respaldo (se ven UNA vez).
   const activarConRespaldo = async (c: Context, ip: string, usuarioId: string, codigo: unknown) => {
@@ -247,20 +249,12 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   const usuarioActivoPorCorreo = async (email: unknown) =>
     (await d.db.query(`SELECT id, email, totp_activo FROM usuarios WHERE lower(email) = lower($1) AND activo`, [typeof email === 'string' ? email.trim() : ''])).rows[0] as
       { id: string; email: string; totp_activo: boolean } | undefined;
-  const pruebaParaRecuperar = async (clave: unknown, usuarioId: string | undefined) => {
-    const t = typeof clave === 'string' ? clave : '';
-    if (d.claveRecuperacionValida(t)) return true;
-    if (!usuarioId) return false;
-    const llave = await autenticarLlave(d.db, t.trim());
-    if (!llave) return false;
-    const dueno = await d.db.query(`SELECT 1 FROM usuario_empresa WHERE usuario_id = $1 AND empresa_id = $2 AND rol = 'DUENO'`, [usuarioId, llave.empresaId]);
-    return Boolean(dueno.rowCount);
-  };
+  const pruebaParaRecuperar = (clave: unknown) => d.claveRecuperacionValida(typeof clave === 'string' ? clave.trim() : '');
   const recuperacionIncorrecta = (c: Context, ip: string) => {
     if (!d.fallos.contar(ip)) return frenado(c);
     return d.recuperacionMuyCorta
-      ? d.error(c, 401, 'CLAVE_MUY_CORTA', 'La CLAVE_RECUPERACION de Render es muy corta: debe tener 16 caracteres o más. O usa la llave de la tienda (fk_…).')
-      : d.error(c, 401, 'CLAVE_INCORRECTA', 'La llave no es correcta para ese correo. Usa la llave de la tienda (FACTURADOR_LLAVE en Vercel, empieza con fk_) de una empresa de la que eres dueño.');
+      ? d.error(c, 401, 'CLAVE_MUY_CORTA', 'La CLAVE_RECUPERACION de Render es muy corta: debe tener 16 caracteres o más.')
+      : d.error(c, 401, 'CLAVE_INCORRECTA', 'La clave no es correcta. Es la CLAVE_RECUPERACION que está en Render (Environment). Si eres cliente del facturador, pide ayuda a quien te lo dio.');
   };
 
   app.get('/panel/api/recuperar', (c) => c.json({ correo: Boolean(d.correo) }));
@@ -269,7 +263,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     const ip = d.ipCliente(c);
     // Cada pedido cuenta (exista o no el correo): frena a quien quiera llenar buzones ajenos.
     if (d.fallos.excedido(ip) || !d.fallos.contar(ip)) return frenado(c);
-    if (!d.correo) return d.error(c, 409, 'SIN_CORREO', 'El envío de correos no está configurado. Usa la llave de la tienda.');
+    if (!d.correo) return d.error(c, 409, 'SIN_CORREO', 'El envío de correos no está configurado. Usa la clave de recuperación de Render.');
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const enlace = await crearEnlaceRecuperacion(d.db, { email: typeof b.email === 'string' ? b.email.slice(0, 200) : '', ip });
     if (enlace) {
@@ -303,7 +297,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const u = await usuarioActivoPorCorreo(b.email);
-    if (!(await pruebaParaRecuperar(b.clave, u?.id))) return recuperacionIncorrecta(c, ip);
+    if (!pruebaParaRecuperar(b.clave)) return recuperacionIncorrecta(c, ip);
     if (!u) return d.error(c, 404, 'NO_ENCONTRADO', 'No hay un usuario activo con ese correo.');
     let secreto: Buffer;
     try {
@@ -324,7 +318,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (d.fallos.excedido(ip)) return frenado(c);
     const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const u = await usuarioActivoPorCorreo(b.email);
-    if (!(await pruebaParaRecuperar(b.clave, u?.id))) return recuperacionIncorrecta(c, ip);
+    if (!pruebaParaRecuperar(b.clave)) return recuperacionIncorrecta(c, ip);
     // Solo se activa un segundo paso recién restablecido (inactivo): no sirve para cambiar uno vigente.
     if (!u || u.totp_activo) return d.error(c, 409, 'NADA_QUE_ACTIVAR', 'No hay un acceso pendiente de activar para ese correo.');
     return activarConRespaldo(c, ip, u.id, b.codigo);
@@ -392,6 +386,21 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
     if (s instanceof Response) return s;
     if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño ve las conexiones.');
     return c.json({ llaves: await listarLlaves(d.db, s.empresa.id) });
+  });
+  // Conectar una página web (la de un cliente, una tienda nueva…): la llave completa se entrega
+  // UNA vez, aquí, junto con la dirección a la que debe llamar; en la base solo queda su huella.
+  app.post('/panel/api/llaves', async (c) => {
+    const s = await conEmpresa(c);
+    if (s instanceof Response) return s;
+    if (s.empresa.rol !== 'DUENO') return d.error(c, 403, 'SIN_PERMISO', 'Solo el dueño conecta otros sistemas.');
+    const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      const r = await crearConexion(d.db, { empresaId: s.empresa.id, nombre: texto(b.nombre, 200), usuarioId: s.usuarioId });
+      return c.json({ ...r, direccion: `${origenPropio(c)}/v1/comprobantes` }, 201);
+    } catch (e) {
+      if (e instanceof ErrorLlave) return d.error(c, 422, 'DATOS_INVALIDOS', e.message);
+      throw e;
+    }
   });
   app.post('/panel/api/llaves/:prefijo/desactivar', async (c) => {
     const s = await conEmpresa(c);

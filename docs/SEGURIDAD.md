@@ -89,6 +89,23 @@ A tener en cuenta (no son fallas, pero conviene saberlo):
   las ventas pendientes se conservan para no perderlas. No usar un celular compartido para vender sin
   internet, y no borrar los datos del navegador con ventas pendientes.
 
+## Revisión del 09/11/2026: conectar páginas web desde el panel
+
+Nuevo: el dueño crea la llave de una página (la de un cliente, una tienda nueva) en **Más →
+Conexiones con páginas web**. La llave sale UNA vez; en la base queda su huella; permisos `emitir`,
+`consultar` y `cobrar` (nunca `anular`); una llave activa por página, máximo 10 a la vez; un candado
+evita dos llaves por doble clic (probado: sin el candado, el segundo clic daba error 500).
+
+Corregido:
+
+1. **Una llave de API servía para tomar la cuenta del dueño.** Con la llave de cualquier empresa
+   y el correo de un DUEÑO de esa empresa se le podía poner contraseña y segundo paso nuevos. Las
+   llaves se entregan al programador de cada página, y quien da de alta empresas de clientes es
+   dueño de todas ellas: el programador de un cliente (o el propio cliente) podía quedarse con la
+   cuenta del administrador y todas sus empresas. Ahora recuperar sin nada exige `CLAVE_RECUPERACION`
+   de Render; la llave no sirve (prueba en `tests/db/recuperacion.test.ts`). La primera configuración
+   por web (solo con la base sin ningún usuario) sigue aceptando la llave: ya está cerrada para siempre.
+
 ## Panel web (`/panel`)
 
 | Tema | Cómo está protegido |
@@ -111,7 +128,7 @@ A tener en cuenta (no son fallas, pero conviene saberlo):
 | Alta de empresas | Solo usuarios marcados como administrador de la plataforma (por comando, en la PC); un RUC existente responde 409. |
 | Códigos de respaldo | 10 por usuario, ~50 bits cada uno, de un solo uso; en la base solo su huella SHA-256 (con el id del usuario). Se gastan en la misma orden que los comprueba (dos entradas a la vez no los usan dos veces) y solo después de verificar la contraseña. Generar nuevos exige un código del momento y anula los anteriores. |
 | Recuperar por correo | Responde igual exista o no el correo (y sin esperar el envío). Enlace de 32 bytes aleatorios, solo su huella en la base, vale 30 minutos y una vez; máximo uno cada 2 minutos por usuario y límite por dirección. El token va después de `#` (no llega a servidores ni a registros). Pide además el código de la app o uno de respaldo: robar el correo no basta. Cierra todas las sesiones y avisa por correo. |
-| Recuperar sin nada (dueño) | Con una llave de API vigente (`fk_…`) de una empresa donde ese usuario es DUEÑO, o con `CLAVE_RECUPERACION` en Render; en tiempo constante y con límite de intentos. Contraseña y segundo paso nuevos (inactivo hasta confirmar el código), cierra todas las sesiones, avisa por correo y queda en `auditoria`. Quien tiene esa llave ya puede emitir a nombre de la empresa. |
+| Recuperar sin nada | Solo con `CLAVE_RECUPERACION` en Render (mín. 16 caracteres; la tiene solo quien administra el facturador); en tiempo constante y con límite de intentos. Contraseña y segundo paso nuevos (inactivo hasta confirmar el código), cierra todas las sesiones, avisa por correo y queda en `auditoria`. Una llave de API (`fk_…`) **ya no sirve** para esto (ver revisión del 09/11/2026). |
 | Primera configuración por web | Solo mientras la base no tenga NINGÚN usuario (con bloqueo para que dos pestañas no creen dos). Exige una llave de API vigente de ESA empresa (la de la tienda) o `CLAVE_INSTALACION` en Render (mín. 16 caracteres), con límite de intentos. Activar exige la prueba otra vez y que ese sea el único usuario, aún sin 2FA. Después se cierra para siempre. |
 | Avisos por correo | Solo a DUEÑO y ADMIN activos; cada aviso una sola vez; la clave del proveedor solo en variables de entorno. |
 
