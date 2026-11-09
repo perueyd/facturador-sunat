@@ -497,6 +497,39 @@ function abrirDevolucion(c) {
   $('#dialogo-devolucion').showModal();
 }
 
+// ---------- Nota de débito (cobrar algo más sobre un comprobante) ----------
+let debitoDe;
+let pedidoDebito;
+function abrirDebito(c) {
+  debitoDe = c;
+  // Un número interno por apertura: si se pulsa dos veces "Emitir", sale UNA sola nota.
+  pedidoDebito = `PANEL-${crypto.randomUUID()}`;
+  const f = $('#form-debito');
+  f.reset();
+  $('#titulo-debito').textContent = `Cobrar algo más sobre ${c.numero}`;
+  $('#error-debito').textContent = '';
+  $('#dialogo-debito').showModal();
+}
+
+async function alEmitirDebito(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const b = e.target.querySelector('button[type=submit]');
+  b.disabled = true;
+  try {
+    const r = await api(`/comprobantes/${debitoDe.id}/nota-debito`, {
+      cuerpo: { pedido: pedidoDebito, motivo: f.get('motivo'), concepto: f.get('concepto'), sustento: f.get('sustento'), monto: String(f.get('monto')).trim().replace(',', '.') },
+    });
+    $('#dialogo-debito').close();
+    mostrarResultado(r);
+    await cargarPanel();
+  } catch (err) {
+    $('#error-debito').textContent = [err.message, ...(err.detalles ?? [])].join(' ');
+  } finally {
+    b.disabled = false;
+  }
+}
+
 async function alDevolver(e) {
   e.preventDefault();
   const f = new FormData(e.target);
@@ -548,11 +581,17 @@ function mostrarResultado(c) {
     }));
     botones.append(boton('Copiar enlace', () => navigator.clipboard?.writeText(c.enlaces.cliente)));
   }
+  const esVenta = c.tipo === '01' || c.tipo === '03';
   if (tiene('cobros') && c.tipo !== '07' && c.saldo && c.saldo !== '0.00' && c.estado !== 'RECHAZADO') {
     botones.append(boton(`Registrar cobro (saldo S/ ${c.saldo})`, () => abrirCobro({ id: c.id, numero: c.numero, saldo: c.saldo })));
   }
+  const aceptado = c.estado === 'ACEPTADO' || c.estado === 'ACEPTADO_OBS';
+  // Cobrar algo más (nota de débito): sobre una factura ya aceptada o una boleta. Dueño/administrador.
+  if (yo?.puedeCorregir && tiene('notas') && esVenta && (aceptado || (c.tipo === '03' && !['RECHAZADO', 'ANULADO', 'ANULACION_EN_PROCESO'].includes(c.estado)))) {
+    botones.append(boton('Cobrar algo más (nota de débito)', () => abrirDebito(c)));
+  }
   // Corregir: devolución total (nota de crédito) o anulación. Solo dueño/administrador.
-  if (yo?.puedeCorregir && c.tipo !== '07' && (c.estado === 'ACEPTADO' || c.estado === 'ACEPTADO_OBS')) {
+  if (yo?.puedeCorregir && c.tipo !== '07' && aceptado) {
     const corregir = boton('Devolución total (nota de crédito)', () => abrirDevolucion(c));
     corregir.classList.add('peligro');
     const anular = boton('Anular (error al emitir)', async () => {
@@ -565,7 +604,8 @@ function mostrarResultado(c) {
       } catch (err) { alert(err.message); }
     });
     anular.classList.add('peligro');
-    botones.append(corregir, anular);
+    // Una nota de débito no se "devuelve": si estuvo mal, se anula.
+    botones.append(...(esVenta ? [corregir] : []), anular);
   }
   partes.push(botones);
   caja.replaceChildren(...partes);

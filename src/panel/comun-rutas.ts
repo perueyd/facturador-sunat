@@ -26,6 +26,9 @@ export function csvParaExcel(lineas: unknown[][]): string {
   return '\uFEFF' + lineas.map((l) => l.map(celda).join(';')).join('\r\n') + '\r\n';
 }
 
+/** Número interno que el formulario del panel manda con cada emisión: evita emitir dos veces por un doble clic. */
+export const PEDIDO_PANEL = /^PANEL-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Origen público de esta petición (detrás de Render llega por https aunque el servidor vea http). */
 export function origenPropio(c: Context): string {
   const url = new URL(c.req.url);

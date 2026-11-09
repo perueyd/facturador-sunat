@@ -9,7 +9,7 @@ import type {
   Afectacion,
   Cliente,
   Comprobante,
-  DocumentoReferencia,
+  DatosNota,
   Empresa,
   FormaPago,
   ItemEntrada,
@@ -28,11 +28,8 @@ export interface SolicitudComprobante {
   formaPago: FormaPago;
   /** Descuento global con IGV (cupón, oferta): se resta del total de los productos gravados. */
   descuentoGlobal?: string;
-  notaCredito?: {
-    referencia: DocumentoReferencia;
-    motivoCodigo: string;
-    motivoDescripcion: string;
-  };
+  notaCredito?: DatosNota;
+  notaDebito?: DatosNota;
 }
 
 export interface ContextoEmpresa {
@@ -80,6 +77,7 @@ export function prepararComprobante(s: SolicitudComprobante, ctx: ContextoEmpres
     comprobantesPermitidos: ctx.comprobantesPermitidos,
     afectacionesPermitidas: ctx.afectacionesPermitidas,
     ...(s.notaCredito ? { notaCredito: s.notaCredito } : {}),
+    ...(s.notaDebito ? { notaDebito: s.notaDebito } : {}),
   });
   if (!/^\d{2}:\d{2}:\d{2}$/.test(s.horaEmision)) errores.push('La hora de emisión debe tener el formato HH:MM:SS.');
   if (errores.length > 0 || !items) {
@@ -100,6 +98,7 @@ export function prepararComprobante(s: SolicitudComprobante, ctx: ContextoEmpres
       totales,
       formaPago: s.formaPago,
       ...(s.notaCredito ? { notaCredito: s.notaCredito } : {}),
+      ...(s.notaDebito ? { notaDebito: s.notaDebito } : {}),
     },
   };
 }

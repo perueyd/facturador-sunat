@@ -82,8 +82,8 @@ Cabecera en todos (salvo `salud`): `Authorization: Bearer fk_xxxxxxxxxxxx_…`
 | Campo | Obligatorio | Valores |
 |---|---|---|
 | `pedido` | sí | Número de pedido de tu tienda (máx. 100 caracteres) |
-| `tipo` | sí | `BOLETA`, `FACTURA`, `NOTA_CREDITO` |
-| `serie` | no | Por defecto `B001` / `F001` / `BC01` / `FC01` |
+| `tipo` | sí | `BOLETA`, `FACTURA`, `NOTA_CREDITO`, `NOTA_DEBITO` |
+| `serie` | no | Por defecto `B001` / `F001` / `BC01` / `FC01` / `BD01` / `FD01` |
 | `fecha` | no | `AAAA-MM-DD` (por defecto, hoy en Lima). Debe ser la fecha REAL de la venta. Se acepta hasta 3 días atrás para facturas y boletas (plazo de envío a SUNAT, parámetros con vigencia; el de boletas es provisional, ver migración 038); más atrás responde 422 sin gastar número |
 | `marca` | no | Nombre de la marca (por defecto, la del canal) |
 | `cliente.tipoDocumento` | no | `DNI`, `RUC`, `CE`, `PASAPORTE`, `NINGUNO` (por defecto `NINGUNO`: boletas de hasta S/ 700) |
@@ -96,6 +96,7 @@ Cabecera en todos (salvo `salud`): `Authorization: Bearer fk_xxxxxxxxxxxx_…`
 | `descuento` | no | Descuento total **con IGV** (cupón u oferta), como texto: `"50.00"`. El total queda en suma de ítems − descuento; en el comprobante va como descuento global que rebaja la base del IGV. `"0.00"` = sin descuento. Solo boletas y facturas, y solo sobre productos gravados |
 | `formaPago` | no | `"CONTADO"` (por defecto) o `{ "cuotas": [{ "monto": "500.00", "vence": "2026-12-31" }] }` (solo facturas) |
 | `notaCredito` | en NC | `{ "tipo": "FACTURA", "serie": "F001", "numero": 15, "motivo": "07", "descripcion": "Devolución" }` |
+| `notaDebito` | en ND | Igual que `notaCredito`, con motivo del catálogo 10: `01` intereses por mora, `02` aumento en el valor, `03` penalidades / otros conceptos. Series por defecto `FD01` (de factura) y `BD01` (de boleta). La factura debe estar ya aceptada por SUNAT. Es un cargo (servicio): usa `"unidad": "ZZ"`; no mueve stock |
 | `pago` | no | Pago ya confirmado: `{ "medio": "YAPE", "referencia": "nº de operación" }`. Se registra por el total y el comprobante queda `PAGADO`. Requiere el permiso `cobrar`. El dinero queda en la cuenta **predeterminada** de ese medio (panel → Más → Cuentas donde recibes dinero); opcional `"cuenta": "<id>"` para elegir otra del mismo medio. |
 
 **Respuestas**

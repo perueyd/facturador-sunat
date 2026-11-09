@@ -11,7 +11,7 @@ import { dec, sumar, type Decimal } from '../dinero.js';
 import { recalcularCobro } from '../cobros/pagos.js';
 import { codigoErrorPg, enTransaccion, restriccionPg, type Db, type Tx } from '../db/conexion.js';
 import { ahoraLima, diasEntre, sumarDias } from '../fechas.js';
-import { TipoComprobante, idComprobanteLegible } from '../tipos.js';
+import { TipoComprobante, idComprobanteLegible, notaDe } from '../tipos.js';
 import { TipoDocIdentidad } from '../validaciones/documentos.js';
 import { moverStockPorComprobante, productosPorSku } from '../inventario/stock.js';
 import { prepararComprobante, type SolicitudComprobante } from './preparar.js';
@@ -90,7 +90,7 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
   // tomar el correlativo. La fecha debe ser la REAL de la venta (R.C.P. art. 5: se emite al entregar
   // el bien o al cobrar, lo que ocurra primero). Plazos: parámetros con vigencia (ver más abajo).
   const hoy = ahoraLima().fecha;
-  const deBoleta = s.tipo === TipoComprobante.BOLETA || s.notaCredito?.referencia.tipo === TipoComprobante.BOLETA;
+  const deBoleta = s.tipo === TipoComprobante.BOLETA || notaDe(s)?.referencia.tipo === TipoComprobante.BOLETA;
   const plazo = (await parametro(tx, deBoleta ? 'PLAZO_ENVIO_BOLETA_DIAS' : 'PLAZO_ENVIO_FACTURA_DIAS', ctx.empresa.regimen, s.fechaEmision)).toNumber();
   if (diasEntre(s.fechaEmision, hoy) > plazo) {
     const minimo = sumarDias(hoy, -plazo).split('-').reverse().join('/');
@@ -100,11 +100,14 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
     ]);
   }
 
-  // Nota de crédito: el comprobante original debe existir y estar vigente; el cliente es el mismo.
+  // Nota de crédito o de débito: el comprobante original debe existir y estar vigente; el cliente
+  // es el mismo. Una nota modifica UN solo comprobante (R.S. 000048-2026, desde el 1-ene-2027).
   let referenciaId: string | undefined;
   let saldoReferencia: { nombre: string; disponible: Decimal } | undefined;
-  if (s.tipo === TipoComprobante.NOTA_CREDITO && s.notaCredito) {
-    const ref = s.notaCredito.referencia;
+  const nota = (s.tipo === TipoComprobante.NOTA_CREDITO || s.tipo === TipoComprobante.NOTA_DEBITO) ? notaDe(s) : undefined;
+  if (nota) {
+    const ref = nota.referencia;
+    const nombreNota = s.tipo === TipoComprobante.NOTA_CREDITO ? 'nota de crédito' : 'nota de débito';
     const orig = await tx.query(
       `SELECT id, estado, importe_total, cliente_tipo_doc, cliente_numero_doc, cliente_nombre, cliente_direccion
        FROM comprobantes WHERE empresa_id = $1 AND tipo_comprobante = $2 AND serie = $3 AND numero = $4
@@ -115,7 +118,12 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
     const nombreRef = idComprobanteLegible(ref.serie, ref.numero);
     if (!o) throw new ErrorValidacion([`No existe el comprobante ${nombreRef} que quieres modificar.`]);
     if (['RECHAZADO', 'ANULADO', 'ANULACION_EN_PROCESO'].includes(o.estado)) {
-      throw new ErrorValidacion([`El comprobante ${nombreRef} está ${o.estado.toLowerCase()}; no se le puede emitir nota de crédito.`]);
+      throw new ErrorValidacion([`El comprobante ${nombreRef} está ${o.estado.toLowerCase()}; no se le puede emitir ${nombreNota}.`]);
+    }
+    // La de débito solo sobre una factura ya aceptada por SUNAT (o una boleta): orientacion.sunat.gob.pe,
+    // "Nota de Débito y Nota de Crédito Electrónica", leído el 09/11/2026.
+    if (s.tipo === TipoComprobante.NOTA_DEBITO && ref.tipo === TipoComprobante.FACTURA && !['ACEPTADO', 'ACEPTADO_OBS'].includes(o.estado)) {
+      throw new ErrorValidacion([`La factura ${nombreRef} aún no fue aceptada por SUNAT; la nota de débito se emite cuando la acepte.`]);
     }
     referenciaId = o.id as string;
     s = {
@@ -127,12 +135,16 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
         ...(o.cliente_direccion ? { direccion: o.cliente_direccion as string } : {}),
       },
     };
+    // Lo que se puede acreditar: el original, más lo que le sumaron sus notas de débito, menos
+    // lo que ya rebajaron sus notas de crédito.
     const previas = await tx.query(
-      `SELECT importe_total FROM comprobantes WHERE comprobante_referencia_id = $1 AND estado NOT IN ('RECHAZADO', 'ANULADO')`,
+      `SELECT tipo_comprobante, importe_total FROM comprobantes WHERE comprobante_referencia_id = $1 AND estado NOT IN ('RECHAZADO', 'ANULADO')`,
       [referenciaId],
     );
-    const yaAcreditado = sumar(previas.rows.map((f) => dec(f.importe_total as string)));
-    saldoReferencia = { nombre: nombreRef, disponible: dec(o.importe_total as string).minus(yaAcreditado) };
+    const de = (tipo: string) => sumar(previas.rows.filter((f) => f.tipo_comprobante === tipo).map((f) => dec(f.importe_total as string)));
+    if (s.tipo === TipoComprobante.NOTA_CREDITO) {
+      saldoReferencia = { nombre: nombreRef, disponible: dec(o.importe_total as string).plus(de(TipoComprobante.NOTA_DEBITO)).minus(de(TipoComprobante.NOTA_CREDITO)) };
+    }
   }
 
   const preparado = prepararComprobante(s, ctx);
@@ -189,7 +201,7 @@ async function emitirEnTransaccion(tx: Tx, p: PedidoEmision): Promise<string> {
         montoBoletaIdentificar: ctx.parametros.montoBoletaIdentificar.toString(),
         regimen: ctx.empresa.regimen,
       }),
-      referenciaId ?? null, c.notaCredito?.motivoCodigo ?? null, c.notaCredito?.motivoDescripcion ?? null,
+      referenciaId ?? null, notaDe(c)?.motivoCodigo ?? null, notaDe(c)?.motivoDescripcion ?? null,
       ctx.ambiente, p.usuarioId ?? null, p.apiLlaveId ?? null,
       c.totales.descuentoGlobal?.monto.toFixed(2) ?? '0', c.totales.descuentoGlobal?.base.toFixed(2) ?? null,
     ],

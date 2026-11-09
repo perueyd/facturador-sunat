@@ -14,9 +14,9 @@
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { montoEnLetras } from '../calculos/monto-en-letras.js';
-import { MOTIVOS_NOTA_CREDITO } from '../catalogos.js';
+import { MOTIVOS_NOTA_CREDITO, MOTIVOS_NOTA_DEBITO } from '../catalogos.js';
 import { aTexto2, aTextoHasta, dec, type Decimal } from '../dinero.js';
-import { TipoComprobante, idComprobanteLegible, type Comprobante } from '../tipos.js';
+import { TipoComprobante, idComprobanteLegible, notaDe, type Comprobante } from '../tipos.js';
 
 export type FormatoPdf = 'A4' | 'TICKET_80';
 
@@ -37,6 +37,7 @@ const TITULOS: Record<string, string> = {
   [TipoComprobante.FACTURA]: 'FACTURA ELECTRÓNICA',
   [TipoComprobante.BOLETA]: 'BOLETA DE VENTA ELECTRÓNICA',
   [TipoComprobante.NOTA_CREDITO]: 'NOTA DE CRÉDITO ELECTRÓNICA',
+  [TipoComprobante.NOTA_DEBITO]: 'NOTA DE DÉBITO ELECTRÓNICA',
 };
 
 const DOCUMENTOS: Record<string, string> = { '1': 'DNI', '6': 'RUC', '4': 'C.E.', '7': 'PASAPORTE', '0': 'DOC.' };
@@ -110,11 +111,13 @@ function prepararTextos(d: DatosPdf): Lineas {
   if (c.tipo === TipoComprobante.FACTURA) datos.push(['Forma de pago', c.formaPago.tipo === 'CREDITO' ? 'CRÉDITO' : 'CONTADO']);
 
   const referencia: [string, string][] = [];
-  if (c.notaCredito) {
-    const r = c.notaCredito.referencia;
+  const nota = notaDe(c);
+  if (nota) {
+    const r = nota.referencia;
+    const motivos = c.notaCredito ? MOTIVOS_NOTA_CREDITO : MOTIVOS_NOTA_DEBITO;
     referencia.push(['Documento que modifica', `${TITULOS[r.tipo] ?? r.tipo} ${idComprobanteLegible(r.serie, r.numero)}`]);
-    referencia.push(['Motivo', `${c.notaCredito.motivoCodigo} - ${MOTIVOS_NOTA_CREDITO[c.notaCredito.motivoCodigo] ?? ''}`]);
-    referencia.push(['Sustento', c.notaCredito.motivoDescripcion]);
+    referencia.push(['Motivo', `${nota.motivoCodigo} - ${motivos[nota.motivoCodigo] ?? ''}`]);
+    referencia.push(['Sustento', nota.motivoDescripcion]);
   }
 
   const t = c.totales;

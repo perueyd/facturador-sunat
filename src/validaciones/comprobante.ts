@@ -12,10 +12,11 @@ import {
   type ParametrosTributarios,
   type Regimen,
   type Totales,
-  type DocumentoReferencia,
+  type DatosNota,
+  notaDe,
 } from '../tipos.js';
 import { TipoDocIdentidad, esDniValido, esRucValido } from './documentos.js';
-import { esMotivoNotaCreditoValido } from '../catalogos.js';
+import { esMotivoNotaCreditoValido, esMotivoNotaDebitoValido } from '../catalogos.js';
 import { esFecha } from '../fechas.js';
 
 export interface DatosAValidar {
@@ -34,11 +35,8 @@ export interface DatosAValidar {
   comprobantesPermitidos: TipoComprobante[];
   /** Afectaciones que la empresa puede usar (ej. exonerado solo si tiene exoneración vigente). */
   afectacionesPermitidas: Afectacion[];
-  notaCredito?: {
-    referencia: DocumentoReferencia;
-    motivoCodigo: string;
-    motivoDescripcion: string;
-  };
+  notaCredito?: DatosNota;
+  notaDebito?: DatosNota;
 }
 
 // Caracteres de control (salvo tabulación y saltos de línea) no son válidos en XML.
@@ -59,7 +57,7 @@ export function validarComprobante(d: DatosAValidar): string[] {
   }
 
   // Serie
-  errores.push(...validarSerie(d.tipo, d.serie, d.notaCredito?.referencia.tipo));
+  errores.push(...validarSerie(d.tipo, d.serie, notaDe(d)?.referencia.tipo));
 
   // Fecha
   if (!esFecha(d.fechaEmision)) {
@@ -104,27 +102,32 @@ export function validarComprobante(d: DatosAValidar): string[] {
   errores.push(...validarFormaPago(d));
   errores.push(...validarDescuento(d));
 
-  // Nota de crédito
-  if (d.tipo === TipoComprobante.NOTA_CREDITO) {
-    if (!d.notaCredito) {
-      errores.push('La nota de crédito debe indicar el comprobante que modifica y el motivo.');
-    } else {
-      if (!esMotivoNotaCreditoValido(d.notaCredito.motivoCodigo)) {
-        errores.push(`Motivo de nota de crédito no válido: "${d.notaCredito.motivoCodigo}" (catálogo 09).`);
-      }
-      if (CONTROL.test(d.notaCredito.motivoDescripcion)) {
-        errores.push('El motivo de la nota de crédito tiene caracteres invisibles no permitidos.');
-      }
-      if (!d.notaCredito.motivoDescripcion.trim()) {
-        errores.push('Escribe el motivo de la nota de crédito (por ejemplo, "Devolución del producto").');
-      }
-      const ref = d.notaCredito.referencia;
-      if (ref.tipo !== TipoComprobante.FACTURA && ref.tipo !== TipoComprobante.BOLETA) {
-        errores.push('La nota de crédito solo puede modificar una factura o una boleta.');
-      }
-    }
-  }
+  // Notas de crédito y de débito: comprobante que modifican y motivo de su catálogo.
+  errores.push(...validarNota(d));
 
+  return errores;
+}
+
+function validarNota(d: DatosAValidar): string[] {
+  const credito = d.tipo === TipoComprobante.NOTA_CREDITO;
+  const debito = d.tipo === TipoComprobante.NOTA_DEBITO;
+  if (!credito && !debito) {
+    return d.notaCredito || d.notaDebito ? ['Solo las notas de crédito o de débito llevan comprobante de referencia y motivo.'] : [];
+  }
+  const nombre = credito ? 'nota de crédito' : 'nota de débito';
+  const nota = credito ? d.notaCredito : d.notaDebito;
+  if (!nota || (credito ? d.notaDebito : d.notaCredito)) return [`La ${nombre} debe indicar el comprobante que modifica y el motivo.`];
+  const errores: string[] = [];
+  if (!(credito ? esMotivoNotaCreditoValido : esMotivoNotaDebitoValido)(nota.motivoCodigo)) {
+    errores.push(`Motivo de ${nombre} no válido: "${nota.motivoCodigo}" (catálogo ${credito ? '09' : '10'}).`);
+  }
+  if (CONTROL.test(nota.motivoDescripcion)) errores.push(`El motivo de la ${nombre} tiene caracteres invisibles no permitidos.`);
+  if (!nota.motivoDescripcion.trim()) {
+    errores.push(`Escribe el motivo de la ${nombre} (por ejemplo, "${credito ? 'Devolución del producto' : 'Flete adicional'}").`);
+  }
+  if (nota.referencia.tipo !== TipoComprobante.FACTURA && nota.referencia.tipo !== TipoComprobante.BOLETA) {
+    errores.push(`La ${nombre} solo puede modificar una factura o una boleta.`);
+  }
   return errores;
 }
 
@@ -150,8 +153,8 @@ function validarCliente(d: DatosAValidar): string[] {
   if ([c.nombre, c.numeroDoc, c.direccion ?? ''].some((t) => CONTROL.test(t))) {
     errores.push('Los datos del cliente tienen caracteres invisibles no permitidos.');
   }
-  // Para notas de crédito, las reglas del cliente son las del comprobante que modifican.
-  const tipoBase = d.tipo === TipoComprobante.NOTA_CREDITO ? d.notaCredito?.referencia.tipo : d.tipo;
+  // Para las notas, las reglas del cliente son las del comprobante que modifican.
+  const tipoBase = notaDe(d)?.referencia.tipo ?? d.tipo;
 
   if (c.tipoDoc === TipoDocIdentidad.DNI && !esDniValido(c.numeroDoc)) {
     errores.push(`El DNI "${c.numeroDoc}" no es válido: debe tener exactamente 8 dígitos.`);
@@ -182,7 +185,7 @@ function validarCliente(d: DatosAValidar): string[] {
 function validarDescuento(d: DatosAValidar): string[] {
   if (d.descuentoGlobal === undefined) return [];
   if (d.tipo !== TipoComprobante.FACTURA && d.tipo !== TipoComprobante.BOLETA) {
-    return ['El descuento global solo se usa en facturas y boletas. En una nota de crédito pon los montos ya rebajados.'];
+    return ['El descuento global solo se usa en facturas y boletas. En una nota de crédito o de débito pon los montos ya rebajados.'];
   }
   if (!/^\d+(\.\d{1,2})?$/.test(d.descuentoGlobal) || dec(d.descuentoGlobal).lte(0)) {
     return ['El descuento debe ser un monto mayor que cero con hasta 2 decimales, por ejemplo "50.00".'];

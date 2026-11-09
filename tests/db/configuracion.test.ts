@@ -37,7 +37,7 @@ describe.skipIf(!URL_PRUEBAS)('configuración', () => {
               (SELECT formato_pdf FROM canales WHERE empresa_id = $1 AND nombre = 'Presencial') AS formato_presencial`,
       [a.empresaId],
     );
-    expect(r.rows[0]).toEqual({ series: 4, canales: 4, marcas: 1, direccion: 'AV. NUEVA 456', formato_presencial: 'TICKET_80' });
+    expect(r.rows[0]).toEqual({ series: 6, canales: 4, marcas: 1, direccion: 'AV. NUEVA 456', formato_presencial: 'TICKET_80' });
   });
 
   it('rechaza RUC o ubigeo inválidos', async () => {

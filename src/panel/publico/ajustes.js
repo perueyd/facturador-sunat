@@ -437,6 +437,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#archivo-logo').addEventListener('change', subirLogo);
   $('#form-devolucion').addEventListener('submit', alDevolver);
   $('#cancelar-devolucion').addEventListener('click', () => $('#dialogo-devolucion').close());
+  $('#form-debito').addEventListener('submit', alEmitirDebito);
+  $('#cancelar-debito').addEventListener('click', () => $('#dialogo-debito').close());
   $('#archivo-catalogo').addEventListener('change', importarDesdeArchivo);
   $('#activar-antiguos').addEventListener('click', () => cambiarAntiguos(true));
   $('#apagar-antiguos').addEventListener('click', () => {

@@ -16,6 +16,7 @@ export type Nodo = XMLBuilder;
 export const NS = {
   invoice: 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
   creditNote: 'urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2',
+  debitNote: 'urn:oasis:names:specification:ubl:schema:xsd:DebitNote-2',
   summary: 'urn:sunat:names:specification:ubl:peru:schema:xsd:SummaryDocuments-1',
   voided: 'urn:sunat:names:specification:ubl:peru:schema:xsd:VoidedDocuments-1',
   cac: 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2',

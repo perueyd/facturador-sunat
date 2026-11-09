@@ -44,7 +44,7 @@ import {
   crearUsuario, elegirEmpresa, entrar, leerSesion, nuevosCodigosRespaldo, recuperarConEnlace, regenerarCodigosRespaldo, restablecerAcceso, salir,
   type Rol, type Sesion,
 } from './usuarios.js';
-import { ROLES_CORRIGEN, ROLES_COMPRAS, UUID, origenPropio } from './comun-rutas.js';
+import { PEDIDO_PANEL, ROLES_CORRIGEN, ROLES_COMPRAS, UUID, origenPropio } from './comun-rutas.js';
 import { registrarAntiguos } from './rutas-antiguos.js';
 import { registrarCobros } from './rutas-cobros.js';
 import { registrarRutasContingencia } from './rutas-contingencia.js';
@@ -56,7 +56,6 @@ const COOKIE = '__Host-panel';
 /** Texto tal como llegó (sin recortar espacios: una contraseña puede tenerlos), con tope de largo. */
 const crudo = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
 /** El panel genera el número de pedido al abrir el formulario: pulsar dos veces no emite dos. */
-const PEDIDO_PANEL = /^PANEL-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const leer = (archivo: string) => readFileSync(new URL(`./publico/${archivo}`, import.meta.url));
 const PAGINA = { contenido: leer('index.html'), tipo: 'text/html; charset=utf-8' };

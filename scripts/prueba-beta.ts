@@ -48,7 +48,7 @@ const empresa: Empresa = {
 const ctx = {
   empresa,
   parametros: { igvTasa: new Decimal('0.18'), montoBoletaIdentificar: new Decimal('700') },
-  comprobantesPermitidos: [TipoComprobante.FACTURA, TipoComprobante.BOLETA, TipoComprobante.NOTA_CREDITO],
+  comprobantesPermitidos: [TipoComprobante.FACTURA, TipoComprobante.BOLETA, TipoComprobante.NOTA_CREDITO, TipoComprobante.NOTA_DEBITO],
   afectacionesPermitidas: [Afectacion.GRAVADO, Afectacion.EXONERADO],
 };
 const item = (descripcion: string, precio: string, cantidad = '1') => ({ codigo: 'P001', descripcion, unidad: 'NIU', cantidad, precioUnitarioConIgv: precio, afectacion: Afectacion.GRAVADO });
@@ -68,6 +68,15 @@ const casos: { nombre: string; s: SolicitudComprobante; numero: number }[] = [
   {
     nombre: 'Nota de crédito de factura', numero: base,
     s: { ...comun, tipo: '07', serie: 'FC01', cliente: { tipoDoc: TipoDocIdentidad.RUC, numeroDoc: '20100070970', nombre: 'CLIENTE EMPRESA S.A.C.' }, items: [item('Colchón devuelto', '899.90')], notaCredito: { referencia: { tipo: '01', serie: 'F001', numero: base }, motivoCodigo: '07', motivoDescripcion: 'Devolución de un producto' } },
+  },
+  // Nota de débito (08): catálogo 10 del Anexo 8 (R.S. 245-2017/SUNAT). Un cargo es un servicio (ZZ).
+  {
+    nombre: 'Nota de débito de factura', numero: base,
+    s: { ...comun, tipo: '08', serie: 'FD01', cliente: { tipoDoc: TipoDocIdentidad.RUC, numeroDoc: '20100070970', nombre: 'CLIENTE EMPRESA S.A.C.' }, items: [{ ...item('Flete a provincia', '118.00'), unidad: 'ZZ' }], notaDebito: { referencia: { tipo: '01', serie: 'F001', numero: base + 1 }, motivoCodigo: '02', motivoDescripcion: 'Aumento en el valor: flete' } },
+  },
+  {
+    nombre: 'Nota de débito de boleta', numero: base,
+    s: { ...comun, tipo: '08', serie: 'BD01', cliente: { tipoDoc: TipoDocIdentidad.DNI, numeroDoc: '12345678', nombre: 'CLIENTE DE PRUEBA' }, items: [{ ...item('Interés por pago tardío', '5.00'), unidad: 'ZZ' }], notaDebito: { referencia: { tipo: '03', serie: 'B001', numero: base }, motivoCodigo: '01', motivoDescripcion: 'Intereses por mora' } },
   },
 ];
 

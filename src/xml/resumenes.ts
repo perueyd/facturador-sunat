@@ -10,7 +10,7 @@
  */
 import type { Decimal } from '../dinero.js';
 import type { CondicionResumen } from '../catalogos.js';
-import { Afectacion, TipoComprobante, idComprobante, type Comprobante, type Empresa } from '../tipos.js';
+import { Afectacion, TipoComprobante, idComprobante, notaDe, type Comprobante, type Empresa } from '../tipos.js';
 import { crearDocumento, el, emisorResumen, firmaReferencia, monto, terminar } from './comun.js';
 
 export interface LineaResumen {
@@ -59,7 +59,7 @@ export function generarXmlResumenDiario(r: ResumenDiario, legible = false): stri
   if (r.lineas.length > 500) throw new Error('Máximo 500 líneas por resumen; divídelo en varios.'); // ⚠️ confirmar límite vigente
   for (const { comprobante: c } of r.lineas) {
     const esBoleta = c.tipo === TipoComprobante.BOLETA;
-    const esNotaDeBoleta = c.tipo === TipoComprobante.NOTA_CREDITO && c.notaCredito?.referencia.tipo === TipoComprobante.BOLETA;
+    const esNotaDeBoleta = notaDe(c)?.referencia.tipo === TipoComprobante.BOLETA;
     if (!esBoleta && !esNotaDeBoleta) {
       throw new Error(`${idComprobante(c.serie, c.numero)}: el resumen diario solo admite boletas y sus notas.`);
     }
@@ -86,10 +86,11 @@ export function generarXmlResumenDiario(r: ResumenDiario, legible = false): stri
     const cli = l.ele('cac:AccountingCustomerParty');
     el(cli, 'cbc:CustomerAssignedAccountID', c.cliente.numeroDoc);
     el(cli, 'cbc:AdditionalAccountID', c.cliente.tipoDoc);
-    if (c.notaCredito) {
+    const nota = notaDe(c);
+    if (nota) {
       const ref = l.ele('cac:BillingReference').ele('cac:InvoiceDocumentReference');
-      el(ref, 'cbc:ID', idComprobante(c.notaCredito.referencia.serie, c.notaCredito.referencia.numero));
-      el(ref, 'cbc:DocumentTypeCode', c.notaCredito.referencia.tipo);
+      el(ref, 'cbc:ID', idComprobante(nota.referencia.serie, nota.referencia.numero));
+      el(ref, 'cbc:DocumentTypeCode', nota.referencia.tipo);
     }
     el(l.ele('cac:Status'), 'cbc:ConditionCode', condicion);
     monto(l, 'sac:TotalAmount', c.totales.importeTotal, moneda);

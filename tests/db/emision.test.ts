@@ -209,6 +209,60 @@ describe.skipIf(!URL_PRUEBAS)('emisión con base de datos', () => {
     expect(await ultimoNumero('BC01')).toBe(2);
   });
 
+  // Pedido del dueño (09/11/2026): cobrar algo más sobre una venta ya emitida (flete, intereses).
+  it('nota de débito: solo sobre una factura aceptada (o una boleta), suma al saldo y no mueve stock', async () => {
+    const factura = emitido(await emitirComprobante(db, pedido({ solicitud: solicitudFactura({ items: [item('100.00')] }) })));
+    const nd = (monto: string, motivo = '02') =>
+      emitirComprobante(db, pedido({
+        solicitud: {
+          ...solicitudFactura({ items: [item(monto, '1', { codigo: 'FLETE', descripcion: 'Flete adicional' })] }),
+          tipo: TipoComprobante.NOTA_DEBITO,
+          serie: 'FD01',
+          notaDebito: { referencia: { tipo: TipoComprobante.FACTURA, serie: 'F001', numero: factura.comprobante.numero }, motivoCodigo: motivo, motivoDescripcion: 'Flete a provincia' },
+        },
+      }));
+    // Aún sin respuesta de SUNAT: no se le puede cargar nada.
+    const temprano = await nd('50.00');
+    expect(temprano.resultado).toBe('ERROR_VALIDACION');
+    if (temprano.resultado === 'ERROR_VALIDACION') expect(temprano.errores[0]).toMatch(/aún no fue aceptada por SUNAT/);
+    expect(await ultimoNumero('FD01')).toBe(0);
+
+    await db.query(`UPDATE comprobantes SET estado = 'ACEPTADO' WHERE id = $1`, [factura.id]);
+    const debito = emitido(await nd('50.00'));
+    expect(debito.comprobante).toMatchObject({ tipo: '08', serie: 'FD01', numero: 1 });
+    expect(debito.comprobante.notaDebito).toMatchObject({ motivoCodigo: '02', referencia: { serie: 'F001', numero: factura.comprobante.numero } });
+    expect(debito.comprobante.cliente.numeroDoc).toBe(factura.comprobante.cliente.numeroDoc);
+    expect(() => validarContraXsd(generarXmlComprobante(debito.comprobante), 'UBL-DebitNote-2.1.xsd')).not.toThrow();
+    expect((await nd('10.00', '07')).resultado).toBe('ERROR_VALIDACION'); // motivo de crédito, no de débito
+    // Es un cargo, no una venta de mercadería: no descuenta stock.
+    expect((await db.query(`SELECT count(*)::int AS n FROM movimientos_stock WHERE comprobante_id = $1`, [debito.id])).rows[0].n).toBe(0);
+
+    // Una nota de crédito posterior puede rebajar hasta lo facturado más lo cargado (100 + 50).
+    const nc = (monto: string) => emitirComprobante(db, pedido({
+      solicitud: {
+        ...solicitudFactura({ items: [item(monto)] }), tipo: TipoComprobante.NOTA_CREDITO, serie: 'FC01',
+        notaCredito: { referencia: { tipo: TipoComprobante.FACTURA, serie: 'F001', numero: factura.comprobante.numero }, motivoCodigo: '09', motivoDescripcion: 'Rebaja' },
+      },
+    }));
+    const excede = await nc('150.01');
+    if (excede.resultado === 'ERROR_VALIDACION') expect(excede.errores[0]).toMatch(/supera el saldo.*S\/ 150.00/);
+    else throw new Error('debió rechazarse');
+    emitido(await nc('150.00'));
+  });
+
+  it('nota de débito de una boleta: serie BD01 y se emite aunque SUNAT aún no responda', async () => {
+    const boleta = emitido(await emitirComprobante(db, pedido({ solicitud: solicitudBoleta({ items: [item('80.00')] }) })));
+    const r = emitido(await emitirComprobante(db, pedido({
+      solicitud: {
+        ...solicitudBoleta({ items: [item('5.00', '1', { descripcion: 'Interés por pago tardío' })] }), tipo: TipoComprobante.NOTA_DEBITO, serie: 'BD01',
+        notaDebito: { referencia: { tipo: TipoComprobante.BOLETA, serie: 'B001', numero: boleta.comprobante.numero }, motivoCodigo: '01', motivoDescripcion: 'Intereses por mora' },
+      },
+    })));
+    expect(r.comprobante).toMatchObject({ tipo: '08', serie: 'BD01', numero: 1 });
+    const guardado = await cargarComprobante(db, r.id);
+    expect(guardado?.comprobante.notaDebito?.motivoCodigo).toBe('01');
+  });
+
   it('nota de crédito de un comprobante que no existe', async () => {
     const r = await emitirComprobante(db, pedido({
       solicitud: {

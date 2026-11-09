@@ -122,7 +122,14 @@ export interface DocumentoReferencia {
   numero: number;
 }
 
-/** Datos completos de un comprobante (factura, boleta, nota de crédito) ya numerado. */
+/** Comprobante que modifica una nota, el motivo (catálogo 09 crédito / 10 débito) y su texto. */
+export interface DatosNota {
+  referencia: DocumentoReferencia;
+  motivoCodigo: string;
+  motivoDescripcion: string;
+}
+
+/** Datos completos de un comprobante (factura, boleta, nota de crédito o de débito) ya numerado. */
 export interface Comprobante {
   tipo: TipoComprobante;
   serie: string;
@@ -137,14 +144,14 @@ export interface Comprobante {
   items: ItemCalculado[];
   totales: Totales;
   formaPago: FormaPago;
-  /** Solo notas de crédito. */
-  notaCredito?: {
-    referencia: DocumentoReferencia;
-    /** Catálogo 09 */
-    motivoCodigo: string;
-    motivoDescripcion: string;
-  };
+  /** Solo notas de crédito (motivo del catálogo 09). */
+  notaCredito?: DatosNota;
+  /** Solo notas de débito (motivo del catálogo 10): cobrar algo más sobre una factura o boleta. */
+  notaDebito?: DatosNota;
 }
+
+/** La nota (de crédito o de débito) del comprobante, si es una nota. */
+export const notaDe = (c: { notaCredito?: DatosNota; notaDebito?: DatosNota }): DatosNota | undefined => c.notaCredito ?? c.notaDebito;
 
 /** Formatea el número como lo pide SUNAT en el XML: "B001-1" (sin ceros a la izquierda). */
 export function idComprobante(serie: string, numero: number): string {

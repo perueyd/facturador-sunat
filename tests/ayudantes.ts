@@ -31,7 +31,7 @@ export const empresaPrueba: Empresa = {
 export const contextoPrueba: ContextoEmpresa = {
   empresa: empresaPrueba,
   parametros: { igvTasa: new Decimal('0.18'), montoBoletaIdentificar: new Decimal('700') },
-  comprobantesPermitidos: [TipoComprobante.FACTURA, TipoComprobante.BOLETA, TipoComprobante.NOTA_CREDITO],
+  comprobantesPermitidos: [TipoComprobante.FACTURA, TipoComprobante.BOLETA, TipoComprobante.NOTA_CREDITO, TipoComprobante.NOTA_DEBITO],
   afectacionesPermitidas: [Afectacion.GRAVADO],
 };
 
@@ -85,7 +85,7 @@ const XSD = fileURLToPath(new URL('./xsd/ubl-2.1/maindoc/', import.meta.url));
  * El esquema exige contenido dentro de ExtensionContent (allí va la firma en la
  * fase 3), así que para validar se coloca un marcador de firma.
  */
-export function validarContraXsd(xml: string, esquema: 'UBL-Invoice-2.1.xsd' | 'UBL-CreditNote-2.1.xsd'): string {
+export function validarContraXsd(xml: string, esquema: 'UBL-Invoice-2.1.xsd' | 'UBL-CreditNote-2.1.xsd' | 'UBL-DebitNote-2.1.xsd'): string {
   const conMarcador = xml.replace(
     '<ext:ExtensionContent/>',
     '<ext:ExtensionContent><m:FirmaFase3 xmlns:m="urn:marcador-de-prueba"/></ext:ExtensionContent>',

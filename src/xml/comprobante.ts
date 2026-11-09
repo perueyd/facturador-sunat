@@ -1,5 +1,5 @@
 /**
- * XML UBL 2.1 de factura (01), boleta (03) y nota de crédito (07).
+ * XML UBL 2.1 de factura (01), boleta (03), nota de crédito (07) y nota de débito (08).
  */
 import { Decimal, aTextoHasta, dec, redondear } from '../dinero.js';
 import {
@@ -23,7 +23,9 @@ export function generarXmlComprobante(c: Comprobante, legible = false): string {
     case TipoComprobante.BOLETA:
       return generarInvoice(c, legible);
     case TipoComprobante.NOTA_CREDITO:
-      return generarNotaCredito(c, legible);
+      return generarNota(c, legible, 'credito');
+    case TipoComprobante.NOTA_DEBITO:
+      return generarNota(c, legible, 'debito');
     default:
       throw new Error(`Tipo de comprobante aún no soportado: ${c.tipo}`);
   }
@@ -110,8 +112,8 @@ function totalImpuestos(doc: Nodo, c: Comprobante): void {
   if (hay(Afectacion.INAFECTO)) subtotal(Afectacion.INAFECTO, t.inafecto, new Decimal(0));
 }
 
-function totalesMonetarios(doc: Nodo, c: Comprobante): void {
-  const m = doc.ele('cac:LegalMonetaryTotal');
+function totalesMonetarios(doc: Nodo, c: Comprobante, nombre = 'cac:LegalMonetaryTotal'): void {
+  const m = doc.ele(nombre);
   monto(m, 'cbc:LineExtensionAmount', c.totales.valorVenta, c.moneda);
   monto(m, 'cbc:TaxInclusiveAmount', c.totales.precioVenta, c.moneda);
   monto(m, 'cbc:PayableAmount', c.totales.importeTotal, c.moneda);
@@ -165,12 +167,17 @@ function generarInvoice(c: Comprobante, legible: boolean): string {
   return terminar(doc, legible);
 }
 
-function generarNotaCredito(c: Comprobante, legible: boolean): string {
-  const nc = c.notaCredito;
-  if (!nc) throw new Error('La nota de crédito necesita el comprobante de referencia y el motivo.');
+/**
+ * Nota de crédito (CreditNote) o de débito (DebitNote): igual estructura, salvo el nombre de la raíz,
+ * de las líneas (CreditNoteLine/CreditedQuantity o DebitNoteLine/DebitedQuantity) y del total, que
+ * en la de débito es RequestedMonetaryTotal (esquema OASIS UBL 2.1 DebitNote).
+ */
+function generarNota(c: Comprobante, legible: boolean, clase: 'credito' | 'debito'): string {
+  const nc = clase === 'credito' ? c.notaCredito : c.notaDebito;
+  if (!nc) throw new Error(`La nota de ${clase === 'credito' ? 'crédito' : 'débito'} necesita el comprobante de referencia y el motivo.`);
   const ref = idComprobante(nc.referencia.serie, nc.referencia.numero);
 
-  const doc = crearDocumento('creditNote', 'CreditNote', false);
+  const doc = clase === 'credito' ? crearDocumento('creditNote', 'CreditNote', false) : crearDocumento('debitNote', 'DebitNote', false);
   cabecera(doc, c);
   leyendas(doc, c);
   el(doc, 'cbc:DocumentCurrencyCode', c.moneda);
@@ -185,7 +192,12 @@ function generarNotaCredito(c: Comprobante, legible: boolean): string {
   emisor(doc, c.empresa);
   receptor(doc, c);
   totalImpuestos(doc, c);
-  totalesMonetarios(doc, c);
-  c.items.forEach((item, i) => linea(doc, c, item, i, 'CreditNoteLine', 'CreditedQuantity'));
+  if (clase === 'credito') {
+    totalesMonetarios(doc, c);
+    c.items.forEach((item, i) => linea(doc, c, item, i, 'CreditNoteLine', 'CreditedQuantity'));
+  } else {
+    totalesMonetarios(doc, c, 'cac:RequestedMonetaryTotal');
+    c.items.forEach((item, i) => linea(doc, c, item, i, 'DebitNoteLine', 'DebitedQuantity'));
+  }
   return terminar(doc, legible);
 }
