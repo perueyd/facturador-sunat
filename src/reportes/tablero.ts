@@ -8,7 +8,7 @@
  *     lo que falta cobrar.
  * Los cálculos de impuestos son SIEMPRE estimados: la declaración la confirma el contador.
  */
-import { sqlSaldo } from '../cobros/pagos.js';
+import { SQL_SE_COBRA, sqlSaldo } from '../cobros/pagos.js';
 import { diasDeContingencia } from '../contingencia/contingencia.js';
 import { type Db, sqlDelMes } from '../db/conexion.js';
 import { dec } from '../dinero.js';
@@ -110,7 +110,10 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
   const s = (await db.query(
     `SELECT count(*) FILTER (WHERE estado IN ('EMITIDO_LOCAL', 'PENDIENTE_ENVIO'))::int AS pendientes,
             count(*) FILTER (WHERE estado = 'RECHAZADO' AND fecha_emision >= $2::date - 30)::int AS rechazados
-       FROM comprobantes WHERE empresa_id = $1`,
+       FROM comprobantes
+      -- Solo los estados que se cuentan: así se usa el índice (empresa, estado) en vez de recorrer
+      -- todos los comprobantes de la empresa cada vez que se abre el Inicio.
+      WHERE empresa_id = $1 AND estado IN ('EMITIDO_LOCAL', 'PENDIENTE_ENVIO', 'RECHAZADO')`,
     [empresaId, hoy],
   )).rows[0];
   t.sunat = { pendientes: s.pendientes, rechazados: s.rechazados };
@@ -122,7 +125,7 @@ export async function tablero(db: Db, empresaId: string, opciones: { hoy?: strin
   if (activo('cobros')) {
     const p = (await db.query(
       `SELECT count(*)::int AS n, coalesce(sum(${sqlSaldo('c')}), 0)::text AS saldo FROM comprobantes c
-        WHERE c.empresa_id = $1 AND c.tipo_comprobante <> '07' AND c.estado_pago <> 'PAGADO' AND c.estado NOT IN ('RECHAZADO', 'ANULADO')`,
+        WHERE c.empresa_id = $1 AND c.tipo_comprobante ${SQL_SE_COBRA} AND c.estado_pago <> 'PAGADO' AND c.estado NOT IN ('RECHAZADO', 'ANULADO')`,
       [empresaId],
     )).rows[0];
     t.cobros = { comprobantes: p.n, saldo: dec(p.saldo).toFixed(2) };

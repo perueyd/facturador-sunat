@@ -5,7 +5,7 @@
 import type { Context, Hono } from 'hono';
 import { CATEGORIAS_GASTO, ErrorGasto, anularGasto, fotoDeGasto, gastosDelPeriodo, guardarFotoGasto, registrarGasto } from '../cobros/gastos.js';
 import { ErrorCuenta, caja, cerrarCaja, cierresDeCaja, guardarCuenta, lineasParaCerrar, listarCuentas } from '../cobros/caja.js';
-import { MEDIOS_PAGO, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
+import { MEDIOS_PAGO, SQL_SE_COBRA, registrarPago, sqlSaldo, type MedioPago } from '../cobros/pagos.js';
 import { ahoraLima, esFecha, sumarDias } from '../fechas.js';
 import { idComprobanteLegible } from '../tipos.js';
 import { ROLES_EMISORES } from './usuarios.js';
@@ -213,7 +213,7 @@ export function registrarCobros(app: Hono<any>, { d, conEmpresa, deLaEmpresa, si
               (SELECT min(q.fecha_vencimiento)::text FROM comprobante_cuotas q WHERE q.comprobante_id = c.id AND NOT q.pagada) AS proxima_cuota,
               k.telefono AS celular, c.cliente_tipo_doc, c.cliente_numero_doc
          FROM comprobantes c LEFT JOIN clientes k ON k.id = c.cliente_id
-        WHERE c.empresa_id = $1 AND c.tipo_comprobante <> '07' AND c.estado_pago <> 'PAGADO' AND c.estado NOT IN ('RECHAZADO', 'ANULADO')
+        WHERE c.empresa_id = $1 AND c.tipo_comprobante ${SQL_SE_COBRA} AND c.estado_pago <> 'PAGADO' AND c.estado NOT IN ('RECHAZADO', 'ANULADO')
         ORDER BY proxima_cuota NULLS LAST, c.fecha_emision LIMIT 50`,
       [s.empresa.id],
     );

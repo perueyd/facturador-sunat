@@ -56,11 +56,33 @@ describe.skipIf(!URL_PRUEBAS)('nota de débito (panel y API)', () => {
     const r = await cobrar(dueno, pedido);
     expect(r.status).toBe(201);
     const nd = await r.json();
-    expect(nd).toMatchObject({ numero: 'FD01-00000001', tipo: '08', total: '59.00', estadoPago: 'PENDIENTE' });
+    expect(nd).toMatchObject({ numero: 'FD01-00000001', tipo: '08', total: '59.00', saldo: '0.00' });
     expect((await (await cobrar(dueno, pedido)).json())).toMatchObject({ id: nd.id, repetido: true });
     // Queda en la lista de comprobantes (el PDF se prueba en tests/pdf.test.ts: aquí no hay certificado).
     const { comprobantes } = await (await panel.pedir('/panel/api/comprobantes', { cookie: dueno })).json();
     expect(comprobantes[0]).toMatchObject({ id: nd.id, tipo: '08', numero: 'FD01-00000001' });
+    // La nota de débito SUMA a lo que debe la factura: 350 + 59. (El 09/11 se le RESTABA, como si
+    // fuera una nota de crédito: la factura quedaba debiendo 291, y una factura chica, "pagada".)
+    const ver = async (id: string) => (await panel.pedir(`/panel/api/comprobantes/${id}`, { cookie: dueno })).json();
+    expect(await ver(factura.id)).toMatchObject({ total: '350.00', saldo: '409.00', estadoPago: 'PENDIENTE' });
+    const inicio = await (await panel.pedir('/panel/api/tablero', { cookie: dueno })).json();
+    expect(inicio.cobros).toMatchObject({ comprobantes: 1, saldo: '409.00' }); // una sola deuda: la de la factura
+    const { porCobrar } = await (await panel.pedir('/panel/api/por-cobrar', { cookie: dueno })).json();
+    expect(porCobrar.map((x: { numero: string; saldo: string }) => [x.numero, x.saldo])).toEqual([['F001-00000001', '409.00']]);
+    // No se cobra en la nota, sino en la factura: primero los 350 y después el flete.
+    const pagar = (id: string, cuerpo: Record<string, unknown>) => panel.pedir(`/panel/api/comprobantes/${id}/pagos`, { cookie: dueno, cuerpo });
+    const enLaNota = await pagar(nd.id, { medio: 'YAPE', referencia: 'OP-ND-0' });
+    expect(enLaNota.status).toBe(422);
+    expect(JSON.stringify(await enLaNota.json())).toMatch(/no se cobra aparte/);
+    expect((await pagar(factura.id, { medio: 'YAPE', monto: '350.00', referencia: 'OP-ND-1' })).status).toBe(201);
+    expect(await ver(factura.id)).toMatchObject({ saldo: '59.00', estadoPago: 'PARCIAL' });
+    expect((await pagar(factura.id, { medio: 'EFECTIVO', monto: '59.01' })).status).toBe(422); // no más que lo que debe
+    expect((await pagar(factura.id, { medio: 'EFECTIVO' })).status).toBe(201); // sin monto: cobra el saldo (el flete)
+    expect(await ver(factura.id)).toMatchObject({ saldo: '0.00', estadoPago: 'PAGADO' });
+    // Si SUNAT rechaza la nota de débito, el cargo deja de contar (aquí ya estaba todo cobrado).
+    await db.query(`UPDATE comprobantes SET estado = 'RECHAZADO' WHERE id = $1`, [nd.id]);
+    expect(await ver(factura.id)).toMatchObject({ saldo: '0.00' });
+    await db.query(`UPDATE comprobantes SET estado = 'EMITIDO_LOCAL' WHERE id = $1`, [nd.id]);
     // Motivo fuera del catálogo 10: explicado.
     const mal = await cobrar(dueno, formulario(), { motivo: '07' });
     expect((await mal.json()).error.detalles.join(' ')).toMatch(/catálogo 10/);

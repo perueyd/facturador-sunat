@@ -34,6 +34,8 @@ export interface EstadoCobro {
   total: Decimal;
   pagado: Decimal;
   notasCredito: Decimal;
+  /** Lo que le cargaron sus notas de débito (flete, intereses…): se suma a lo que debe. */
+  notasDebito: Decimal;
   saldo: Decimal;
   estadoPago: 'PENDIENTE' | 'PARCIAL' | 'PAGADO';
 }
@@ -46,20 +48,36 @@ class ErrorCobro extends Error {}
 
 const NO_COBRABLE = ['RECHAZADO', 'ANULADO', 'ANULACION_EN_PROCESO'];
 
-/** Saldo y estado de pago de un comprobante (solo lectura). */
-/** Expresión SQL del saldo pendiente de un comprobante (alias `c`): total − pagos − notas de crédito. */
+/**
+ * Suma de las notas vigentes de un tipo que modifican al comprobante (alias `c`): '07' crédito
+ * (rebaja lo que se debe) u '08' débito (lo aumenta). Las dos apuntan al comprobante con
+ * `comprobante_referencia_id`: antes se restaban TODAS, y una nota de débito (un flete) dejaba
+ * la factura debiendo MENOS en vez de más (error del 09/11/2026, corregido al día siguiente).
+ */
+const sqlNotas = (c: string, tipo: '07' | '08') =>
+  `coalesce((SELECT sum(n.importe_total) FROM comprobantes n WHERE n.comprobante_referencia_id = ${c}.id
+     AND n.tipo_comprobante = '${tipo}' AND n.estado NOT IN ('RECHAZADO', 'ANULADO')), 0)`;
+
+/** Tipos que se cobran: boletas y facturas. Las notas no se cobran aparte: ajustan el saldo de su comprobante. */
+export const SQL_SE_COBRA = `IN ('01', '03')`;
+
+/**
+ * Expresión SQL del saldo pendiente de una boleta o factura (alias `c`):
+ * total + notas de débito − pagos − notas de crédito.
+ */
 export function sqlSaldo(c: string): string {
-  return `greatest(${c}.importe_total
+  return `greatest(${c}.importe_total + ${sqlNotas(c, '08')}
     - coalesce((SELECT sum(monto) FROM pagos p WHERE p.comprobante_id = ${c}.id AND p.anulado_en IS NULL), 0)
-    - coalesce((SELECT sum(nc.importe_total) FROM comprobantes nc WHERE nc.comprobante_referencia_id = ${c}.id AND nc.estado NOT IN ('RECHAZADO', 'ANULADO')), 0), 0)`;
+    - ${sqlNotas(c, '07')}, 0)`;
 }
+
+/** Saldo y estado de pago de un comprobante (solo lectura). */
 
 export async function estadoCobro(q: Db | Tx, comprobanteId: string): Promise<EstadoCobro> {
   const r = await q.query(
     `SELECT c.importe_total,
             coalesce((SELECT sum(monto) FROM pagos WHERE comprobante_id = c.id AND anulado_en IS NULL), 0) AS pagado,
-            coalesce((SELECT sum(importe_total) FROM comprobantes nc
-                      WHERE nc.comprobante_referencia_id = c.id AND nc.estado NOT IN ('RECHAZADO', 'ANULADO')), 0) AS notas
+            ${sqlNotas('c', '07')} AS notas, ${sqlNotas('c', '08')} AS cargos
      FROM comprobantes c WHERE c.id = $1`,
     [comprobanteId],
   );
@@ -67,9 +85,10 @@ export async function estadoCobro(q: Db | Tx, comprobanteId: string): Promise<Es
   const total = dec(f.importe_total as string);
   const pagado = dec(f.pagado as string);
   const notasCredito = dec(f.notas as string);
-  const saldo = Decimal.max(total.minus(pagado).minus(notasCredito), 0);
+  const notasDebito = dec(f.cargos as string);
+  const saldo = Decimal.max(total.plus(notasDebito).minus(pagado).minus(notasCredito), 0);
   const estadoPago = saldo.isZero() ? 'PAGADO' : pagado.isZero() ? 'PENDIENTE' : 'PARCIAL';
-  return { total, pagado, notasCredito, saldo, estadoPago };
+  return { total, pagado, notasCredito, notasDebito, saldo, estadoPago };
 }
 
 /** Recalcula el saldo y deja al día el estado de pago y las cuotas (dentro de la transacción). */
@@ -114,6 +133,7 @@ export async function registrarPago(db: Db, p: NuevoPago): Promise<ResultadoPago
         }
       }
       if (c.tipo_comprobante === '07') throw new ErrorCobro('Una nota de crédito no se cobra: reduce el saldo del comprobante que modifica.');
+      if (c.tipo_comprobante === '08') throw new ErrorCobro('Una nota de débito no se cobra aparte: aumenta lo que debe el comprobante que modifica. Registra el pago en ese comprobante.');
       if (NO_COBRABLE.includes(c.estado)) throw new ErrorCobro(`${nombre} está ${c.estado.toLowerCase().replaceAll('_', ' ')}; no se le registran pagos.`);
 
       const antes = await recalcularCobro(tx, p.comprobanteId);

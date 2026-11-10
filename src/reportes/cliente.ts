@@ -2,7 +2,7 @@
  * Historial de un cliente por su número de documento: comprobantes, total comprado
  * (menos notas de crédito) y saldo pendiente. Excluye rechazados y anulados.
  */
-import { sqlSaldo } from '../cobros/pagos.js';
+import { SQL_SE_COBRA, sqlSaldo } from '../cobros/pagos.js';
 import { Decimal, dec, sumar } from '../dinero.js';
 import type { Db } from '../db/conexion.js';
 import { idComprobanteLegible } from '../tipos.js';
@@ -24,7 +24,7 @@ export async function historialCliente(db: Db, empresaId: string, numeroDoc: str
   const r = await db.query(
     `SELECT c.tipo_comprobante AS tipo, c.serie, c.numero, c.fecha_emision::text AS fecha, c.importe_total::text AS total,
             c.estado::text, c.estado_pago::text AS estado_pago,
-            CASE WHEN c.tipo_comprobante = '07' THEN 0 ELSE ${sqlSaldo('c')} END::text AS saldo
+            CASE WHEN c.tipo_comprobante ${SQL_SE_COBRA} THEN ${sqlSaldo('c')} ELSE 0 END::text AS saldo
      FROM comprobantes c
      WHERE c.empresa_id = $1 AND c.cliente_id = $2 AND c.estado NOT IN ('RECHAZADO', 'ANULADO')
      ORDER BY c.fecha_emision, c.serie, c.numero`,
@@ -62,14 +62,14 @@ export interface ClienteFrecuente {
 export async function clientesFrecuentes(db: Db, empresaId: string, hoy: string): Promise<ClienteFrecuente[]> {
   const r = await db.query(
     `SELECT k.tipo_doc_identidad, k.numero_doc, k.nombre_razon_social, k.telefono,
-            count(*) FILTER (WHERE c.tipo_comprobante <> '07')::int AS compras,
+            count(*) FILTER (WHERE c.tipo_comprobante IN ('01', '03'))::int AS compras,
             sum(CASE WHEN c.tipo_comprobante = '07' THEN -c.importe_total ELSE c.importe_total END)::text AS total,
             max(c.fecha_emision)::text AS ultima, ($2::date - max(c.fecha_emision))::int AS dias,
-            coalesce(sum(${sqlSaldo('c')}) FILTER (WHERE c.tipo_comprobante <> '07'), 0)::text AS saldo
+            coalesce(sum(${sqlSaldo('c')}) FILTER (WHERE c.tipo_comprobante ${SQL_SE_COBRA}), 0)::text AS saldo
        FROM clientes k JOIN comprobantes c ON c.cliente_id = k.id
       WHERE k.empresa_id = $1 AND c.estado NOT IN ('RECHAZADO', 'ANULADO') AND c.fecha_emision > $2::date - 365
       GROUP BY k.id
-     HAVING count(*) FILTER (WHERE c.tipo_comprobante <> '07') > 0
+     HAVING count(*) FILTER (WHERE c.tipo_comprobante IN ('01', '03')) > 0
       ORDER BY compras DESC, sum(c.importe_total) DESC LIMIT 50`,
     [empresaId, hoy],
   );

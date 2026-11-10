@@ -235,7 +235,8 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
       total: c.totales.importeTotal.toFixed(2),
       // Descuento global con IGV: lo que se rebajó de la suma de los ítems.
       descuento: sumar(c.items.map((i) => i.total)).minus(c.totales.importeTotal).toFixed(2),
-      saldo: cobro.saldo.toFixed(2),
+      // Una nota (crédito o débito) no tiene saldo propio: ajusta el del comprobante que modifica.
+      saldo: c.tipo === '01' || c.tipo === '03' ? cobro.saldo.toFixed(2) : '0.00',
       pagos: await pagosDe(dep.db, id),
       igv: c.totales.igv.toFixed(2),
       sunat: e.sunat_codigo_respuesta ? { codigo: e.sunat_codigo_respuesta, mensaje: e.sunat_mensaje, observaciones: e.sunat_observaciones ?? [] } : null,
@@ -301,7 +302,8 @@ export function crearApp(dep: DependenciasApi): Hono<{ Variables: Variables }> {
     // Pago ya confirmado (ej. Yape): se registra por el saldo. Repetir el pedido no lo duplica
     // (la referencia de la operación es única) ni falla si ya estaba pagado.
     let errorPago: string | undefined;
-    if (leido.valor.pago && r.guardado.comprobante.tipo !== '07' && !(await estadoCobro(dep.db, r.guardado.id)).saldo.isZero()) {
+    // Solo boletas y facturas se cobran al emitir: una nota ajusta el saldo del comprobante que modifica.
+    if (leido.valor.pago && ['01', '03'].includes(r.guardado.comprobante.tipo) && !(await estadoCobro(dep.db, r.guardado.id)).saldo.isZero()) {
       const pago = await registrarPago(dep.db, { empresaId: quien.empresaId, comprobanteId: r.guardado.id, ...autor, ...leido.valor.pago });
       if (pago.resultado === 'ERROR') errorPago = pago.errores.join(' ');
     }

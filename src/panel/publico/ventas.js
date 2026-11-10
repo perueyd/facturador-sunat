@@ -582,7 +582,8 @@ function mostrarResultado(c) {
     botones.append(boton('Copiar enlace', () => navigator.clipboard?.writeText(c.enlaces.cliente)));
   }
   const esVenta = c.tipo === '01' || c.tipo === '03';
-  if (tiene('cobros') && c.tipo !== '07' && c.saldo && c.saldo !== '0.00' && c.estado !== 'RECHAZADO') {
+  // Solo boletas y facturas se cobran: una nota (crédito o débito) ajusta el saldo de su comprobante.
+  if (tiene('cobros') && esVenta && c.saldo && c.saldo !== '0.00' && c.estado !== 'RECHAZADO') {
     botones.append(boton(`Registrar cobro (saldo S/ ${c.saldo})`, () => abrirCobro({ id: c.id, numero: c.numero, saldo: c.saldo })));
   }
   const aceptado = c.estado === 'ACEPTADO' || c.estado === 'ACEPTADO_OBS';

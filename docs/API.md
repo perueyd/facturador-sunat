@@ -96,7 +96,7 @@ Cabecera en todos (salvo `salud`): `Authorization: Bearer fk_xxxxxxxxxxxx_…`
 | `descuento` | no | Descuento total **con IGV** (cupón u oferta), como texto: `"50.00"`. El total queda en suma de ítems − descuento; en el comprobante va como descuento global que rebaja la base del IGV. `"0.00"` = sin descuento. Solo boletas y facturas, y solo sobre productos gravados |
 | `formaPago` | no | `"CONTADO"` (por defecto) o `{ "cuotas": [{ "monto": "500.00", "vence": "2026-12-31" }] }` (solo facturas) |
 | `notaCredito` | en NC | `{ "tipo": "FACTURA", "serie": "F001", "numero": 15, "motivo": "07", "descripcion": "Devolución" }` |
-| `notaDebito` | en ND | Igual que `notaCredito`, con motivo del catálogo 10: `01` intereses por mora, `02` aumento en el valor, `03` penalidades / otros conceptos. Series por defecto `FD01` (de factura) y `BD01` (de boleta). La factura debe estar ya aceptada por SUNAT. Es un cargo (servicio): usa `"unidad": "ZZ"`; no mueve stock |
+| `notaDebito` | en ND | Igual que `notaCredito`, con motivo del catálogo 10: `01` intereses por mora, `02` aumento en el valor, `03` penalidades / otros conceptos. Series por defecto `FD01` (de factura) y `BD01` (de boleta). La factura debe estar ya aceptada por SUNAT. Es un cargo (servicio): usa `"unidad": "ZZ"`; no mueve stock. Su monto **se suma al saldo del comprobante que modifica**: se cobra ahí (`POST /v1/comprobantes/{id}/pagos` del original), no en la nota |
 | `pago` | no | Pago ya confirmado: `{ "medio": "YAPE", "referencia": "nº de operación" }`. Se registra por el total y el comprobante queda `PAGADO`. Requiere el permiso `cobrar`. El dinero queda en la cuenta **predeterminada** de ese medio (panel → Más → Cuentas donde recibes dinero); opcional `"cuenta": "<id>"` para elegir otra del mismo medio. |
 
 **Respuestas**
@@ -193,5 +193,5 @@ dos veces el mismo pago.
 ## 5. Despliegue
 
 Paso a paso en [`PUBLICAR.md`](PUBLICAR.md): base en Supabase (los XML y las constancias de
-SUNAT se guardan en la misma base), servidor en Render (`render.yaml`), cola cada 5 minutos y
+SUNAT se guardan en la misma base), servidor en Render (`render.yaml`), cola cada 5 minutos (cron-job.org; GitHub de reserva cada 6 horas) y
 respaldo diario cifrado con GitHub Actions (`.github/workflows/`).

@@ -74,13 +74,14 @@ export async function estadisticas(
     `SELECT
        coalesce(sum(importe_total) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante <> '07'), 0)::text AS hoy,
        coalesce(sum(importe_total) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante = '07'), 0)::text AS hoy_notas,
-       count(*) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante <> '07')::int AS hoy_n,
+       -- "Ventas" = boletas y facturas: una nota de débito suma al monto, pero no es otra venta.
+       count(*) FILTER (WHERE fecha_emision = $2::date AND tipo_comprobante IN ('01', '03'))::int AS hoy_n,
        -- Semana de lunes a hoy. Si el lunes cae en el mes anterior, la consulta de abajo igual lo
        -- alcanza: lee desde el mes anterior.
        coalesce(sum(${CON_SIGNO}) FILTER (WHERE fecha_emision >= date_trunc('week', $2::date)), 0)::text AS semana,
-       count(*) FILTER (WHERE fecha_emision >= date_trunc('week', $2::date) AND tipo_comprobante <> '07')::int AS semana_n,
+       count(*) FILTER (WHERE fecha_emision >= date_trunc('week', $2::date) AND tipo_comprobante IN ('01', '03'))::int AS semana_n,
        coalesce(sum(${CON_SIGNO}) FILTER (WHERE fecha_emision >= date_trunc('month', $2::date)), 0)::text AS mes,
-       count(*) FILTER (WHERE fecha_emision >= date_trunc('month', $2::date) AND tipo_comprobante <> '07')::int AS mes_n,
+       count(*) FILTER (WHERE fecha_emision >= date_trunc('month', $2::date) AND tipo_comprobante IN ('01', '03'))::int AS mes_n,
        -- Mismos días del mes anterior (del 1 al día de hoy): comparar contra el mes ENTERO
        -- haría que a inicio de mes siempre se viera una caída.
        coalesce(sum(${CON_SIGNO}) FILTER (WHERE fecha_emision >= date_trunc('month', $2::date) - interval '1 month'
@@ -153,7 +154,7 @@ export async function estadisticas(
   const vendedores = (await db.query(
     `WITH v AS (
        SELECT coalesce(coalesce(o.emitido_por_usuario, c.emitido_por_usuario)::text, CASE c.origen WHEN 'SUNAT' THEN 'SUNAT' ELSE 'API' END) AS clave,
-              count(*) FILTER (WHERE c.tipo_comprobante <> '07')::int AS n,
+              count(*) FILTER (WHERE c.tipo_comprobante IN ('01', '03'))::int AS n,
               sum(CASE WHEN c.tipo_comprobante = '07' THEN -c.importe_total ELSE c.importe_total END) AS monto,
               sum(CASE WHEN c.tipo_comprobante = '07' THEN -1 ELSE 1 END * (c.total_gravado + c.total_exonerado + c.total_inafecto)) AS base
          FROM ventas_todas c LEFT JOIN comprobantes o ON o.id = c.comprobante_referencia_id
@@ -169,14 +170,14 @@ export async function estadisticas(
   )).rows;
 
   // Productos: solo boletas y facturas (una nota de crédito no dice qué producto se devolvió
-  // con la misma descripción siempre).
+  // con la misma descripción siempre, y una de débito es un cargo —flete, intereses—, no un producto).
   const productos = (await db.query(
     // Detalle de lo emitido aquí y de las boletas impresas sin internet (guardan sus productos);
     // de lo emitido en SUNAT y subido solo se conoce el total, así que no entra en este ranking.
     `WITH lineas AS (
        SELECT i.descripcion, i.cantidad, i.total
          FROM comprobante_items i JOIN comprobantes c ON c.id = i.comprobante_id
-        WHERE c.empresa_id = $1 AND c.${VALIDO} AND c.tipo_comprobante <> '07'
+        WHERE c.empresa_id = $1 AND c.${VALIDO} AND c.tipo_comprobante IN ('01', '03')
           AND c.fecha_emision >= date_trunc('month', $2::date) AND c.fecha_emision <= $2::date
        UNION ALL
        SELECT x->>'descripcion', (x->>'cantidad')::numeric, (x->>'total')::numeric
