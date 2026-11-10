@@ -2,7 +2,7 @@
  * Resumen del día: ventas, cobros por medio de pago, saldos por cobrar y
  * pendientes con SUNAT. Todo lo de ventas excluye rechazados y anulados.
  */
-import { sqlSaldo } from '../cobros/pagos.js';
+import { SQL_SE_COBRA, sqlSaldo } from '../cobros/pagos.js';
 import { dec, sumar } from '../dinero.js';
 import type { Db } from '../db/conexion.js';
 import { ahoraLima } from '../fechas.js';
@@ -17,7 +17,7 @@ export interface ResumenDia {
   alertasAbiertas: number;
 }
 
-const NOMBRES: Record<string, string> = { '01': 'FACTURA', '03': 'BOLETA' };
+const NOMBRES: Record<string, string> = { '01': 'FACTURA', '03': 'BOLETA', '08': 'NOTA_DEBITO' };
 
 export async function resumenDelDia(db: Db, empresaId: string, fecha = ahoraLima().fecha): Promise<ResumenDia> {
   const ventas = await db.query(
@@ -37,7 +37,7 @@ export async function resumenDelDia(db: Db, empresaId: string, fecha = ahoraLima
             (SELECT count(*)::int FROM comprobante_cuotas q JOIN comprobantes cc ON cc.id = q.comprobante_id
              WHERE cc.empresa_id = $1 AND NOT q.pagada AND q.fecha_vencimiento < $2::date AND cc.estado NOT IN ('RECHAZADO','ANULADO')) AS cuotas_vencidas
      FROM comprobantes c
-     WHERE c.empresa_id = $1 AND c.tipo_comprobante <> '07' AND c.estado_pago <> 'PAGADO' AND c.estado NOT IN ('RECHAZADO', 'ANULADO')`,
+     WHERE c.empresa_id = $1 AND c.tipo_comprobante ${SQL_SE_COBRA} AND c.estado_pago <> 'PAGADO' AND c.estado NOT IN ('RECHAZADO', 'ANULADO')`,
     [empresaId, fecha],
   );
   const sunat = await db.query(

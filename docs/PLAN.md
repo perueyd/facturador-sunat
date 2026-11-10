@@ -799,8 +799,13 @@ Para cobrar algo más sobre una venta ya emitida (flete, instalación, intereses
 - **SUNAT beta (09/11/2026):** notas de débito de factura (`FD01`) y de boleta (`BD01`) aceptadas con
   SHA1 y SHA256 (18 de 18 comprobantes aceptados en la corrida).
 - **Panel:** en un comprobante, "Cobrar algo más (nota de débito)" (dueño o administrador): motivo,
-  qué se cobra, monto con IGV y explicación. Queda por cobrar; no mueve stock. Se anula como cualquier
-  comprobante. Una nota de crédito posterior puede rebajar hasta lo facturado más lo cargado.
+  qué se cobra, monto con IGV y explicación. No mueve stock. Se anula como cualquier comprobante.
+- **Cobro:** el monto de la nota **se suma a lo que debe la boleta o factura** que modifica
+  (saldo = total + notas de débito − pagos − notas de crédito) y se cobra ahí; la nota no se cobra
+  aparte. Una nota de crédito posterior puede rebajar hasta lo facturado más lo cargado.
+  *Corrección del 10/11/2026:* la versión del 09/11 restaba la nota de débito del saldo, como si
+  fuera de crédito (una factura con un flete cargado debía MENOS). Se detectó en la revisión del
+  día siguiente, antes de usarse con comprobantes reales; hay una prueba que lo vigila.
 - **API:** `tipo: "NOTA_DEBITO"` con `notaDebito` (ver `docs/API.md`).
 - Migración 046: permitida en todos los regímenes (en Nuevo RUS, POR VERIFICAR) y series `FD01`/`BD01`.
 
@@ -842,6 +847,24 @@ del conductor, del peso y de los puntos de partida y llegada. Vale la pena solo 
 factura se vuelven frecuentes, o si el facturador se vende a negocios que la necesitan todos los
 días (ferreterías, distribuidoras). Antes habría que confirmar con el contador si la empresa está
 designada como emisor electrónico de guías y leer el manual oficial.
+
+## 27. Revisión de eficiencia (10/11/2026)
+
+Medido con una empresa de **60.000 comprobantes en un año** (≈ 5.000 al mes, 120.000 líneas), en
+la base local. Tiempo de las consultas que el panel hace cada vez que se abre:
+
+| Consulta | Antes | Después | Qué se cambió |
+|---|---|---|---|
+| Sugerencias de "lo vendido antes" | 243 ms | 21 ms | Mira las últimas 3.000 ventas, no el año entero |
+| Últimos comprobantes | 35 ms | 1 ms | Índice por empresa y fecha de creación (migración 047) |
+| Inicio (tablero) | 52 ms | 35 ms | Índice de "por cobrar" y conteo de SUNAT usando su índice |
+| Por cobrar | 18 ms | 11 ms | El mismo índice |
+| Estadísticas | 131 ms | 118 ms | Sin cambio de fondo: sumar 12 meses de ventas cuesta ~55 ms |
+
+En total, abrir el panel pasa de ~0,5 s a ~0,2 s de base de datos con esa empresa. Con un negocio
+chico (cientos de comprobantes al mes) todo estaba y sigue en milésimas de segundo. Lo que queda
+más pesado es el gráfico de 12 meses; no vale la pena complicarlo mientras no haya clientes de
+ese tamaño.
 
 ## 19. Decisiones que siguen abiertas
 

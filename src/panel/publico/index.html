@@ -905,8 +905,8 @@
       <label>Qué se cobra <input name="concepto" maxlength="250" placeholder="Ej.: Flete a provincia" required></label>
       <label>Monto con IGV (S/) <input name="monto" inputmode="decimal" placeholder="50.00" required></label>
       <label>Explicación para SUNAT <input name="sustento" maxlength="250" placeholder="Ej.: Flete acordado después de la venta" required></label>
-      <p class="nota">Se emite una <strong>nota de débito</strong> ligada a ese comprobante y queda por cobrar. Para cobrar
-        menos o devolver, usa la nota de crédito.</p>
+      <p class="nota">Se emite una <strong>nota de débito</strong> ligada a ese comprobante y el monto <strong>se suma a lo
+        que debe</strong>: se cobra ahí mismo, en la boleta o factura. Para cobrar menos o devolver, usa la nota de crédito.</p>
       <p class="error" id="error-debito" role="alert"></p>
       <div class="fila">
         <button type="button" id="cancelar-debito" class="secundario">Cancelar</button>
