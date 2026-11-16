@@ -50,6 +50,7 @@ import { registrarCobros } from './rutas-cobros.js';
 import { registrarRutasContingencia } from './rutas-contingencia.js';
 import { registrarInventario } from './rutas-inventario.js';
 import { registrarPlataforma } from './rutas-plataforma.js';
+import { registrarReinicio } from './rutas-reinicio.js';
 import { registrarVentas } from './rutas-ventas.js';
 
 const COOKIE = '__Host-panel';
@@ -657,6 +658,7 @@ export function registrarPanel(app: Hono<any>, d: DependenciasPanel): void {
   });
 
   registrarPlataforma(app, comun);
+  registrarReinicio(app, comun);
 
   // ---------- Empresas, certificado y usuarios ----------
 

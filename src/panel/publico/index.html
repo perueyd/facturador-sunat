@@ -726,6 +726,30 @@
         <input type="file" id="archivo-logo" accept="image/png,image/jpeg">
         <p id="mensaje-logo" role="status"></p>
       </details>
+      <details class="ajustes" id="caja-reinicio" hidden>
+        <summary>Reiniciar datos de prueba (empezar de cero)</summary>
+        <p class="nota">Deja el panel limpio: quita los comprobantes de prueba con sus cobros, devoluciones, cotizaciones y
+          cierres de caja, y la numeración vuelve a empezar en 1. <strong>Antes guarda una copia</strong> que puedes
+          restaurar aquí mismo. No toca tu empresa, series, certificado, productos, proveedores, cuentas, usuarios,
+          conexiones ni los comprobantes antiguos.</p>
+        <p class="nota">Solo funciona mientras la empresa está en <strong>pruebas (beta)</strong>. Cuando emitas comprobantes
+          reales, esto se apaga para siempre: lo enviado a SUNAT no se borra, se corrige con nota de crédito o se anula.</p>
+        <p id="reinicio-bloqueo" class="error" role="status" hidden></p>
+        <form id="form-reinicio">
+          <p id="reinicio-hay" class="nota"></p>
+          <label class="casilla" data-solo-reinicio><input type="checkbox" name="clientes" checked> <span id="reinicio-clientes">También los clientes</span></label>
+          <label class="casilla" data-solo-reinicio><input type="checkbox" name="compras"> <span id="reinicio-compras">También compras, gastos y stock</span></label>
+          <label><span id="reinicio-palabra">Escribe REINICIAR para confirmar</span> <input name="confirmar" autocomplete="off" autocapitalize="characters" required></label>
+          <label>Tu contraseña del panel <input name="contrasena" type="password" autocomplete="current-password" required></label>
+          <div class="fila">
+            <button type="submit" class="secundario peligro" id="boton-reinicio">Guardar copia y reiniciar</button>
+            <button type="button" class="secundario" id="cancelar-restaurar" hidden>Cancelar</button>
+          </div>
+          <p id="mensaje-reinicio" role="status"></p>
+        </form>
+        <p class="nota"><strong>Copias guardadas</strong> (se conservan las 3 últimas)</p>
+        <ul id="lista-copias" class="lista"></ul>
+      </details>
       </div>
       <div class="grupo-mas" id="grupo-contador">
         <h2 class="titulo-grupo">📊 Para tu contador</h2>

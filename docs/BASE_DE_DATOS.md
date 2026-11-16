@@ -358,3 +358,30 @@ Si llega la misma clave con el mismo cuerpo → misma respuesta; con otro cuerpo
 - Columnas `*_cifrado` con AES-256-GCM; la llave maestra solo en variable de entorno.
 - Bases de datos separadas para pruebas y producción.
 - Respaldo diario automático + prueba de restauración mensual.
+
+### Reiniciar datos de prueba (`048_reinicio.sql`)
+
+El dueño puede dejar una empresa "en cero" mientras está en **BETA** (panel → Más →
+"Reiniciar datos de prueba"). No es una excepción a escondidas: está escrita en la base.
+
+- **Qué se reinicia** lo dice una sola lista, `reinicio_plan()`: las ventas (comprobantes con
+  sus detalles, envíos, bajas, resúmenes, cobros, devoluciones, cotizaciones, cierres de caja,
+  ventas sin internet, sus XML/CDR y las alertas) siempre; y, si el dueño lo marca, los
+  clientes y/o las compras, gastos y el resto del stock. La numeración de las series vuelve a 0.
+- **Qué no se toca nunca:** empresa, series, certificados, credenciales SOL, llaves, productos,
+  proveedores, cuentas, usuarios, `comprobantes_antiguos`, `auditoria` y lo de la plataforma.
+  Una prueba obliga a clasificar cada tabla nueva (`tests/db/reinicio.test.ts`).
+- **Copia antes de quitar:** cada fila pasa a `reinicio_filas` (JSON) dentro de la misma
+  transacción, y se compara cuántas se copiaron con cuántas se quitaron; si no cuadra, se
+  deshace todo. Se guardan las 3 últimas copias por empresa (`reinicios`).
+- **Restaurar** (`restaurar_reinicio`) primero aparta lo que haya en otra copia y luego
+  devuelve las filas y la numeración de entonces.
+- **Los candados siguen puestos.** `impedir_borrado`, `impedir_modificacion`,
+  `series_no_retroceder` y los de cotizaciones, gastos y pagos a proveedores solo se hacen a un
+  lado mientras corre `reinicio_apartar`, para esa empresa, para las tablas del plan y solo si
+  la empresa está en BETA (`reinicio_en_curso`). Modificar sigue prohibido siempre.
+- **En producción es imposible:** `reinicio_bloqueo` se niega si la empresa está en
+  PRODUCCION o si tiene un solo comprobante, baja, resumen o envío de producción.
+- **Por verificar en SUNAT beta:** después de reiniciar, la numeración vuelve a 1. No se ha
+  comprobado si el ambiente beta recuerda los números ya enviados y responde "ya registrado"
+  (1033) al repetirlos. No afecta a producción, donde esos números nunca se enviaron.

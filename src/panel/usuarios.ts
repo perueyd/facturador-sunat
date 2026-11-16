@@ -256,6 +256,12 @@ export async function cerrarSesionesDe(db: Db, usuarioId: string): Promise<void>
   await db.query(`UPDATE sesiones SET revocada_en = now() WHERE usuario_id = $1 AND revocada_en IS NULL`, [usuarioId]);
 }
 
+/** Para acciones delicadas dentro del panel (ej. reiniciar los datos de prueba): ¿es de verdad quien dice ser? */
+export async function confirmarContrasena(db: Db, usuarioId: string, contrasena: string): Promise<boolean> {
+  const u = (await db.query(`SELECT password_hash FROM usuarios WHERE id = $1 AND activo`, [usuarioId])).rows[0];
+  return verificarContrasena(contrasena, u?.password_hash);
+}
+
 /** Cambiar la contraseña desde el panel: exige la actual y un código de 6 dígitos nuevo. */
 export async function cambiarContrasena(
   db: Db,

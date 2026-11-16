@@ -66,6 +66,11 @@ emisión manual (WhatsApp, Instagram, en persona) y, a futuro, otros negocios.
 - Errores de SUNAT siempre explicados en español claro, diciendo qué corregir.
 - **Nunca borrar comprobantes.** Se corrigen con nota de crédito o se anulan con
   comunicación de baja / resumen diario, guardando quién, cuándo y por qué.
+  - **Única excepción: "Reiniciar datos de prueba"** (pedido del dueño, 16/11/2026;
+    migración 048 y `src/empresas/reinicio.ts`). Solo el dueño, solo con la empresa en
+    **BETA** y sin un solo comprobante o envío de producción. Antes de quitar nada guarda
+    una copia que se puede restaurar. La regla vive en la base de datos, no en el programa.
+    **En producción no existe forma de borrar: no agregues ninguna.**
 - Guardar log de cada acción y respaldo de todos los XML y CDR por al menos 5 años.
 
 ## Multiempresa
