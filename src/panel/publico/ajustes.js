@@ -332,6 +332,89 @@ async function cargarConexiones() {
   }) : [linea('Ningún otro sistema está conectado: todo se emite desde aquí.', '')]));
 }
 
+// ---------- Reiniciar datos de prueba (solo el dueño, solo en beta) ----------
+/** Nombres para el dueño de lo que más importa; el resto (detalles, envíos…) va incluido sin nombrarlo. */
+const NOMBRES_REINICIO = {
+  comprobantes: ['comprobante', 'comprobantes'], pagos: ['cobro', 'cobros'], devoluciones: ['devolución', 'devoluciones'],
+  cotizaciones: ['cotización', 'cotizaciones'], cierres_caja: ['cierre de caja', 'cierres de caja'],
+  ventas_contingencia: ['venta sin internet', 'ventas sin internet'], clientes: ['cliente', 'clientes'],
+  compras: ['compra', 'compras'], gastos: ['gasto', 'gastos'], movimientos_stock: ['movimiento de stock', 'movimientos de stock'],
+};
+/** "3 comprobantes, 2 cobros" — o "nada" si no hay. */
+function resumenReinicio(filas) {
+  const partes = Object.entries(NOMBRES_REINICIO)
+    .filter(([tabla]) => filas?.[tabla] > 0)
+    .map(([tabla, [uno, varios]]) => `${filas[tabla]} ${filas[tabla] === 1 ? uno : varios}`);
+  return partes.length ? partes.join(', ') : 'nada';
+}
+/** Copia que se está por restaurar (undefined = el formulario reinicia). */
+let copiaPorRestaurar;
+
+function modoRestaurar(copia) {
+  copiaPorRestaurar = copia;
+  const f = $('#form-reinicio');
+  for (const el of f.querySelectorAll('[data-solo-reinicio]')) el.hidden = Boolean(copia);
+  $('#reinicio-palabra').textContent = `Escribe ${copia ? 'RESTAURAR' : 'REINICIAR'} para confirmar`;
+  $('#boton-reinicio').textContent = copia ? `Restaurar la copia del ${fechaHora(copia.fecha)}` : 'Guardar copia y reiniciar';
+  $('#cancelar-restaurar').hidden = !copia;
+  f.confirmar.value = '';
+  if (copia) f.confirmar.focus();
+}
+
+function pintarReinicio(r) {
+  const bloqueo = $('#reinicio-bloqueo');
+  bloqueo.textContent = r.bloqueo ?? '';
+  bloqueo.hidden = !r.bloqueo;
+  $('#form-reinicio').hidden = Boolean(r.bloqueo);
+  $('#reinicio-hay').textContent = `Hoy hay: ${resumenReinicio(r.hay.VENTAS)}.`;
+  $('#reinicio-clientes').textContent = `También los clientes (${resumenReinicio(r.hay.CLIENTES)})`;
+  $('#reinicio-compras').textContent = `También compras, gastos y el resto del stock (${resumenReinicio(r.hay.COMPRAS)}). El stock de todos los productos queda en cero.`;
+  $('#lista-copias').replaceChildren(...(r.copias.length ? r.copias.map((c) => {
+    const li = linea(`${fechaHora(c.fecha)} · ${c.motivo === 'REINICIO' ? 'antes de reiniciar' : 'lo que había al restaurar'}${c.quien ? ` · ${c.quien}` : ''}`, resumenReinicio(c.filas));
+    if (!r.bloqueo) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'secundario', textContent: 'Restaurar' });
+      b.addEventListener('click', () => { $('#mensaje-reinicio').textContent = ''; modoRestaurar(c); });
+      li.append(b);
+    }
+    return li;
+  }) : [linea('Todavía no hay copias.', '')]));
+  modoRestaurar(undefined);
+}
+
+async function cargarReinicio() {
+  $('#caja-reinicio').hidden = !yo?.esDueno;
+  if (!yo?.esDueno) return;
+  pintarReinicio(await api('/reinicio'));
+}
+
+async function alReiniciar(e) {
+  e.preventDefault();
+  const f = e.target;
+  const msg = $('#mensaje-reinicio');
+  msg.className = '';
+  msg.textContent = '';
+  const copia = copiaPorRestaurar;
+  const pregunta = copia
+    ? `¿Restaurar la copia del ${fechaHora(copia.fecha)}? Lo que hay ahora se guarda antes en otra copia.`
+    : '¿Reiniciar los datos de prueba? Se guarda una copia y el panel queda en cero.';
+  if (!confirm(pregunta)) return;
+  $('#boton-reinicio').disabled = true;
+  try {
+    const r = await api('/reinicio', { cuerpo: {
+      confirmar: f.confirmar.value.trim().toUpperCase(), contrasena: f.contrasena.value,
+      ...(copia ? { restaurar: copia.id } : { grupos: ['VENTAS', ...(f.clientes.checked ? ['CLIENTES'] : []), ...(f.compras.checked ? ['COMPRAS'] : [])] }),
+    } });
+    f.reset();
+    pintarReinicio(r);
+    msg.textContent = copia ? '✔ Copia restaurada. Lo que había quedó guardado en otra copia.' : '✔ Listo: el panel quedó en cero y la copia está guardada aquí abajo.';
+  } catch (err) {
+    msg.className = 'error';
+    msg.textContent = err.message;
+  } finally {
+    $('#boton-reinicio').disabled = false;
+  }
+}
+
 async function alConectar(e) {
   e.preventDefault();
   const msg = $('#mensaje-conexion');
@@ -451,6 +534,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#form-sol').addEventListener('submit', alGuardarSol);
   $('#form-cuenta').addEventListener('submit', alGuardarCuenta);
   $('#form-conexion').addEventListener('submit', alConectar);
+  $('#form-reinicio').addEventListener('submit', alReiniciar);
+  $('#cancelar-restaurar').addEventListener('click', () => modoRestaurar(undefined));
   $('#copiar-llave').addEventListener('click', copiarLlave);
   $('#listo-llave').addEventListener('click', ocultarLlave);
   for (const b of document.querySelectorAll('#periodo-caja button')) b.addEventListener('click', () => cargarCaja(b.dataset.periodo).catch((err) => alert(err.message)));

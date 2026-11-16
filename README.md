@@ -116,6 +116,10 @@ Quien vende el facturador puede dar de alta empresas desde el panel:
 npm run usuario -- plataforma --email tu@correo.com
 ```
 
+Mientras la empresa está en pruebas (beta), el dueño puede dejarla en cero desde
+**Más → Reiniciar datos de prueba**: guarda una copia, quita los comprobantes de prueba y la
+numeración vuelve a 1. Con comprobantes reales (producción) ese botón deja de funcionar.
+
 Cada empresa elige qué funciones del panel usa:
 ```bash
 npm run empresa:modulos -- --ruc 20XXXXXXXXX                      # ver

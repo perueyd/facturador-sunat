@@ -147,6 +147,22 @@ Corregido:
 
 `node-forge` (aviso GHSA-86w9-cpqp-85rv): corregido al actualizar a 1.4.2 (29/10/2026).
 
+## Revisión del 16/11/2026: reiniciar datos de prueba
+
+El botón deja una empresa en cero mientras está en beta. Es la única forma de quitar
+comprobantes, así que se revisó con cuidado:
+
+- **Quién:** solo el rol DUEÑO (403 para los demás), escribiendo la palabra REINICIAR (o
+  RESTAURAR) y su contraseña otra vez; los intentos fallidos cuentan para el freno de siempre.
+- **Dónde está la regla:** en la base (migración 048), no en el programa. Con la empresa en
+  producción, o con un solo comprobante o envío real, la base se niega aunque el programa
+  tuviera un error. Probado: ni poniendo a mano la marca interna se puede borrar en producción,
+  ni borrar tablas fuera de la lista (series, historial de acciones), ni datos de otra empresa.
+- **Nada se pierde:** la copia se guarda en la misma transacción y se puede restaurar; queda
+  anotado en el historial quién lo hizo y qué se apartó.
+- **Datos personales:** las copias llevan datos de clientes de prueba; se guardan solo las 3
+  últimas y nunca salen del servidor (no hay descarga).
+
 ## Pendiente (con motivo)
 
 | Pendiente | Por qué todavía no | Cuándo |
